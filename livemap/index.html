@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SeaSense Live Map</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #map { height: 100vh; }
+    h1.title {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: white;
+      padding: 5px 15px;
+      border-radius: 5px;
+      font-size: 20px;
+      font-weight: bold;
+    }
+    .filter {
+      position: absolute;
+      bottom: 90px;
+      right: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      font-size: 14px;
+      border-radius: 5px;
+    }
+    .legend {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      font-size: 14px;
+      border-radius: 5px;
+      width: 200px;
+    }
+    .color-bar {
+      height: 10px;
+      background: linear-gradient(to right, blue, cyan, lime, yellow, orange, red);
+      margin: 6px 0;
+    }
+    .updated {
+      font-size: 12px;
+      color: #666;
+      margin-top: 6px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">SeaSense Live Map</h1>
+  <div class="filter">
+    <label for="param">Show:</label>
+    <select id="param">
+      <option value="turbidity">Turbidity (%)</option>
+      <option value="ec" selected>EC (µS/cm)</option>
+      <option value="watertemp">Water Temperature (°C)</option>
+    </select>
+  </div>
+  <div class="legend">
+    <div class="color-bar"></div>
+    <div id="legend-range">...</div>
+    <div class="updated" id="last-updated">Last updated: ...</div>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([52.379189, 4.899431], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const paramSelect = document.getElementById('param');
+    const legendRange = document.getElementById('legend-range');
+    const lastUpdated = document.getElementById('last-updated');
+
+    let markers = [];
+
+    async function loadData() {
+      const response = await fetch('https://arncxalleyggoqzdvgnh.supabase.co/rest/v1/seasense-raw?select=*', {
+        headers: {
+          apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFybmN4YWxsZXlnZ29xemR2Z25oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU2NTkwNzYsImV4cCI6MjA2MTIzNTA3Nn0.CJ4Pry_agezSU8_zwP15Mi3ge3yF7DLZWb4RND12gXY'
+        }
+      });
+      const data = await response.json();
+      updateMap(data);
+      updateTimestamp();
+    }
+
+    function getColor(value, min, max) {
+      const ratio = (value - min) / (max - min);
+      const hue = (1 - ratio) * 240; // blue to red
+      return `hsl(${hue}, 100%, 50%)`;
+    }
+
+    function updateMap(data) {
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+
+      const param = paramSelect.value;
+      const unit = param === 'ec' ? 'µS/cm' : param === 'watertemp' ? '°C' : '%';
+      const values = data.map(d => d[param]);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      legendRange.textContent = `${min.toFixed(2)} – ${max.toFixed(2)} ${unit}`;
+
+      data.forEach(point => {
+        const color = getColor(point[param], min, max);
+        const marker = L.circleMarker([point.lat, point.lon], {
+          radius: 8,
+          color: color,
+          fillColor: color,
+          fillOpacity: 0.8
+        }).addTo(map);
+
+        marker.bindPopup(
+          `<strong>Tijd:</strong> ${point.timestamp}<br>
+           <strong>EC:</strong> ${point.ec} µS/cm<br>
+           <strong>Turbidity:</strong> ${point.turbidity} %<br>
+           <strong>Temp:</strong> ${point.watertemp} °C`
+        );
+
+        markers.push(marker);
+      });
+    }
+
+    function updateTimestamp() {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      lastUpdated.textContent = `Last updated: ${hh}:${mm}`;
+    }
+
+    paramSelect.addEventListener('change', () => loadData());
+    loadData();
+    setInterval(loadData, 15000);
+  </script>
+</body>
+</html>
