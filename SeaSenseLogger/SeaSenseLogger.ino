@@ -233,6 +233,7 @@ void dumpData() {
 
 void clearData() {
   SPIFFS.remove("/log.csv");
+  SPIFFS.remove("/last_upload.txt");
   Serial.println("All data in log file cleared.");
 }
 
@@ -251,6 +252,13 @@ void uploadData() {
     return;
   }
   Serial.println("\nWiFi connected.");
+
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  while (time(nullptr) < 100000) {
+    delay(100);
+    Serial.print(".");
+  }
+  Serial.println("Time synced.");
 
   // Load last uploaded epoch
   unsigned long lastEpoch = 0;
@@ -323,7 +331,7 @@ bool uploadToSupabase(unsigned long epoch, const char* timestamp, float lat, flo
 
   String json = "{";
   json += "\"epoch\":" + String(epoch) + ",";
-  json += "\"device\":\"" + String(SEASENSE_DEVICE_GUID) + "\"";
+  json += "\"device\":\"" + String(SEASENSE_DEVICE_GUID) + "\",";
   json += "\"timestamp\":\"" + String(timestamp) + "\",";
   json += "\"lat\":" + String(lat, 6) + ",";
   json += "\"lon\":" + String(lon, 6) + ",";
