@@ -1,5 +1,13 @@
 // SeaSense logger
 //
+// README https://github.com/zorankovacevic/seasense
+//
+// Serial commands that you can type during the first 5s after boot:
+//    TESTMODE: Skip GPS fix. Use fixed timestamp 2025-04-24 17:05:00 and lat,lon 52.379189,4.899431 (Amsterdam).
+//    DUMP: Output all data records from internal SPIFFS
+//    CLEAR: Delete all data records from internal SPIFFS
+//    UPLOAD: Push all new data records to SeaSense server
+//
 // Tested with:
 // - ESP32 WROOM
 // - Arduino TDS sensor (AliExpress)
@@ -10,6 +18,7 @@
 // TODO
 // - add correct calibration values
 // - log battery level
+
 
 #include <WiFi.h>
 #include <OneWire.h>
@@ -27,11 +36,8 @@
 // #define SUPABASE_API_KEY "yourapikey"
 #include "secrets.h"
 
-// Use test mode in case GPS is not enabled. Expect 25 april 2024 17:05:00, Amsterdam lat/lon.
-#define TEST_MODE false
-
 // SeaSense server config
-#define SEASENSE_DEVICE_GUID "f00c1844-42db-4309-847b-8fbe0b46bec1"    // Use a guid per device
+#define SEASENSE_DEVICE_GUID "f00c1844-42db-4309-847b-8fbe0b46bec1"  // Use a guid per device
 #define SUPABASE_URL "https://arncxalleyggoqzdvgnh.supabase.co"
 #define SUPABASE_TABLE "seasense-raw"
 
@@ -43,19 +49,18 @@
 #define GPS_TX_PIN 17     // GPS RX -> ESP TX
 #define LED_PIN 2         // Onboard LED
 
+// Persist serial command TESTMODE over deepsleep. Reset with powercycle.
+RTC_DATA_ATTR bool testMode = false;
+
 // Calibration values
-const float refTurbidityClear = 1.12;  // 0% turbidity
-const float refTurbidityCloudy = 2.11; // 100% turbidity
-const float refEcVoltage1 = 0.1;      // voltage measured in first solution (Volt)
-const float refEcValue1 = 84.0;        // known EC in first solution (µS/cm)
-const float refEcVoltage2 = 2.30;      // voltage measured in second solution (Volt)
-const float refEcValue2 = 1413.0;      // known EC in second solution (µS/cm)
+const float refTurbidityClear = 1.12;   // 0% turbidity
+const float refTurbidityCloudy = 2.11;  // 100% turbidity
 
 // Data logging interval in ms
 const unsigned long LOG_INTERVAL = 5000;
 
 // Timer
-const unsigned long serialCommandWindow = 5000;   // After hard boot, 5 seconds to enter serial command
+const unsigned long serialCommandWindow = 5000;  // After hard boot, 5 seconds to enter serial command
 unsigned long startMillis;
 
 // Prepare
@@ -84,7 +89,7 @@ void setup() {
   // Allow for serial commands after poweron
   if (esp_reset_reason() == ESP_RST_POWERON) {
     startMillis = millis();
-    Serial.println("Type DUMP, CLEAR or UPLOAD within 5 seconds:");
+    Serial.println("Type TESTMODE, DUMP, CLEAR or UPLOAD within 5 seconds:");
     while (millis() - startMillis < serialCommandWindow) {
       if (Serial.available()) {
         String cmd = Serial.readStringUntil('\n');
@@ -95,16 +100,19 @@ void setup() {
           clearData();
         } else if (cmd.equalsIgnoreCase("UPLOAD")) {
           uploadData();
+        } else if (cmd.equalsIgnoreCase("UPLOAD-FILE")) {
+          uploadFile();
+        } else if (cmd.equalsIgnoreCase("TESTMODE")) {
+          testMode = true;
+          Serial.println("TEST MODE ENABLED (until reset)");
         }
       }
     }
   }
 
   // Wait for GPS fix, otherwise we can't log datetime nor location
-  if (!TEST_MODE && !gps.location.isValid()) {
+  if (!gps.location.isValid()) {
     waitForGPSFix();
-  } else if (TEST_MODE) {
-    Serial.println("TEST_MODE enabled, skipping GPS fix, using 25 april 2024 17:05:00, Amsterdam.");
   }
 
   // Read turbidity
@@ -114,9 +122,9 @@ void setup() {
   waterTemperatureSensor.requestTemperatures();
   float waterTemp = waterTemperatureSensor.getTempCByIndex(0);
 
-  // Read EC 
-  float calibratedEC = calculateCalibratedEC(analogRead(EC_PIN), waterTemp);
-  
+  // Read EC
+  float calibratedEC = calculateCalibratedEC(waterTemp);
+
   // Check for bad readings
   if (isnan(turbidityPercent) || isnan(calibratedEC) || isnan(waterTemp)) {
     Serial.println("Bad reading detected");
@@ -162,18 +170,53 @@ float calculateTurbidity(float analogValue) {
 }
 
 // Calculate EC based off calibration and temperature compensation
-float calculateCalibratedEC(float analogValue, float temp) {
-  float voltage = calculateVoltage(analogValue);
+float calculateCalibratedEC(float waterTempCelsius) {
+  
+  // Calibration code example from https://www.aliexpress.com/item/1005006291597020.html
+  const int SCOUNT = 30;       // Number of ADC samples
+  const float kValue = 1.0;    // Calibration factor (default 1.0)
 
-  // Linear interpolation between two reference fluids
-  float calibratedEC = (voltage - refEcVoltage1) * (refEcValue2 - refEcValue1) / (refEcVoltage2 - refEcVoltage1) + refEcValue1;
+  int analogBuffer[SCOUNT];
+  
+  // Collect samples
+  for (int i = 0; i < SCOUNT; i++) {
+    analogBuffer[i] = analogRead(EC_PIN);
+    delay(2);
+  }
 
-  // 2% per 1°C difference from 25°C
-  float compensatedEC = calibratedEC / (1.0 + 0.02 * (temp - 25.0));
+  // Apply median filtering
+  for (int i = 0; i < SCOUNT - 1; i++) {
+    for (int j = 0; j < SCOUNT - i - 1; j++) {
+      if (analogBuffer[j] > analogBuffer[j + 1]) {
+        int temp = analogBuffer[j];
+        analogBuffer[j] = analogBuffer[j + 1];
+        analogBuffer[j + 1] = temp;
+      }
+    }
+  }
+  int medianADC = analogBuffer[SCOUNT / 2];
 
-  // Serial.printf("voltage: %.2f V | calibratedEc: %.2f µS/cm | compensatedEc: %.2f \n", voltage, calibratedEC, compensatedEC);
+  // Convert ADC value to voltage
+  float voltage = calculateVoltage(medianADC);
 
-  return compensatedEC; // in µS/cm
+  // Apply temperature compensation
+  float compensationCoefficient = 1.0 + 0.02 * (waterTempCelsius - 25.0);
+  float compensationVoltage = voltage / compensationCoefficient;
+
+  // Calculate TDS (ppm)
+  float tdsValue = (133.42 * compensationVoltage * compensationVoltage * compensationVoltage
+                    - 255.86 * compensationVoltage * compensationVoltage
+                    + 857.39 * compensationVoltage) * 0.5 * kValue;
+
+
+  // Calculate EC (µS/cm)
+  float ecValue = tdsValue * 2.0;
+
+  if (ecValue < 0.0) {
+    ecValue = 0.0;
+  }
+
+  return ecValue;
 }
 
 void logData(float turbidity, float calibratedEC, float waterTemp) {
@@ -192,23 +235,23 @@ void logData(float turbidity, float calibratedEC, float waterTemp) {
   if (!file) return;
 
   // Log
-  char buf[160];
+  char buf[200];
   snprintf(buf, sizeof(buf),
-    "%lu,%04d-%02d-%02d %02d:%02d:%02d,%.6f,%.6f,%.1f,%.2f,%.2f,%.2f\n",
-    (unsigned long)getGPSEpoch(),
-    TEST_MODE ? 2025 : gps.date.year(),
-    TEST_MODE ? 4    : gps.date.month(),
-    TEST_MODE ? 25   : gps.date.day(),
-    TEST_MODE ? 17   : gps.time.hour(),
-    TEST_MODE ? 5    : gps.time.minute(),
-    TEST_MODE ? 30   : gps.time.second(),
-    TEST_MODE ? 52.379189 : gps.location.lat(),
-    TEST_MODE ? 4.899431  : gps.location.lng(),
-    TEST_MODE ? 1.0       : gps.hdop.hdop(),
-    turbidity,
-    calibratedEC,
-    waterTemp
-  );
+           "%lu,%04d-%02d-%02d %02d:%02d:%02d,%.6f,%.6f,%.1f,%.2f,%.2f,%.2f\n",
+           (unsigned long)getGPSEpoch(),
+           testMode ? 2025 : gps.date.year(),
+           testMode ? 4 : gps.date.month(),
+           testMode ? 25 : gps.date.day(),
+           testMode ? 17 : gps.time.hour(),
+           testMode ? 5 : gps.time.minute(),
+           testMode ? 30 : gps.time.second(),
+           testMode ? 52.379189 : gps.location.lat(),
+           testMode ? 4.899431 : gps.location.lng(),
+           testMode ? 1.0 : gps.hdop.hdop(),
+           turbidity,
+           calibratedEC,
+           waterTemp
+           );
 
   // Write to serial monitor and file
   Serial.print(buf);
@@ -292,7 +335,7 @@ void uploadData() {
     char timestamp[24];
     float lat, lon, hdop, turbidity, ec, waterTemp;
     sscanf(line.c_str(), "%*lu,%23[^,],%f,%f,%f,%f,%f,%f",
-      timestamp, &lat, &lon, &hdop, &turbidity, &ec, &waterTemp);
+           timestamp, &lat, &lon, &hdop, &turbidity, &ec, &waterTemp);
 
     // Upload to Supabase
     if (uploadToSupabase(currentEpoch, timestamp, lat, lon, hdop, turbidity, ec, waterTemp)) {
@@ -353,7 +396,78 @@ bool uploadToSupabase(unsigned long epoch, const char* timestamp, float lat, flo
   }
 }
 
+// Serial command UPLOAD-FILE to upload file to transfer.sh
+void uploadFile() {
+  Serial.println("Connecting to WiFi...");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  int retries = 0;
+  while (WiFi.status() != WL_CONNECTED && retries < 10) {
+    delay(500);
+    Serial.print(".");
+    retries++;
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\nWiFi connection failed.");
+    return;
+  }
+  Serial.println("\nWiFi connected.");
+
+  File file = SPIFFS.open("/log.csv", FILE_READ);
+  if (!file) {
+    Serial.println("No log file found.");
+    return;
+  }
+
+  // Create filename with timestamp
+  time_t now = time(nullptr);
+  struct tm* timeinfo = localtime(&now);
+
+  char timestamp[20];
+  strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", timeinfo);
+
+  String filename = String(SEASENSE_DEVICE_GUID) + "_" + String(timestamp) + ".csv";
+
+  // Prepare for upload
+  HTTPClient http;
+  String bucket = "seasense-raw-file";
+  String url = String(SUPABASE_URL) + "/storage/v1/object/" + bucket + "/" + filename;
+  
+  Serial.println("Uploading to Supabase Storage...");
+  Serial.println(url);
+
+  // Upload file
+  http.begin(url);
+  http.setTimeout(600000);
+  http.addHeader("Authorization", "Bearer " + String(SUPABASE_API_KEY));
+  http.addHeader("Content-Type", "text/csv");
+
+  int httpResponseCode = http.sendRequest("POST", &file, file.size());
+
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+    Serial.println("Upload successful!");
+    Serial.println(response);
+    String publicURL = String(SUPABASE_URL) + "/storage/v1/object/public/" + bucket + "/" + filename;
+    Serial.println("Download URL:");
+    Serial.println(publicURL);
+  } else {
+    Serial.printf("HTTP error: %d\n", httpResponseCode);
+  }
+
+  // Clean up
+  http.end();
+  file.close();
+
+  WiFi.disconnect(true);
+}
+
 void waitForGPSFix() {
+  if (testMode) {
+    Serial.println("TESTMODE active, skipping GPS fix wait.");
+    return;
+  }
+
   // If there is already a valid fix, exit immediately
   delay(800);  // Let GPS data start flowing
   while (gpsSerial.available()) {
@@ -375,11 +489,11 @@ void waitForGPSFix() {
     // Print GPS status once per second
     if (millis() - lastStatus > 1000) {
       Serial.printf("Satellites: %d | HDOP: %.1f | Fix: %s\n",
-        gps.satellites.value(), gps.hdop.hdop(), gps.location.isValid() ? "YES" : "NO");
+                    gps.satellites.value(), gps.hdop.hdop(), gps.location.isValid() ? "YES" : "NO");
       lastStatus = millis();
     }
 
-    delay(800);        // short pause before next check
+    delay(800);  // short pause before next check
   }
 
   Serial.println("GPS fix acquired.");
@@ -387,7 +501,7 @@ void waitForGPSFix() {
 
 // Use GPS to create epoch time
 time_t getGPSEpoch() {
-  if (TEST_MODE) return 1714064700;  // Fixed value: 25 april 2024 17:05:00
+  if (testMode) return 1714064700;  // Fixed value: 25 April 2024 17:05:00
   tmElements_t tm;
   tm.Year = gps.date.year() - 1970;
   tm.Month = gps.date.month();

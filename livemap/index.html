@@ -85,17 +85,38 @@
 
     let markers = [];
 
+    // Load all data from Supabase in pages of 1000 records
     async function loadData() {
-      const response = await fetch('https://arncxalleyggoqzdvgnh.supabase.co/rest/v1/seasense-raw?select=*', {
-        headers: {
-          apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFybmN4YWxsZXlnZ29xemR2Z25oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU2NTkwNzYsImV4cCI6MjA2MTIzNTA3Nn0.CJ4Pry_agezSU8_zwP15Mi3ge3yF7DLZWb4RND12gXY'
-        }
-      });
-      const data = await response.json();
-      updateMap(data);
-      updateTimestamp();
-    }
+      let allData = [];
+      let start = 0;
+      const pageSize = 1000;
 
+      while (true) {
+        // Fetch one page of data
+        const response = await fetch(`https://arncxalleyggoqzdvgnh.supabase.co/rest/v1/seasense-raw?select=*`, {
+          headers: {
+            apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFybmN4YWxsZXlnZ29xemR2Z25oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU2NTkwNzYsImV4cCI6MjA2MTIzNTA3Nn0.CJ4Pry_agezSU8_zwP15Mi3ge3yF7DLZWb4RND12gXY',
+            Range: `${start}-${start + pageSize - 1}`,
+            Prefer: 'count=exact'
+          }
+        });
+
+        const chunk = await response.json();
+        allData = allData.concat(chunk);
+
+        // Stop if this was the last page (less than pageSize records)
+        if (chunk.length < pageSize) {
+          break;
+        }
+
+        // Otherwise, fetch next page
+        start += pageSize;
+      }
+
+      updateMap(allData);
+      updateTimestamp(allData.length);
+    }
+    
     function getColor(value, min, max) {
       const ratio = (value - min) / (max - min);
       const hue = (1 - ratio) * 240; // blue to red
@@ -113,9 +134,21 @@
       const max = Math.max(...values);
       legendRange.textContent = `${min.toFixed(2)} – ${max.toFixed(2)} ${unit}`;
 
+      let bounds = null; // Begin leeg
+
       data.forEach(point => {
+        if (!point.lat || !point.lon) return;
+
+        const latLng = [point.lat, point.lon];
+
+        if (!bounds) {
+          bounds = L.latLngBounds(latLng, latLng);
+        } else {
+          bounds.extend(latLng);
+        }
+
         const color = getColor(point[param], min, max);
-        const marker = L.circleMarker([point.lat, point.lon], {
+        const marker = L.circleMarker(latLng, {
           radius: 8,
           color: color,
           fillColor: color,
@@ -131,13 +164,17 @@
 
         markers.push(marker);
       });
+
+      if (bounds) {
+        map.fitBounds(bounds, { padding: [50, 50] });
+      }
     }
 
-    function updateTimestamp() {
+    function updateTimestamp(pointCount) {
       const now = new Date();
       const hh = String(now.getHours()).padStart(2, '0');
       const mm = String(now.getMinutes()).padStart(2, '0');
-      lastUpdated.textContent = `Last updated: ${hh}:${mm}`;
+      lastUpdated.innerHTML = `Last updated: ${hh}:${mm}<br>${pointCount} punten`;
     }
 
     paramSelect.addEventListener('change', () => loadData());
