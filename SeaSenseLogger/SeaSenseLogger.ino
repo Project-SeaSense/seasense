@@ -169,7 +169,7 @@ void setup() {
   unsigned long cycleDuration = setupEnd - setupStart;
   unsigned long sleepDuration = (LOG_INTERVAL > cycleDuration) ? (LOG_INTERVAL - cycleDuration) : 0;
 
-  Serial.printf("Cycle duration: %lu ms | Sleep for: %lu ms\n", cycleDuration, sleepDuration);
+  Serial.printf("NOTICE: Cycle duration: %lu ms | Sleep for: %lu ms\n", cycleDuration, sleepDuration);
 
   esp_sleep_enable_timer_wakeup(sleepDuration * 1000);  // in microseconds
   esp_deep_sleep_start();
@@ -526,17 +526,17 @@ void readAndLogSensors() {
 
   // Print GPS status if no fix
   if (!gps.location.isValid()) {
-    Serial.printf("GPS: No fix --> Satellites: %d | ", gps.satellites.value());
+    Serial.printf("WARN:GPS: No fix --> Satellites: %d | ", gps.satellites.value());
   }
 
   // Print raw voltages for debugging
-  Serial.printf("Voltages - Turbidity: %.4fV, TDS: %.4fV, EC: %.4fV \n", 
+  Serial.printf("INFO: Voltages - Turbidity: %.4fV, TDS: %.4fV, EC: %.4fV \n", 
                 turbidityVoltage, tdsVoltage, ecVoltage);
 
   // Log data
   logData(turbidity, tds, ec, waterTemp);
 
-  Serial.printf("GPS: location valid=%d, hdop valid=%d (%.2f), date valid=%d (%d), time valid=%d, sats=%d\n",
+  Serial.printf("INFO: GPS: location valid=%d, hdop valid=%d (%.2f), date valid=%d (%d), time valid=%d, sats=%d\n",
     gps.location.isValid(),
     gps.hdop.isValid(), gps.hdop.hdop(),
     gps.date.isValid(), gps.date.year(),
