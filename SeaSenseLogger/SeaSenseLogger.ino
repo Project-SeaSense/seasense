@@ -45,7 +45,7 @@ int getDeviceVersionFromServer();
 // Configure your device and sensors in device_config.h
 #include "device_config.h"
 
-// Put your WiFi details and Supabase API key in a secrets.h file ignored by git
+// Put your WiFi details and Supabase API key in a secrets.h file ignored by Git
 // #define WIFI_SSID "yourssid"
 // #define WIFI_PASSWORD "yourpass"
 // #define SUPABASE_API_KEY "yourapikey"
