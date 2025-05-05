@@ -1,3 +1,5 @@
 .DS_Store
 SeaSenseLogger/secrets.h
 SeaSenseLogger/device_config.h
+SeaSenseLogger/secrets.h
+SeaSenseLogger/device_config.h
