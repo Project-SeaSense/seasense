@@ -244,8 +244,9 @@ void logData(float turbidity, float tds, float ec, float waterTemp) {
     if (!file) return;
 
     char buf[200];
+    // CSV outputdevice_guid,device_version,epoch,timestamp,lat,lon,hdop,turbidity,tds,ec,water_temp,water_dissolved_oxygen,air_temperature,air_humidity,air_pressure,water_colour,ph,wind_apparent_direction,wind_apparent_speed,heading
     snprintf(buf, sizeof(buf),
-             "%lu,%04d-%02d-%02d %02d:%02d:%02d,%.6f,%.6f,%.1f,%.2f,%.2f,%.2f,%.2f\n",
+             "%lu,%04d-%02d-%02d %02d:%02d:%02d,%.6f,%.6f,%.1f,%.2f,%.2f,%.2f,%.2f,,,,,,,,,,\n",
              (unsigned long)getGPSEpoch(),
              gps.date.year(),
              gps.date.month(),
@@ -270,7 +271,7 @@ void logData(float turbidity, float tds, float ec, float waterTemp) {
     // Just print to serial without logging
     char buf[200];
     snprintf(buf, sizeof(buf),
-             "NOFIX,NOFIX,NOFIX,%.1f,%.2f,%.2f,%.2f,%.2f NO DATA LOGGED\n",
+             "NOFIX,NOFIX,NOFIX,%.1f,%.2f,%.2f,%.2f,%.2f,,,,,,,,,, NO DATA LOGGED\n",
              gps.hdop.hdop(),
              turbidity,
              tds,
@@ -380,7 +381,7 @@ void uploadData(bool uploadAll) {
   }
 
   // Example header (adjust columns as needed)
-  tempFile.println("device_guid,device_version,epoch,timestamp,lat,lon,hdop,turbidity,tds,ec,watertemp");
+  tempFile.println("device_guid,device_version,epoch,timestamp,lat,lon,hdop,turbidity,tds,ec,water_temp,water_dissolved_oxygen,air_temperature,air_humidity,air_pressure,water_colour,ph,wind_apparent_direction,wind_apparent_speed,heading");
 
   // Get last uploaded epoch
   time_t lastUploadEpoch = getLastUploadTime();
