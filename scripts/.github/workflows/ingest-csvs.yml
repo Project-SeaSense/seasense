@@ -1,0 +1,48 @@
+name: Ingest CSV Files
+
+on:
+  schedule:
+    # Runs every 5 minutes
+    - cron: '*/5 * * * *'
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Install dependencies
+        run: npm install @supabase/supabase-js csv-parse
+        
+      - name: Run ingest script
+        id: ingest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ingest-uploaded-csvs.js
+        
+      - name: Send notification on activity
+        if: steps.ingest.outputs.has_activity == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const message = `📊 CSV Processing Results:\n\n` +
+              `• Files processed: ${{ steps.ingest.outputs.files_processed }}\n` +
+              `• Records ingested: ${{ steps.ingest.outputs.total_ingested }}\n` +
+              `• Records failed: ${{ steps.ingest.outputs.total_failed }}`;
+            
+            // Create a new issue with the results
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `CSV Processing Results - ${new Date().toLocaleString()}`,
+              body: message
+            }); 

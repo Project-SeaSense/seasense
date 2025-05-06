@@ -13,7 +13,15 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 async function listCsvFiles() {
   const { data, error } = await supabase.storage.from(BUCKET).list('', { limit: 1000 });
   if (error) throw error;
-  return data.filter(f => f.name.endsWith('.csv') && !f.name.endsWith('.log.csv'));
+  // Only return CSV files that don't have a corresponding log file
+  const files = data.filter(f => f.name.endsWith('.csv') && !f.name.endsWith('.log.csv'));
+  const unprocessedFiles = [];
+  for (const file of files) {
+    if (!await fileExists(file.name)) {
+      unprocessedFiles.push(file);
+    }
+  }
+  return unprocessedFiles;
 }
 
 async function downloadFile(filename) {
@@ -58,7 +66,7 @@ async function insertRecords(rows, columns) {
 
 async function processFile(filename) {
   if (await fileExists(filename)) {
-    return;
+    return { processed: false };
   }
   console.log(`Processing ${filename}...`);
   const csvText = await downloadFile(filename);
@@ -100,12 +108,45 @@ async function processFile(filename) {
   }
   await uploadLogFile(filename, log);
   console.log(`Finished ${filename}: ${ingested} ingested, ${failed.length} failed.`);
+  
+  return {
+    processed: true,
+    filename,
+    total: dataRows.length,
+    ingested,
+    failed: failed.length
+  };
 }
 
 async function main() {
   const files = await listCsvFiles();
+  const results = [];
+  
   for (const file of files) {
-    await processFile(file.name);
+    const result = await processFile(file.name);
+    if (result.processed) {
+      results.push(result);
+    }
+  }
+  
+  // Output results in a format GitHub Actions can use
+  if (results.length > 0) {
+    console.log('::group::Processing Results');
+    console.log('Files processed:');
+    results.forEach(r => {
+      console.log(`- ${r.filename}: ${r.ingested} ingested, ${r.failed} failed`);
+    });
+    console.log('::endgroup::');
+    
+    // Set output for GitHub Actions
+    const totalIngested = results.reduce((sum, r) => sum + r.ingested, 0);
+    const totalFailed = results.reduce((sum, r) => sum + r.failed, 0);
+    console.log(`::set-output name=has_activity::true`);
+    console.log(`::set-output name=total_ingested::${totalIngested}`);
+    console.log(`::set-output name=total_failed::${totalFailed}`);
+    console.log(`::set-output name=files_processed::${results.length}`);
+  } else {
+    console.log('::set-output name=has_activity::false');
   }
 }
 
