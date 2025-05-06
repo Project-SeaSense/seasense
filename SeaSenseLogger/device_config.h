@@ -10,7 +10,7 @@
 //     "device_guid": "", // Generate one at https://www.guidgenerator.com/ and paste here
 //     "buoy_version": "v0.1", // Version of the Project SeaSense buoy that you are using. If you created a custom version, come up with a unique name and version.
 //     "owner_name": "Zoran Kovačević", // Your name
-//     "owner_email": "zoran@kovacevic.com", // Your email
+//     "owner_email": "zoran@kovacevic.nl", // Your email
 //     "owner_phone": "+31648104284", // Your international phone number
 //     "notes": "Deployed mostly in Amsterdam and Markermeer, Netherlands!", // Any notes, where do you typically sail? What boat? Anything you want to share.
 //     "sensors": [
@@ -18,7 +18,9 @@
 //         "name": "Arduino TDS sensor",
 //         "type": "TDS",
 //         "unit": "ppm",
+//         "depth": 0.1, // Depth in meters
 //         "data_column": "tds",
+//         "accuracy": "10", // Accuracy in %
 //         "note": "https://aliexpress.com/item/1005006291597020.html",
 //         "calibration": [
 //             {
@@ -39,7 +41,9 @@
 //         "name": "Turbidity sensor",
 //         "type": "Turbidity",
 //         "unit": "%",
+//         "depth": 0.1, // Depth in meters
 //         "data_column": "turbidity",
+//         "accuracy": "10", // Accuracy in %
 //         "note": "https://aliexpress.com/item/1005005911851361.html",
 //         "calibration": [
 //           {
@@ -60,7 +64,9 @@
 //         "name": "EC 0-44000µS/cm sensor",
 //         "type": "EC",
 //         "unit": "µS/cm",
+//         "depth": 0.1, // Depth in meters
 //         "data_column": "ec",
+//         "accuracy": "5", // Accuracy in %
 //         "note": "https://aliexpress.com/item/32965992320.html",
 //         "calibration": [
 //           {
@@ -81,7 +87,9 @@
 //         "name": "DS18B20 temperature sensor",
 //         "type": "Temperature",
 //         "unit": "°C",
+//         "depth": 0.1, // Depth in meters
 //         "data_column": "watertemp",
+//         "accuracy": "0.5", // Accuracy in °C
 //         "note": "https://aliexpress.com/item/1005001601986600.html",
 //         "calibration": [
 //           {
@@ -93,8 +101,10 @@
 //       {
 //         "name": "NEO-8M GPS",
 //         "type": "GPS",
-//         "unit": "",
-//         "data_column": "lat/lon/hdop",
+//         "unit": "degrees",
+//         "height": 0.1, // Height in meters
+//         "data_column": "lat,lon,hdop",
+//         "accuracy": "2.5", // Accuracy in meters
 //         "note": "https://aliexpress.com/item/1005008226016736.html"
 //       }
 //     ]
@@ -103,8 +113,8 @@
 // Your device configuration:
 const char deviceJson[] PROGMEM = R"rawliteral(
 {
-    "device_guid": "",
-    "buoy_version": "",
+    "device_guid": "f00c1844-42db-4309-847b-8fbe0b46bec1",
+    "buoy_version": "v0.1",
     "owner_name": "",
     "owner_email": "",
     "owner_phone": "",
@@ -114,7 +124,9 @@ const char deviceJson[] PROGMEM = R"rawliteral(
         "name": "Arduino TDS sensor",
         "type": "TDS",
         "unit": "ppm",
+        "depth": 0.1, // Depth in meters
         "data_column": "tds",
+        "accuracy": "10", // Accuracy in %
         "note": "https://aliexpress.com/item/1005006291597020.html",
         "calibration": [
             {
@@ -135,7 +147,9 @@ const char deviceJson[] PROGMEM = R"rawliteral(
         "name": "Turbidity sensor",
         "type": "Turbidity",
         "unit": "%",
+        "depth": 0.1, // Depth in meters
         "data_column": "turbidity",
+        "accuracy": "10", // Accuracy in %
         "note": "https://aliexpress.com/item/1005005911851361.html",
         "calibration": [
           {
@@ -156,7 +170,9 @@ const char deviceJson[] PROGMEM = R"rawliteral(
         "name": "EC 0-44000µS/cm sensor",
         "type": "EC",
         "unit": "µS/cm",
+        "depth": 0.1, // Depth in meters
         "data_column": "ec",
+        "accuracy": "5", // Accuracy in %
         "note": "https://aliexpress.com/item/32965992320.html",
         "calibration": [
           {
@@ -177,7 +193,9 @@ const char deviceJson[] PROGMEM = R"rawliteral(
         "name": "DS18B20 temperature sensor",
         "type": "Temperature",
         "unit": "°C",
+        "depth": 0.1, // Depth in meters
         "data_column": "watertemp",
+        "accuracy": "0.5", // Accuracy in °C
         "note": "https://aliexpress.com/item/1005001601986600.html",
         "calibration": [
           {
@@ -189,8 +207,10 @@ const char deviceJson[] PROGMEM = R"rawliteral(
       {
         "name": "NEO-8M GPS",
         "type": "GPS",
-        "unit": "",
-        "data_column": "lat/lon/hdop",
+        "unit": "degrees",
+        "height": 0.1, // Height in meters
+        "data_column": "lat,lon,hdop",
+        "accuracy": "2.5", // Accuracy in meters
         "note": "https://aliexpress.com/item/1005008226016736.html"
       }
     ]

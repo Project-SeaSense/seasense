@@ -8,6 +8,13 @@
 //    UPLOAD: Push all new data records from internal SPIFFS to SeaSense server
 //    UPLOAD-ALL: Push all data records from internal SPIFFS to SeaSense server
 //    CALIBRATE: Run 30s calibration measurement session
+//
+// TODO
+// - Add a button to trigger calibration
+// - Add a button to trigger data upload
+// - Add a button to trigger device restart
+// - Add support for SD card
+// - Add support for GSM card
 
 #include <WiFi.h>
 #include <OneWire.h>

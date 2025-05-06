@@ -1,3 +1,5 @@
-#define WIFI_SSID "" // Your WiFi SSID
-#define WIFI_PASSWORD "" // Your WiFi password
-#define SUPABASE_API_KEY "" // Your Supabase API key
+#define WIFI_SSID "doma"
+#define WIFI_PASSWORD "sodemieter!"
+// #define WIFI_SSID "pusu"
+// #define WIFI_PASSWORD "sodemieter!"
+#define SUPABASE_API_KEY "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFybmN4YWxsZXlnZ29xemR2Z25oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU2NTkwNzYsImV4cCI6MjA2MTIzNTA3Nn0.CJ4Pry_agezSU8_zwP15Mi3ge3yF7DLZWb4RND12gXY"
