@@ -1,25 +1,13 @@
 // SeaSense logger
 //
-// README https://github.com/zorankovacevic/seasense
+// https://github.com/Project-SeaSense/seasense
 //
 // Serial commands that you can type during the first 5s after boot:
 //    DUMP: Output all data records from internal SPIFFS
 //    CLEAR: Delete all data records from internal SPIFFS
-//    UPLOAD: Push all new data records to SeaSense server
-//    UPLOAD-ALL: Push all data records to SeaSense server
+//    UPLOAD: Push all new data records from internal SPIFFS to SeaSense server
+//    UPLOAD-ALL: Push all data records from internal SPIFFS to SeaSense server
 //    CALIBRATE: Run 30s calibration measurement session
-//
-// Tested with:
-// - ESP32 WROOM
-// - ADS1115 (AliExpress)
-// - Arduino TDS sensor (AliExpress)
-// - Turbidity sensor (AliExpress)
-// - EC 0-44000µS/cm sensor (AliExpress)
-// - DS18B20 temperature sensor (AliExpress)
-// - NEO-8M GPS
-//
-// TODO
-// - log battery level
 
 #include <WiFi.h>
 #include <OneWire.h>
