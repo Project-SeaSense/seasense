@@ -15,6 +15,7 @@
 // - Add a button to trigger device restart
 // - Add support for SD card
 // - Add support for GSM card
+// - Add support for water_dissolved_oxygen,air_temperature,air_humidity,air_pressure,water_colour,ph,wind_apparent_direction,wind_apparent_speed,heading
 
 #include <WiFi.h>
 #include <OneWire.h>
