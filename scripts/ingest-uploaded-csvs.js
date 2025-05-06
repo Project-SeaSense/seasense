@@ -43,26 +43,49 @@ async function insertRecord(row, columns) {
   return error;
 }
 
+async function insertRecords(rows, columns) {
+  // Map CSV rows to objects
+  const objects = rows.map(row => {
+    const obj = {};
+    columns.forEach((col, i) => obj[col] = row[i]);
+    return obj;
+  });
+  
+  // Insert batch into seasense_raw
+  const { error } = await supabase.from('seasense_raw').insert(objects);
+  return error;
+}
+
 async function processFile(filename) {
   if (await fileExists(filename)) {
-    console.log(`Skipping ${filename}, already processed.`);
     return;
   }
   console.log(`Processing ${filename}...`);
   const csvText = await downloadFile(filename);
-  console.log('Downloaded content (first 200 chars):', csvText.slice(0, 200));
   const records = csvParse.parse(csvText, { skip_empty_lines: true });
   const columns = records[0];
   const dataRows = records.slice(1);
 
   let ingested = 0;
   let failed = [];
-  for (const row of dataRows) {
-    const error = await insertRecord(row, columns);
+  
+  // Process in batches of 1000
+  const BATCH_SIZE = 1000;
+  for (let i = 0; i < dataRows.length; i += BATCH_SIZE) {
+    const batch = dataRows.slice(i, i + BATCH_SIZE);
+    const error = await insertRecords(batch, columns);
     if (error) {
-      failed.push([...row, error.message]);
+      // If batch insert fails, try individual inserts to identify problematic rows
+      for (const row of batch) {
+        const singleError = await insertRecord(row, columns);
+        if (singleError) {
+          failed.push([...row, singleError.message]);
+        } else {
+          ingested++;
+        }
+      }
     } else {
-      ingested++;
+      ingested += batch.length;
     }
   }
 
