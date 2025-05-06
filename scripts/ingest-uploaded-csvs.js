@@ -50,6 +50,7 @@ async function processFile(filename) {
   }
   console.log(`Processing ${filename}...`);
   const csvText = await downloadFile(filename);
+  console.log('Downloaded content (first 200 chars):', csvText.slice(0, 200));
   const records = csvParse.parse(csvText, { skip_empty_lines: true });
   const columns = records[0];
   const dataRows = records.slice(1);
