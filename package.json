@@ -1,0 +1,24 @@
+{
+  "name": "seasense",
+  "version": "1.0.0",
+  "description": "Project SeaSense - Sail with Purpose, Make Sense of the Sea",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Project-SeaSense/seasense.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Project-SeaSense/seasense/issues"
+  },
+  "homepage": "https://github.com/Project-SeaSense/seasense#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
+    "csv-parse": "^5.6.0"
+  }
+}
