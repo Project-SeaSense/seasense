@@ -245,9 +245,8 @@ void logData(float turbidity, float tds, float ec, float waterTemp) {
     if (!file) return;
 
     char buf[200];
-    // CSV outputdevice_guid,device_version,epoch,timestamp,lat,lon,hdop,turbidity,tds,ec,water_temp,water_dissolved_oxygen,air_temperature,air_humidity,air_pressure,water_colour,ph,wind_apparent_direction,wind_apparent_speed,heading
     snprintf(buf, sizeof(buf),
-             "%lu,%04d-%02d-%02d %02d:%02d:%02d,%.6f,%.6f,%.1f,%.2f,%.2f,%.2f,%.2f,,,,,,,,,,\n",
+             "%lu,%04d-%02d-%02d %02d:%02d:%02d,%.6f,%.6f,%.1f,%.2f,%.2f,%.2f,%.2f,,,,,,,,,\n",
              (unsigned long)getGPSEpoch(),
              gps.date.year(),
              gps.date.month(),
@@ -272,7 +271,7 @@ void logData(float turbidity, float tds, float ec, float waterTemp) {
     // Just print to serial without logging
     char buf[200];
     snprintf(buf, sizeof(buf),
-             "NOFIX,NOFIX,NOFIX,%.1f,%.2f,%.2f,%.2f,%.2f,,,,,,,,,, NO DATA LOGGED\n",
+             "WARN: NOFIX,NOFIX,NOFIX,%.1f,%.2f,%.2f,%.2f,%.2f,,,,,,,,, NO DATA LOGGED\n",
              gps.hdop.hdop(),
              turbidity,
              tds,
@@ -325,7 +324,7 @@ bool connectToWiFi() {
     delay(100);
     Serial.print(".");
   }
-  Serial.println("NOTICE: Time synced.");
+  Serial.println("\nNOTICE: Time synced.");
   return true;
 }
 
@@ -396,7 +395,7 @@ void uploadData(bool uploadAll) {
 
     // Always write the header row (starts with non-digit)
     if (!headerWritten) {
-      tempFile.println(deviceGuid + "," + String(deviceVersion) + "," + line);
+      tempFile.println(deviceGuid + "," + String(deviceVersion) + "," + line + ",,,,,,,,,");  // Add empty fields to first data row
       headerWritten = true;
       continue;
     }
@@ -408,7 +407,9 @@ void uploadData(bool uploadAll) {
     time_t epoch = (time_t)epochStr.toInt();
 
     if (uploadAll || epoch > lastUploadEpoch) {
-      tempFile.println(deviceGuid + "," + String(deviceVersion) + "," + line);
+      // Add empty fields for missing measurements
+      String lineWithEmptyFields = line + ",,,,,,,,,";  // 9 empty fields
+      tempFile.println(deviceGuid + "," + String(deviceVersion) + "," + lineWithEmptyFields);
       uploadedRows++;
       if (epoch > latestEpoch) latestEpoch = epoch;
     }
