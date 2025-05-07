@@ -1,0 +1,29 @@
+name: Send Waitlist Signup Email
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: 'New wait list signup email'
+        required: true
+
+jobs:
+  send_email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send email via Resend
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          TO_EMAIL: info@projectseasense.org
+          FROM_EMAIL: info@projectseasense.org
+          NEW_EMAIL: ${{ github.event.inputs.email }}
+        run: |
+          curl -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "from": "'"$FROM_EMAIL"'",
+              "to": "'"$TO_EMAIL"'",
+              "subject": "New Wait List Signup",
+              "text": "A new user signed up for the wait list: '"$NEW_EMAIL"'"
+            }'
