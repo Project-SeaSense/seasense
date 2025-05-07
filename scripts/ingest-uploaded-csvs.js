@@ -45,7 +45,9 @@ async function fileExists(filename) {
 async function insertRecord(row, columns) {
   // Map CSV row to object
   const obj = {};
-  columns.forEach((col, i) => obj[col] = row[i]);
+  columns.forEach((col, i) => {
+    obj[col] = row[i] === "" ? null : row[i];
+  });
   // Insert into seasense_raw
   const { error } = await supabase.from('seasense_raw').insert([obj]);
   return error;
@@ -55,7 +57,9 @@ async function insertRecords(rows, columns) {
   // Map CSV rows to objects
   const objects = rows.map(row => {
     const obj = {};
-    columns.forEach((col, i) => obj[col] = row[i]);
+    columns.forEach((col, i) => {
+      obj[col] = row[i] === "" ? null : row[i];
+    });
     return obj;
   });
   
