@@ -381,7 +381,7 @@ void uploadData(bool uploadAll) {
   }
 
   // Example header (adjust columns as needed)
-  tempFile.println("device_guid,device_version,epoch,timestamp,lat,lon,hdop,turbidity,tds,ec,water_temp,water_dissolved_oxygen,air_temperature,air_humidity,air_pressure,water_colour,ph,wind_apparent_direction,wind_apparent_speed,heading");
+  tempFile.println("device_guid,device_version,epoch,timestamp,lat,lon,hdop,turbidity,tds,ec,water_temperature,water_dissolved_oxygen,air_temperature,air_humidity,air_pressure,water_colour,ph,wind_apparent_direction,wind_apparent_speed,heading");
 
   // Get last uploaded epoch
   time_t lastUploadEpoch = getLastUploadTime();
