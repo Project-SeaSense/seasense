@@ -541,7 +541,7 @@ void readAndLogSensors() {
     airTemp = bme.readTemperature();
     airHumidity = bme.readHumidity();
     airPressure = bme.readPressure() / 100.0F; // hPa
-    Serial.printf("INFO: BME280: Air Temp: %.2f °C, Humidity: %.2f %%, Pressure: %.2f hPa\n", airTemp, airHumidity, airPressure);
+    Serial.printf("NOTICE: BME280: Air Temp: %.2f °C, Humidity: %.2f %%, Pressure: %.2f hPa\n", airTemp, airHumidity, airPressure);
   } else {
     Serial.println("WARN: BME280 not initialized, skipping air sensor readings.");
   }
