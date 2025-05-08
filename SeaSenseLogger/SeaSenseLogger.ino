@@ -28,6 +28,7 @@
 #include <HTTPClient.h>
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>
+#include <Adafruit_BME280.h>
 #include <ArduinoJson.h>
 
 // Forward declarations
@@ -58,7 +59,10 @@ int getDeviceVersionFromServer();
 #define LED_PIN 2             // Onboard LED
 #define I2C_SDA_PIN 21        // I2C SDA
 #define I2C_SCL_PIN 22        // I2C SCL
+#define I2C_SDA_PIN_2 19      // I2C SDA 2 (BME280)
+#define I2C_SCL_PIN_2 18      // I2C SCL 2 (BME280)
 #define ADS_I2C_ADDRESS 0x48  // ADS1115 I2C address
+#define BME280_ADDRESS 0x76   // BME280 I2C address
 
 // ADS1115 analog input pins
 #define ADS_EC_PIN 0         // A0
@@ -90,6 +94,9 @@ TinyGPSPlus gps;
 Adafruit_ADS1115 ads;
 OneWire oneWire(WATER_TEMP_PIN);
 DallasTemperature waterTemperatureSensor(&oneWire);
+TwoWire I2C_2 = TwoWire(1);
+Adafruit_BME280 bme;
+bool bmeInitialized = false;
 
 // Do it
 void setup() {
@@ -128,6 +135,16 @@ void setup() {
   else {
     Serial.println("NOTICE: ADS1115 initialized");
     ads.setGain(GAIN_TWOTHIRDS);
+  }
+
+  // Initialize second I2C bus and BME280
+  I2C_2.begin(I2C_SDA_PIN_2, I2C_SCL_PIN_2);
+  delay(100);  // Give sensor time to start
+  if (bme.begin(BME280_ADDRESS, &I2C_2)) {
+    Serial.println("INFO: BME280 initialized on second I2C bus at 0x76");
+    bmeInitialized = true;
+  } else {
+    Serial.println("ERROR: BME280 not found at 0x76 on second I2C bus.");
   }
 
   // Start timing right after wake
@@ -222,7 +239,7 @@ float calculateEc(float voltage, float waterTempCelsius) {
   return ec;
 }
 
-void logData(float turbidity, float tds, float ec, float waterTemp) {
+void logData(float turbidity, float tds, float ec, float waterTemp, float airTemp, float airHumidity, float airPressure) {
   String filename = "/log.csv";
 
   bool writeHeader = false;
@@ -244,9 +261,9 @@ void logData(float turbidity, float tds, float ec, float waterTemp) {
     File file = SPIFFS.open(filename, FILE_APPEND);
     if (!file) return;
 
-    char buf[200];
+    char buf[256];
     snprintf(buf, sizeof(buf),
-             "%lu,%04d-%02d-%02d %02d:%02d:%02d,%.6f,%.6f,%.1f,%.2f,%.2f,%.2f,%.2f,,,,,,,,,\n",
+             "%lu,%04d-%02d-%02d %02d:%02d:%02d,%.6f,%.6f,%.1f,%.2f,%.2f,%.2f,%.2f,,%.2f,%.2f,%.2f,,,,,,\n",
              (unsigned long)getGPSEpoch(),
              gps.date.year(),
              gps.date.month(),
@@ -260,7 +277,10 @@ void logData(float turbidity, float tds, float ec, float waterTemp) {
              turbidity,
              tds,
              ec,
-             waterTemp
+             waterTemp,
+             airTemp,
+             airHumidity,
+             airPressure
              );
 
     // Write to serial monitor and file
@@ -269,14 +289,17 @@ void logData(float turbidity, float tds, float ec, float waterTemp) {
     file.close();
   } else {
     // Just print to serial without logging
-    char buf[200];
+    char buf[256];
     snprintf(buf, sizeof(buf),
-             "WARN: NOFIX,NOFIX,NOFIX,%.1f,%.2f,%.2f,%.2f,%.2f,,,,,,,,, NO DATA LOGGED\n",
+             "WARN: NOFIX,NOFIX,NOFIX,%.1f,%.2f,%.2f,%.2f,%.2f,,%.2f,%.2f,%.2f,,,,,,, NO DATA LOGGED\n",
              gps.hdop.hdop(),
              turbidity,
              tds,
              ec,
-             waterTemp
+             waterTemp,
+             airTemp,
+             airHumidity,
+             airPressure
              );
     Serial.print(buf);
   }
@@ -512,6 +535,17 @@ void readAndLogSensors() {
   float ecVoltage = ads.computeVolts(ads.readADC_SingleEnded(ADS_EC_PIN));
   float ec = calculateEc(ecVoltage, waterTemp);
 
+  // Read air temperature, humidity and pressure
+  float airTemp = NAN, airHumidity = NAN, airPressure = NAN;
+  if (bmeInitialized) {
+    airTemp = bme.readTemperature();
+    airHumidity = bme.readHumidity();
+    airPressure = bme.readPressure() / 100.0F; // hPa
+    Serial.printf("INFO: BME280: Air Temp: %.2f °C, Humidity: %.2f %%, Pressure: %.2f hPa\n", airTemp, airHumidity, airPressure);
+  } else {
+    Serial.println("WARN: BME280 not initialized, skipping air sensor readings.");
+  }
+
   // Check for bad readings
   if (isnan(turbidity) || isnan(tds) || isnan(ec) || isnan(waterTemp)) {
     Serial.println("Bad reading detected");
@@ -532,7 +566,7 @@ void readAndLogSensors() {
                 turbidityVoltage, tdsVoltage, ecVoltage);
 
   // Log data
-  logData(turbidity, tds, ec, waterTemp);
+  logData(turbidity, tds, ec, waterTemp, airTemp, airHumidity, airPressure);
 
   Serial.printf("INFO: GPS: location valid=%d, hdop valid=%d (%.2f), date valid=%d (%d), time valid=%d, sats=%d\n",
     gps.location.isValid(),
