@@ -42,28 +42,44 @@ async function fileExists(filename) {
   return data.some(f => f.name === logName);
 }
 
+// Helper function to convert values based on column type
+function convertValue(col, value) {
+  if (value === "") return null;
+  
+  switch(col) {
+    case 'device_guid':
+    case 'water_colour':
+      return value; // text type
+    case 'device_version':
+      return parseInt(value, 10); // integer
+    case 'epoch':
+      return parseInt(value, 10); // bigint
+    case 'timestamp':
+      return value; // timestamptz
+    default:
+      // All other fields are double precision
+      return parseFloat(value);
+  }
+}
+
 async function insertRecord(row, columns) {
-  // Map CSV row to object
   const obj = {};
   columns.forEach((col, i) => {
-    obj[col] = row[i] === "" ? null : row[i];
+    obj[col] = convertValue(col, row[i]);
   });
-  // Insert into seasense_raw
   const { error } = await supabase.from('seasense_raw').insert([obj]);
   return error;
 }
 
 async function insertRecords(rows, columns) {
-  // Map CSV rows to objects
   const objects = rows.map(row => {
     const obj = {};
     columns.forEach((col, i) => {
-      obj[col] = row[i] === "" ? null : row[i];
+      obj[col] = convertValue(col, row[i]);
     });
     return obj;
   });
   
-  // Insert batch into seasense_raw
   const { error } = await supabase.from('seasense_raw').insert(objects);
   return error;
 }
@@ -74,9 +90,22 @@ async function processFile(filename) {
   }
   console.log(`Processing ${filename}...`);
   const csvText = await downloadFile(filename);
-  const records = csvParse.parse(csvText, { skip_empty_lines: true });
-  const columns = records[0];
-  const dataRows = records.slice(1);
+  
+  // Parse CSV with relaxed column count and proper options
+  const records = csvParse.parse(csvText, { 
+    skip_empty_lines: true,
+    relax_column_count: true,
+    trim: true
+  });
+  
+  // Get the header row and trim any empty columns
+  const columns = records[0].filter(col => col !== '');
+  
+  // Process data rows, trimming extra empty columns
+  const dataRows = records.slice(1).map(row => {
+    // Trim the row to match the number of non-empty columns in the header
+    return row.slice(0, columns.length);
+  });
 
   let ingested = 0;
   let failed = [];
