@@ -72,14 +72,14 @@ int getDeviceVersionFromServer();
 // Calibration values (will be loaded from device.json)
 float refVoltageTurbidityClear;
 float refVoltageTurbidityCloudy;
-float refVoltageEcDemineralisedWater;
-float refEcDemineralisedWater;
-float refVoltageEc1413;
-float refEc1413;
-float refVoltageTdsDemineralisedWater;
-float refTdsDemineralisedWater;
-float refVoltageTds1413;
-float refTds1413;
+float refVoltageEcLow;
+float refEcLow;
+float refVoltageEcHigh;
+float refEcHigh;
+float refVoltageTdsLow;
+float refTdsLow;
+float refVoltageTdsHigh;
+float refTdsHigh;
 
 // Data logging interval in ms
 const unsigned long LOG_INTERVAL = 5000;
@@ -134,14 +134,14 @@ void setup() {
   }
   else {
     Serial.println("NOTICE: ADS1115 initialized");
-    ads.setGain(GAIN_TWOTHIRDS);
+    ads.setGain(GAIN_ONE);
   }
 
   // Initialize second I2C bus and BME280
   I2C_2.begin(I2C_SDA_PIN_2, I2C_SCL_PIN_2);
   delay(100);  // Give sensor time to start
   if (bme.begin(BME280_ADDRESS, &I2C_2)) {
-    Serial.println("INFO: BME280 initialized on second I2C bus at 0x76");
+    Serial.println("NOTICE: BME280 initialized on second I2C bus at 0x76");
     bmeInitialized = true;
   } else {
     Serial.println("ERROR: BME280 not found at 0x76 on second I2C bus.");
@@ -153,7 +153,7 @@ void setup() {
   // Allow for serial commands after poweron or manual reset
   if (esp_reset_reason() == ESP_RST_POWERON || esp_reset_reason() == ESP_RST_SW) {
     startMillis = millis();
-    Serial.println(">>>>> Type DUMP, CLEAR, UPLOAD, UPLOAD-ALL or CALIBRATE within 5 seconds <<<<<");
+    Serial.println(">>>>> Type DUMP, CLEAR, UPLOAD, UPLOAD-ALL, or CALIBRATE within 5 seconds <<<<<");
     while (millis() - startMillis < serialCommandWindow) {
       if (Serial.available()) {
         String cmd = Serial.readStringUntil('\n');
@@ -215,15 +215,15 @@ float calculateTds(float voltage, float waterTempCelsius) {
   float compensationVoltage = temperatureCompensation(voltage, waterTempCelsius);
   
   // Linear interpolation between calibration points
-  float tdsValue = refEcDemineralisedWater + ((compensationVoltage - refVoltageTdsDemineralisedWater) / 
-               (refVoltageTds1413 - refVoltageTdsDemineralisedWater)) * (refTds1413 - refTdsDemineralisedWater);
+  float tdsValue = refTdsLow + ((compensationVoltage - refVoltageTdsLow) / 
+               (refVoltageTdsHigh - refVoltageTdsLow)) * (refTdsHigh - refTdsLow);
 
   if (tdsValue < 0.0) {
     tdsValue = 0.0;
   }
 
-  // Convert from µS/cm to ppm (TDS is typically about half of EC)
-  return tdsValue * 0.5;
+  // TDS is already in ppm, no conversion needed
+  return tdsValue;
 }
 
 // Calculate EC based off calibration and temperature compensation
@@ -231,8 +231,8 @@ float calculateEc(float voltage, float waterTempCelsius) {
   float compensationVoltage = temperatureCompensation(voltage, waterTempCelsius);
   
   // Linear interpolation between calibration points
-  float ec = refEcDemineralisedWater + ((compensationVoltage - refVoltageEcDemineralisedWater) / 
-           (refVoltageEc1413 - refVoltageEcDemineralisedWater)) * (refEc1413 - refEcDemineralisedWater);
+  float ec = refEcLow + ((compensationVoltage - refVoltageEcLow) / 
+           (refVoltageEcHigh - refVoltageEcLow)) * (refEcHigh - refEcLow);
   
   if (ec < 0) ec = 0;
 
@@ -541,7 +541,7 @@ void readAndLogSensors() {
     airTemp = bme.readTemperature();
     airHumidity = bme.readHumidity();
     airPressure = bme.readPressure() / 100.0F; // hPa
-    Serial.printf("NOTICE: BME280: Air Temp: %.2f °C, Humidity: %.2f %%, Pressure: %.2f hPa\n", airTemp, airHumidity, airPressure);
+    Serial.printf("INFO: BME280: Air Temp: %.2f °C, Humidity: %.2f %%, Pressure: %.2f hPa\n", airTemp, airHumidity, airPressure);
   } else {
     Serial.println("WARN: BME280 not initialized, skipping air sensor readings.");
   }
@@ -558,7 +558,7 @@ void readAndLogSensors() {
 
   // Print GPS status if no fix
   if (!gps.location.isValid()) {
-    Serial.printf("WARN:GPS: No fix --> Satellites: %d | ", gps.satellites.value());
+    Serial.printf("WARN:GPS: No fix --> Satellites: %d\n", gps.satellites.value());
   }
 
   // Print raw voltages for debugging
@@ -577,40 +577,72 @@ void readAndLogSensors() {
 }
 
 void calibrateSensors() {
-  Serial.println("\nStarting 30s calibration measurement session ... make sure to immerse the EC and TDS sensors in either demineralised water or 1413µS/cm water. Take the readings and update the refVoltageTdsDemineralisedWater/refVoltageEcDemineralisedWater or refVoltageTds1413/refVoltageEc1413 variables in the code.");
+  Serial.println("Perform two rounds of calibration for each conductivity sensor.");
+  Serial.println("- First with a low value (eg water with 500uS/cm @ 25 degrees C)");
+  Serial.println("- Then with a high value (eg water with 5000uS/cm @ 25 degrees C)");
+  Serial.println("Calibration will work at any temperature - the system will automatically compensate.");
+  Serial.println("Starting 60s conductivity sensor calibration measurement session ...");
+  
   unsigned long startTime = millis();
   int readings = 0;
   float sumTdsVoltage = 0;
   float sumEcVoltage = 0;
+  float sumWaterTemp = 0;
 
-  while (millis() - startTime < 30000) {  // 30 seconds
+  while (millis() - startTime < 60000) {  // 60 seconds
     // Read voltages
     float tdsVoltage = ads.computeVolts(ads.readADC_SingleEnded(ADS_TDS_PIN));
     float ecVoltage = ads.computeVolts(ads.readADC_SingleEnded(ADS_EC_PIN));
+    
+    // Read water temperature
+    waterTemperatureSensor.requestTemperatures();
+    float waterTemp = waterTemperatureSensor.getTempCByIndex(0);
 
-    // Add to sums
+    // Add to sums (store raw voltages and temperature)
     sumTdsVoltage += tdsVoltage;
     sumEcVoltage += ecVoltage;
+    sumWaterTemp += waterTemp;
     readings++;
 
     // Print progress
     if (readings % 10 == 0) {  // Every 10 readings
-      Serial.printf("Calibration progress: %d%%\n", (millis() - startTime) * 100 / 30000);
+      Serial.printf("Calibration progress: %d%% | Temp: %.1f°C | TDS: %.4fV | EC: %.4fV\n", 
+                   (millis() - startTime) * 100 / 60000, waterTemp, tdsVoltage, ecVoltage);
     }
 
     delay(100);  // 10 readings per second
   }
 
-  // Calculate and print averages
+  // Calculate averages
   float avgTdsVoltage = sumTdsVoltage / readings;
   float avgEcVoltage = sumEcVoltage / readings;
+  float avgWaterTemp = sumWaterTemp / readings;
+
+  // Apply temperature compensation once at the end
+  float tdsVoltage25C = temperatureCompensation(avgTdsVoltage, avgWaterTemp);
+  float ecVoltage25C = temperatureCompensation(avgEcVoltage, avgWaterTemp);
 
   Serial.println("\nCalibration measurements complete:");
   Serial.printf("Number of readings: %d\n", readings);
-  Serial.printf("Average TDS voltage: %.4f V\n", avgTdsVoltage);
-  Serial.printf("Average EC voltage: %.4f V\n", avgEcVoltage);
+  Serial.printf("Average water temperature: %.2f °C\n", avgWaterTemp);
+  Serial.printf("Average TDS voltage (raw): %.4f V\n", avgTdsVoltage);
+  Serial.printf("Average EC voltage (raw): %.4f V\n", avgEcVoltage);
+  Serial.printf("TDS voltage (25°C equivalent): %.4f V\n", tdsVoltage25C);
+  Serial.printf("EC voltage (25°C equivalent): %.4f V\n", ecVoltage25C);
+  
+  Serial.println();
+  Serial.println("Copy these 25°C equivalent voltages in your device_config.h and then build the firmware again:");
+  Serial.printf("TDS voltage: %.4f V (calibrated at %.1f°C)\n", tdsVoltage25C, avgWaterTemp);
+  Serial.printf("EC voltage: %.4f V (calibrated at %.1f°C)\n", ecVoltage25C, avgWaterTemp);
+  Serial.println("The system will automatically apply temperature compensation during measurements.");
   Serial.println();
 }
+
+
+
+
+
+
 
 int getDeviceVersionFromServer() {
   StaticJsonDocument<2048> doc;
@@ -676,7 +708,7 @@ void loadCalibrationFromJson() {
   StaticJsonDocument<4096> doc;
   DeserializationError error = deserializeJson(doc, deviceJson);
   if (error) {
-    Serial.println("ERROR: Failed to parse device.json for calibration");
+    Serial.println("ERROR: Failed to parse device_config.json for calibration");
     return;
   }
   JsonArray sensors = doc["sensors"];
@@ -686,36 +718,56 @@ void loadCalibrationFromJson() {
     if (type == "Turbidity") {
       for (JsonObject c : cal) {
         int value = c["value"];
-        float voltage = c["measured_voltage"];
-        if (value == 0) refVoltageTurbidityClear = voltage;
-        if (value == 100) refVoltageTurbidityCloudy = voltage;
+        float voltage = c["voltage"];
+        String meaning = c["meaning"];
+        
+        // Turbidity uses specific percentage values (0% and 100%)
+        if (meaning == "clear" || value == 0) {
+          refVoltageTurbidityClear = voltage;
+          Serial.printf("NOTICE: Turbidity 0%% calibration: %.4fV (%s)\n", voltage, meaning.c_str());
+        }
+        if (meaning == "cloudy" || value == 100) {
+          refVoltageTurbidityCloudy = voltage;
+          Serial.printf("NOTICE: Turbidity 100%% calibration: %.4fV (%s)\n", voltage, meaning.c_str());
+        }
       }
     } else if (type == "EC") {
       for (JsonObject c : cal) {
         int value = c["value"];
-        float voltage = c["measured_voltage"];
-        if (value == 25) {
-          refVoltageEcDemineralisedWater = voltage;
-          refEcDemineralisedWater = value;
+        float voltage = c["voltage"];
+        String meaning = c["meaning"];
+        
+        // EC uses low/high meaning
+        if (meaning == "low") {
+          refVoltageEcLow = voltage;
+          refEcLow = value;
+          Serial.printf("NOTICE: EC low calibration: %.4fV at %d µS/cm (%s)\n", voltage, value, meaning.c_str());
         }
-        if (value == 1413) {
-          refVoltageEc1413 = voltage;
-          refEc1413 = value;
+        if (meaning == "high") {
+          refVoltageEcHigh = voltage;
+          refEcHigh = value;
+          Serial.printf("NOTICE: EC high calibration: %.4fV at %d µS/cm (%s)\n", voltage, value, meaning.c_str());
         }
       }
     } else if (type == "TDS") {
       for (JsonObject c : cal) {
         int value = c["value"];
-        float voltage = c["measured_voltage"];
-        if (value == 25) {
-          refVoltageTdsDemineralisedWater = voltage;
-          refTdsDemineralisedWater = value;
+        float voltage = c["voltage"];
+        String meaning = c["meaning"];
+        
+        // TDS uses low/high meaning
+        if (meaning == "low") {
+          refVoltageTdsLow = voltage;
+          refTdsLow = value;
+          Serial.printf("NOTICE: TDS low calibration: %.4fV at %d ppm (%s)\n", voltage, value, meaning.c_str());
         }
-        if (value == 1413) {
-          refVoltageTds1413 = voltage;
-          refTds1413 = value;
+        if (meaning == "high") {
+          refVoltageTdsHigh = voltage;
+          refTdsHigh = value;
+          Serial.printf("NOTICE: TDS high calibration: %.4fV at %d ppm (%s)\n", voltage, value, meaning.c_str());
         }
       }
     }
   }
 }
+
