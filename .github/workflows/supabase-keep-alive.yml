@@ -12,4 +12,4 @@ jobs:
     steps:
       - name: Send ping to Supabase keep-alive endpoint
         run: |
-          curl -fsS https://projectseasense.org/livemap || exit 1
+          curl -fsS https://arncxalleyggoqzdvgnh.supabase.co/rest/v1/seasense_raw?select=* || exit 1
