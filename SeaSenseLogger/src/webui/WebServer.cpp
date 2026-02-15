@@ -212,6 +212,7 @@ void SeaSenseWebServer::handleDashboard() {
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>Project SeaSense</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
@@ -226,14 +227,14 @@ void SeaSenseWebServer::handleDashboard() {
         .title { font-size: 18px; font-weight: 600; white-space: nowrap; }
 
         /* Sidebar */
-        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 200; }
+        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 201; pointer-events: auto; }
         .sidebar.open { left: 0; }
         .sidebar-header { background: #0a4f66; color: white; padding: 15px; font-weight: 600; }
         .sidebar-nav { list-style: none; }
         .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; transition: background 0.2s; }
         .sidebar-nav a:hover { background: #e8f4f8; }
         .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
-        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 150; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; }
         .overlay.show { display: block; }
 
         /* Main content */
@@ -342,6 +343,7 @@ void SeaSenseWebServer::handleCalibrate() {
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>Calibration - Project SeaSense</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
@@ -356,14 +358,14 @@ void SeaSenseWebServer::handleCalibrate() {
         .title { font-size: 18px; font-weight: 600; white-space: nowrap; }
 
         /* Sidebar */
-        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 200; }
+        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 201; pointer-events: auto; }
         .sidebar.open { left: 0; }
         .sidebar-header { background: #0a4f66; color: white; padding: 15px; font-weight: 600; }
         .sidebar-nav { list-style: none; }
         .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; transition: background 0.2s; }
         .sidebar-nav a:hover { background: #e8f4f8; }
         .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
-        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 150; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; }
         .overlay.show { display: block; }
 
         /* Main content */
@@ -466,13 +468,13 @@ void SeaSenseWebServer::handleCalibrate() {
             <div class="cal-header">Conductivity Sensor <span class="status-current status-calibrated" id="ecStatus">Calibrated</span></div>
             <div class="cal-info">
                 <strong>EZO-EC Conductivity Sensor</strong><br>
-                Multi-point calibration recommended for best accuracy. Use standard calibration solutions (e.g. 1413 µS/cm, 12880 µS/cm).
+                Multi-point calibration recommended for best accuracy. Use standard calibration solutions (e.g. 1413 &micro;S/cm, 12880 &micro;S/cm).
             </div>
 
             <div class="cal-section">
                 <div class="cal-section-title">Current Reading</div>
                 <div style="font-size: 24px; font-weight: 700; color: #0a4f66; margin: 10px 0;">
-                    <span id="ecReading">--</span> µS/cm
+                    <span id="ecReading">--</span> &micro;S/cm
                 </div>
             </div>
 
@@ -489,7 +491,7 @@ void SeaSenseWebServer::handleCalibrate() {
             </div>
 
             <div class="form-group" id="ecValueGroup">
-                <label>Reference Conductivity (µS/cm)</label>
+                <label>Reference Conductivity (&micro;S/cm)</label>
                 <input type="number" id="ecValue" step="1" placeholder="e.g. 1413">
                 <small>Enter the value from your calibration solution bottle</small>
             </div>
@@ -630,6 +632,7 @@ void SeaSenseWebServer::handleSettings() {
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>Settings - SeaSense Logger</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
@@ -643,14 +646,14 @@ void SeaSenseWebServer::handleSettings() {
         .title { font-size: 18px; font-weight: 600; white-space: nowrap; }
 
         /* Sidebar */
-        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 200; }
+        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 201; pointer-events: auto; }
         .sidebar.open { left: 0; }
         .sidebar-header { background: #0a4f66; color: white; padding: 15px; font-weight: 600; }
         .sidebar-nav { list-style: none; }
         .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; transition: background 0.2s; }
         .sidebar-nav a:hover { background: #e8f4f8; }
         .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
-        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 150; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; }
         .overlay.show { display: block; }
 
         /* Main content */
@@ -1204,7 +1207,7 @@ void SeaSenseWebServer::handleApiStatus() {
 // ============================================================================
 
 void SeaSenseWebServer::sendJSON(const String& json, int statusCode) {
-    _server->send(statusCode, "application/json", json);
+    _server->send(statusCode, "application/json; charset=utf-8", json);
 }
 
 void SeaSenseWebServer::sendError(const String& message, int statusCode) {
