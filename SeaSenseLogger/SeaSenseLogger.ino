@@ -1,773 +1,421 @@
-// SeaSense logger
-//
-// https://github.com/Project-SeaSense/seasense
-//
-// Serial commands that you can type during the first 5s after boot:
-//    DUMP: Output all data records from internal SPIFFS
-//    CLEAR: Delete all data records from internal SPIFFS
-//    UPLOAD: Push all new data records from internal SPIFFS to SeaSense server
-//    UPLOAD-ALL: Push all data records from internal SPIFFS to SeaSense server
-//    CALIBRATE: Run 30s calibration measurement session
-//
-// TODO
-// - Add a button to trigger calibration
-// - Add a button to trigger data upload
-// - Add a button to trigger device restart
-// - Add support for SD card
-// - Add support for GSM card
-// - Add support for water_dissolved_oxygen,air_temperature,air_humidity,air_pressure,water_colour,ph,wind_apparent_direction,wind_apparent_speed,heading
+/**
+ * SeaSense Logger - Main Entry Point
+ *
+ * ESP32-based water quality logger for Atlas Scientific EZO sensors
+ * Logs temperature and conductivity with full sensor metadata traceability
+ *
+ * Hardware:
+ * - ESP32 DevKit
+ * - Atlas Scientific EZO-RTD (temperature)
+ * - Atlas Scientific EZO-EC (conductivity)
+ * - SD card module
+ *
+ * Features:
+ * - Dual storage (SPIFFS circular buffer + SD card permanent)
+ * - Web UI for configuration and calibration
+ * - Bandwidth-conscious API upload
+ * - NMEA2000 PGN output
+ * - Serial command interface
+ */
 
-#include <WiFi.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
-#include <TinyGPSPlus.h>
-#include <HardwareSerial.h>
-#include <SPIFFS.h>
-#include <time.h>
-#include <TimeLib.h>
-#include <HTTPClient.h>
 #include <Wire.h>
-#include <Adafruit_ADS1X15.h>
-#include <Adafruit_BME280.h>
 #include <ArduinoJson.h>
 
-// Forward declarations
-time_t getLastUploadTime();
-void saveLastUploadTime(time_t timestamp);
-void uploadData(bool uploadAll = false);
-int getDeviceVersion();
-String getDeviceGuid();
-int getDeviceVersionFromServer();
+// Configuration
+#include "config/hardware_config.h"
+#include "config/device_config.h"
+#include "config/secrets.h"
 
-// Configure your device and sensors in device_config.h
-#include "device_config.h"
+// Sensors
+#include "src/sensors/SensorInterface.h"
+#include "src/sensors/EZOSensor.h"
+#include "src/sensors/EZO_RTD.h"
+#include "src/sensors/EZO_EC.h"
+#include "src/sensors/GPSModule.h"
 
-// Put your WiFi details and Supabase API key in a secrets.h file ignored by Git
-// #define WIFI_SSID "yourssid"
-// #define WIFI_PASSWORD "yourpass"
-// #define SUPABASE_API_KEY "yourapikey"
-#include "secrets.h"
+// Storage
+#include "src/storage/StorageInterface.h"
+#include "src/storage/SPIFFSStorage.h"
+#include "src/storage/SDStorage.h"
+#include "src/storage/StorageManager.h"
 
-// SeaSense server config
-#define SUPABASE_URL "https://arncxalleyggoqzdvgnh.supabase.co"
-#define SUPABASE_TABLE "seasense_raw"
+// Web UI
+#include "src/webui/WebServer.h"
 
-// ESP32 pins
-#define WATER_TEMP_PIN 4      // DS18B20 data
-#define GPS_RX_PIN 16         // GPS TX -> ESP RX
-#define GPS_TX_PIN 17         // GPS RX -> ESP TX
-#define LED_PIN 2             // Onboard LED
-#define I2C_SDA_PIN 21        // I2C SDA
-#define I2C_SCL_PIN 22        // I2C SCL
-#define I2C_SDA_PIN_2 19      // I2C SDA 2 (BME280)
-#define I2C_SCL_PIN_2 18      // I2C SCL 2 (BME280)
-#define ADS_I2C_ADDRESS 0x48  // ADS1115 I2C address
-#define BME280_ADDRESS 0x76   // BME280 I2C address
+// Calibration
+#include "src/calibration/CalibrationManager.h"
 
-// ADS1115 analog input pins
-#define ADS_EC_PIN 0         // A0
-#define ADS_TURBIDITY_PIN 1  // A1
-#define ADS_TDS_PIN 2        // A2
+// API Upload
+#include "src/api/APIUploader.h"
 
-// Calibration values (will be loaded from device.json)
-float refVoltageTurbidityClear;
-float refVoltageTurbidityCloudy;
-float refVoltageEcLow;
-float refEcLow;
-float refVoltageEcHigh;
-float refEcHigh;
-float refVoltageTdsLow;
-float refTdsLow;
-float refVoltageTdsHigh;
-float refTdsHigh;
+// Serial Commands
+#include "src/commands/SerialCommands.h"
 
-// Data logging interval in ms
-const unsigned long LOG_INTERVAL = 5000;
+// Pump Control
+#include "src/pump/PumpController.h"
 
-// Timer
-const unsigned long serialCommandWindow = 5000;  // After hard boot, 5 seconds to enter serial command
-unsigned long startMillis;
+// ============================================================================
+// Global Variables
+// ============================================================================
 
-// Prepare
-HardwareSerial gpsSerial(1);
-TinyGPSPlus gps;
-Adafruit_ADS1115 ads;
-OneWire oneWire(WATER_TEMP_PIN);
-DallasTemperature waterTemperatureSensor(&oneWire);
-TwoWire I2C_2 = TwoWire(1);
-Adafruit_BME280 bme;
-bool bmeInitialized = false;
+// Sensors
+EZO_RTD tempSensor;
+EZO_EC ecSensor;
+GPSModule gps(GPS_RX_PIN, GPS_TX_PIN);
 
-// Do it
-void setup() {
-  Serial.begin(115200);
-  Serial.println("NOTICE: Starting measurement cycle ...");
-  Serial.printf("NOTICE: Reset reason: %d\n", esp_reset_reason());
+// Storage
+StorageManager storage(SPIFFS_CIRCULAR_BUFFER_SIZE, SD_CS_PIN);
 
-  // Initialise LED
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
+// Calibration
+CalibrationManager calibration(&tempSensor, &ecSensor);
 
-  // Initialise GPS
-  gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
-  Serial.println("NOTICE: GPS serial initialized");
-  
-  // Initialise water temperature sensor
-  waterTemperatureSensor.begin();
-  Serial.println("NOTICE: Temperature sensor initialized");
+// Pump controller
+PumpController pumpController(&tempSensor, &ecSensor);
 
-  // Initialise SPIFFS
-  if (!SPIFFS.begin(true)) {
-    Serial.println("ERROR: Could not mount SPIFFS!");
-  } else {
-    Serial.println("NOTICE: SPIFFS mounted");
-    loadCalibrationFromJson();
-  }
+// Web server
+SeaSenseWebServer webServer(&tempSensor, &ecSensor, &storage, &calibration, &pumpController);
 
-  // Initialise ADS1115
-  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-  if (!ads.begin(ADS_I2C_ADDRESS, &Wire)) {
-    Serial.println("ERROR: ADS1115 not found!");
-    while (1) {
-      delay(1000);  // Prevent watchdog reset
+// API Uploader
+APIUploader apiUploader(&storage);
+
+// Serial Commands
+SerialCommands serialCommands(&tempSensor, &ecSensor, &gps, &storage, &apiUploader, &webServer, &pumpController);
+
+// Device configuration
+StaticJsonDocument<4096> deviceConfigDoc;
+bool configLoaded = false;
+
+// ============================================================================
+// Device Configuration Functions
+// ============================================================================
+
+bool parseDeviceConfig() {
+    DeserializationError error = deserializeJson(deviceConfigDoc, DEVICE_CONFIG_JSON);
+
+    if (error) {
+        Serial.print("Failed to parse device config: ");
+        Serial.println(error.c_str());
+        return false;
     }
-  }
-  else {
-    Serial.println("NOTICE: ADS1115 initialized");
-    ads.setGain(GAIN_ONE);
-  }
 
-  // Initialize second I2C bus and BME280
-  I2C_2.begin(I2C_SDA_PIN_2, I2C_SCL_PIN_2);
-  delay(100);  // Give sensor time to start
-  if (bme.begin(BME280_ADDRESS, &I2C_2)) {
-    Serial.println("NOTICE: BME280 initialized on second I2C bus at 0x76");
-    bmeInitialized = true;
-  } else {
-    Serial.println("ERROR: BME280 not found at 0x76 on second I2C bus.");
-  }
+    configLoaded = true;
+    Serial.println("Device configuration loaded successfully");
+    return true;
+}
 
-  // Start timing right after wake
-  unsigned long setupStart = millis();
+String getDeviceGUID() {
+    if (!configLoaded) return "";
+    return deviceConfigDoc["device_guid"].as<String>();
+}
 
-  // Allow for serial commands after poweron or manual reset
-  if (esp_reset_reason() == ESP_RST_POWERON || esp_reset_reason() == ESP_RST_SW) {
-    startMillis = millis();
-    Serial.println(">>>>> Type DUMP, CLEAR, UPLOAD, UPLOAD-ALL, or CALIBRATE within 5 seconds <<<<<");
-    while (millis() - startMillis < serialCommandWindow) {
-      if (Serial.available()) {
-        String cmd = Serial.readStringUntil('\n');
-        cmd.trim();
-        if (cmd.equalsIgnoreCase("DUMP")) {
-          dumpData();
-        } else if (cmd.equalsIgnoreCase("CLEAR")) {
-          clearData();
-        } else if (cmd.equalsIgnoreCase("UPLOAD")) {
-          uploadData(false);  // Upload only new data
-        } else if (cmd.equalsIgnoreCase("UPLOAD-ALL")) {
-          uploadData(true);   // Upload all data
-        } else if (cmd.equalsIgnoreCase("CALIBRATE")) {
-          calibrateSensors();
+String getPartnerID() {
+    if (!configLoaded) return "";
+    return deviceConfigDoc["partner_id"].as<String>();
+}
+
+String getFirmwareVersion() {
+    if (!configLoaded) return "";
+    return deviceConfigDoc["firmware_version"].as<String>();
+}
+
+JsonObject getSensorMetadata(const String& sensorType) {
+    if (!configLoaded) {
+        return JsonObject();
+    }
+
+    JsonArray sensors = deviceConfigDoc["sensors"].as<JsonArray>();
+    for (JsonObject sensor : sensors) {
+        if (sensor["type"].as<String>() == sensorType) {
+            return sensor;
         }
-      }
-      delay(10);  // Prevent watchdog reset
     }
-  }
 
-  // Read and log sensors
-  readAndLogSensors();
-
-  // Save energy
-  unsigned long setupEnd = millis();
-  unsigned long cycleDuration = setupEnd - setupStart;
-  unsigned long sleepDuration = (LOG_INTERVAL > cycleDuration) ? (LOG_INTERVAL - cycleDuration) : 0;
-
-  Serial.printf("NOTICE: Cycle duration: %lu ms | Sleep for: %lu ms\n", cycleDuration, sleepDuration);
-
-  esp_sleep_enable_timer_wakeup(sleepDuration * 1000);  // in microseconds
-  esp_deep_sleep_start();
+    return JsonObject();
 }
 
-void blinkLED(int times, int duration) {
-  for (int i = 0; i < times; i++) {
+JsonArray getEnabledSensors() {
+    // TODO: Filter and return only enabled sensors
+    if (!configLoaded) {
+        return JsonArray();
+    }
+    return deviceConfigDoc["sensors"].as<JsonArray>();
+}
+
+String getLastCalibrationDate(const String& sensorType) {
+    JsonObject metadata = getSensorMetadata(sensorType);
+    if (metadata.isNull()) return "";
+
+    JsonArray calibrations = metadata["calibration"].as<JsonArray>();
+    if (calibrations.size() == 0) return "";
+
+    JsonObject lastCal = calibrations[calibrations.size() - 1];
+    return lastCal["date"].as<String>();
+}
+
+bool isSensorEnabled(const String& sensorType) {
+    JsonObject metadata = getSensorMetadata(sensorType);
+    if (metadata.isNull()) return false;
+
+    return metadata["enabled"].as<bool>();
+}
+
+// ============================================================================
+// Setup
+// ============================================================================
+
+void setup() {
+    Serial.begin(SERIAL_BAUD_RATE);
+    delay(1000);
+
+    Serial.println();
+    Serial.println("===========================================");
+    Serial.println("   SeaSense Logger - Starting Up");
+    Serial.println("===========================================");
+
+    // Initialize LED
+    pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH);
-    delay(duration);
-    digitalWrite(LED_PIN, LOW);
-    delay(duration);
-  }
-}
 
-// Calculate temperature compensation for voltage readings
-float temperatureCompensation(float voltage, float waterTempCelsius) {
-  float compensationCoefficient = 1.0 + 0.02 * (waterTempCelsius - 25.0);
-  return voltage / compensationCoefficient;
-}
-
-// Calculate turbidity percentage based off calibration
-float calculateTurbidity(float voltage) {
-  float percent = ((voltage - refVoltageTurbidityClear) / (refVoltageTurbidityCloudy - refVoltageTurbidityClear)) * 100.0;
-  percent = constrain(percent, 0.0, 100.0);
-  return percent;
-}
-
-// Calculate TDS based off calibration and temperature compensation
-float calculateTds(float voltage, float waterTempCelsius) {
-  float compensationVoltage = temperatureCompensation(voltage, waterTempCelsius);
-  
-  // Linear interpolation between calibration points
-  float tdsValue = refTdsLow + ((compensationVoltage - refVoltageTdsLow) / 
-               (refVoltageTdsHigh - refVoltageTdsLow)) * (refTdsHigh - refTdsLow);
-
-  if (tdsValue < 0.0) {
-    tdsValue = 0.0;
-  }
-
-  // TDS is already in ppm, no conversion needed
-  return tdsValue;
-}
-
-// Calculate EC based off calibration and temperature compensation
-float calculateEc(float voltage, float waterTempCelsius) {
-  float compensationVoltage = temperatureCompensation(voltage, waterTempCelsius);
-  
-  // Linear interpolation between calibration points
-  float ec = refEcLow + ((compensationVoltage - refVoltageEcLow) / 
-           (refVoltageEcHigh - refVoltageEcLow)) * (refEcHigh - refEcLow);
-  
-  if (ec < 0) ec = 0;
-
-  return ec;
-}
-
-void logData(float turbidity, float tds, float ec, float waterTemp, float airTemp, float airHumidity, float airPressure) {
-  String filename = "/log.csv";
-
-  bool writeHeader = false;
-  if (!SPIFFS.exists(filename)) {
-    writeHeader = true;
-  } else {
-    File test = SPIFFS.open(filename, FILE_READ);
-    if (test && test.size() == 0) writeHeader = true;
-    test.close();
-  }
-
-  // Only log to file if we have a good GPS fix
-  bool goodFix = gps.location.isValid() &&
-                 gps.hdop.isValid() && gps.hdop.hdop() > 0 && gps.hdop.hdop() < 5.0 &&
-                 gps.date.isValid() && gps.time.isValid() &&
-                 gps.date.year() > 2020;
-  
-  if (goodFix) {
-    File file = SPIFFS.open(filename, FILE_APPEND);
-    if (!file) return;
-
-    char buf[256];
-    snprintf(buf, sizeof(buf),
-             "%lu,%04d-%02d-%02d %02d:%02d:%02d,%.6f,%.6f,%.1f,%.2f,%.2f,%.2f,%.2f,,%.2f,%.2f,%.2f,,,,,,\n",
-             (unsigned long)getGPSEpoch(),
-             gps.date.year(),
-             gps.date.month(),
-             gps.date.day(),
-             gps.time.hour(),
-             gps.time.minute(),
-             gps.time.second(),
-             gps.location.lat(),
-             gps.location.lng(),
-             gps.hdop.hdop(),
-             turbidity,
-             tds,
-             ec,
-             waterTemp,
-             airTemp,
-             airHumidity,
-             airPressure
-             );
-
-    // Write to serial monitor and file
-    Serial.print(buf);
-    file.print(buf);
-    file.close();
-  } else {
-    // Just print to serial without logging
-    char buf[256];
-    snprintf(buf, sizeof(buf),
-             "WARN: NOFIX,NOFIX,NOFIX,%.1f,%.2f,%.2f,%.2f,%.2f,,%.2f,%.2f,%.2f,,,,,,, NO DATA LOGGED\n",
-             gps.hdop.hdop(),
-             turbidity,
-             tds,
-             ec,
-             waterTemp,
-             airTemp,
-             airHumidity,
-             airPressure
-             );
-    Serial.print(buf);
-  }
-}
-
-void dumpData() {
-  File file = SPIFFS.open("/log.csv");
-  if (!file) {
-    Serial.println("NOTICE: No data found.");
-    return;
-  }
-  Serial.println("============ BEGIN DATA DUMP ================");
-  Serial.println("epoch,timestamp,latitude,longitude,hdop,turbidity (%),TDS (ppm),EC (µS/cm),water temperature (°C)");
-  while (file.available()) {
-    Serial.write(file.read());
-  }
-  Serial.println("============ END DATA DUMP ================");
-  file.close();
-}
-
-void clearData() {
-  SPIFFS.remove("/log.csv");
-  SPIFFS.remove("/last_upload.txt");
-  Serial.println("NOTICE: All data in log file cleared.");
-}
-
-bool connectToWiFi() {
-  Serial.println("NOTICE: Connecting to WiFi access point " + String(WIFI_SSID) + " ...");
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  int retries = 0;
-  while (WiFi.status() != WL_CONNECTED && retries < 10) {
-    delay(500);
-    Serial.print(".");
-    retries++;
-  }
-
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("\nERROR: WiFi connection failed.");
-    return false;
-  }
-  Serial.println("\nNOTICE: WiFi connected.");
-
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-  while (time(nullptr) < 100000) {
-    delay(100);
-    Serial.print(".");
-  }
-  Serial.println("\nNOTICE: Time synced.");
-  return true;
-}
-
-// Get the timestamp of the last uploaded record
-time_t getLastUploadTime() {
-  if (!SPIFFS.exists("/last_upload.txt")) {
-    return 0;  // No previous upload
-  }
-  
-  File file = SPIFFS.open("/last_upload.txt", FILE_READ);
-  if (!file) return 0;
-  
-  String timestamp = file.readStringUntil('\n');
-  file.close();
-  return timestamp.toInt();
-}
-
-// Save the timestamp of the last uploaded record
-void saveLastUploadTime(time_t timestamp) {
-  File file = SPIFFS.open("/last_upload.txt", FILE_WRITE);
-  if (!file) return;
-  
-  file.println(String(timestamp));
-  file.close();
-}
-
-void uploadData(bool uploadAll) {
-  if (!connectToWiFi()) {
-    return;
-  }
-
-  // Always check/update device version before upload
-  int deviceVersion = getDeviceVersionFromServer();
-  if (deviceVersion < 0) {
-    Serial.println("ERROR: UPLOAD ABORTED: Device version could not be determined. See error above.");
-    WiFi.disconnect(true);
-    return;
-  }
-  String deviceGuid = getDeviceGuid();
-
-  File file = SPIFFS.open("/log.csv", FILE_READ);
-  if (!file) {
-    Serial.println("ERROR: No log file found.");
-    return;
-  }
-
-  // Prepare a temporary file for upload
-  String tempFilename = "/upload_temp.csv";
-  File tempFile = SPIFFS.open(tempFilename, FILE_WRITE);
-  if (!tempFile) {
-    Serial.println("Failed to create temp upload file.");
-    file.close();
-    return;
-  }
-
-  // Example header (adjust columns as needed)
-  tempFile.println("device_guid,device_version,epoch,timestamp,lat,lon,hdop,turbidity,tds,ec,water_temperature,water_dissolved_oxygen,air_temperature,air_humidity,air_pressure,water_colour,ph,wind_apparent_direction,wind_apparent_speed,heading");
-
-  // Get last uploaded epoch
-  time_t lastUploadEpoch = getLastUploadTime();
-  time_t latestEpoch = lastUploadEpoch;
-  bool headerWritten = false;
-  int uploadedRows = 0;
-
-  while (file.available()) {
-    String line = file.readStringUntil('\n');
-    if (line.length() == 0) continue;
-
-    // Always write the header row (starts with non-digit)
-    if (!headerWritten) {
-      tempFile.println(deviceGuid + "," + String(deviceVersion) + "," + line + ",,,,,,,,,");  // Add empty fields to first data row
-      headerWritten = true;
-      continue;
+    // Load device configuration
+    Serial.println("\n[CONFIG] Loading device configuration...");
+    if (!parseDeviceConfig()) {
+        Serial.println("[ERROR] Failed to load device configuration!");
+        while(1) {
+            digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+            delay(LED_BLINK_ERROR);
+        }
     }
 
-    // Parse epoch from the second field (after guid, device_version will be added)
-    int firstComma = line.indexOf(',');
-    if (firstComma < 0) continue;
-    String epochStr = line.substring(0, firstComma);
-    time_t epoch = (time_t)epochStr.toInt();
+    Serial.print("[CONFIG] Device GUID: ");
+    Serial.println(getDeviceGUID());
+    Serial.print("[CONFIG] Partner ID: ");
+    Serial.println(getPartnerID());
+    Serial.print("[CONFIG] Firmware: ");
+    Serial.println(getFirmwareVersion());
 
-    if (uploadAll || epoch > lastUploadEpoch) {
-      // Add empty fields for missing measurements
-      String lineWithEmptyFields = line + ",,,,,,,,,";  // 9 empty fields
-      tempFile.println(deviceGuid + "," + String(deviceVersion) + "," + lineWithEmptyFields);
-      uploadedRows++;
-      if (epoch > latestEpoch) latestEpoch = epoch;
-    }
-  }
+    // Initialize I2C
+    Serial.println("\n[I2C] Initializing I2C bus...");
+    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+    Wire.setClock(I2C_FREQUENCY);
+    Serial.println("[I2C] I2C bus initialized");
 
-  file.close();
-  tempFile.close();
+    // Initialize sensors
+    Serial.println("\n[SENSORS] Initializing sensors...");
 
-  // If no new data, don't upload
-  if (uploadedRows == 0) {
-    Serial.println("No new data to upload.");
-    SPIFFS.remove(tempFilename);
-    WiFi.disconnect(true);
-    return;
-  }
-
-  // Create filename with timestamp
-  time_t now = time(nullptr);
-  struct tm* timeinfo = localtime(&now);
-  char timestamp[20];
-  strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", timeinfo);
-  String filename = deviceGuid + "_v" + String(deviceVersion) + "_" + String(timestamp) + ".csv";
-
-  // Prepare for upload
-  HTTPClient http;
-  String bucket = "seasense-raw-file";
-  String url = String(SUPABASE_URL) + "/storage/v1/object/" + bucket + "/" + filename;
-  Serial.println("Uploading to Supabase Storage...");
-  Serial.println(url);
-
-  File uploadFile = SPIFFS.open(tempFilename, FILE_READ);
-  if (!uploadFile) {
-    Serial.println("Failed to open temp upload file.");
-    WiFi.disconnect(true);
-    return;
-  }
-
-  http.begin(url);
-  http.setTimeout(600000);
-  http.addHeader("Authorization", "Bearer " + String(SUPABASE_API_KEY));
-  http.addHeader("Content-Type", "text/csv");
-
-  int httpResponseCode = http.sendRequest("POST", &uploadFile, uploadFile.size());
-
-  if (httpResponseCode > 0) {
-    String response = http.getString();
-    Serial.println("Upload successful!");
-    Serial.println(response);
-    String publicURL = String(SUPABASE_URL) + "/storage/v1/object/public/" + bucket + "/" + filename;
-    Serial.println("Download URL:");
-    Serial.println(publicURL);
-    // Save the timestamp of the last uploaded record
-    saveLastUploadTime(latestEpoch);
-  } else {
-    Serial.printf("HTTP error: %d\n", httpResponseCode);
-  }
-
-  http.end();
-  uploadFile.close();
-  SPIFFS.remove(tempFilename);
-  WiFi.disconnect(true);
-}
-
-// Use GPS to create epoch time
-time_t getGPSEpoch() {
-  tmElements_t tm;
-  tm.Year = gps.date.year() - 1970;
-  tm.Month = gps.date.month();
-  tm.Day = gps.date.day();
-  tm.Hour = gps.time.hour();
-  tm.Minute = gps.time.minute();
-  tm.Second = gps.time.second();
-  return makeTime(tm);
-}
-
-// Read and log sensors
-void readAndLogSensors() {
-  // Process GPS data for 2 seconds
-  unsigned long start = millis();
-  while (millis() - start < 2000) {
-    while (gpsSerial.available()) {
-      gps.encode(gpsSerial.read());
-    }
-    delay(1); // Yield to allow serial buffer to fill
-  }
-
-  // Read water temperature
-  waterTemperatureSensor.requestTemperatures();
-  float waterTemp = waterTemperatureSensor.getTempCByIndex(0);
-
-  // Read turbidity
-  float turbidityVoltage = ads.computeVolts(ads.readADC_SingleEnded(ADS_TURBIDITY_PIN));
-  float turbidity = calculateTurbidity(turbidityVoltage);
-  
-  // Read TDS
-  float tdsVoltage = ads.computeVolts(ads.readADC_SingleEnded(ADS_TDS_PIN));
-  float tds = calculateTds(tdsVoltage, waterTemp);
-
-  // Read EC
-  float ecVoltage = ads.computeVolts(ads.readADC_SingleEnded(ADS_EC_PIN));
-  float ec = calculateEc(ecVoltage, waterTemp);
-
-  // Read air temperature, humidity and pressure
-  float airTemp = NAN, airHumidity = NAN, airPressure = NAN;
-  if (bmeInitialized) {
-    airTemp = bme.readTemperature();
-    airHumidity = bme.readHumidity();
-    airPressure = bme.readPressure() / 100.0F; // hPa
-    Serial.printf("INFO: BME280: Air Temp: %.2f °C, Humidity: %.2f %%, Pressure: %.2f hPa\n", airTemp, airHumidity, airPressure);
-  } else {
-    Serial.println("WARN: BME280 not initialized, skipping air sensor readings.");
-  }
-
-  // Check for bad readings
-  if (isnan(turbidity) || isnan(tds) || isnan(ec) || isnan(waterTemp)) {
-    Serial.println("Bad reading detected");
-    blinkLED(2, 200);  // Blink twice for errors
-  } else if (gps.location.isValid()) {
-    blinkLED(1, 200);  // Blink once for successful reading with GPS fix
-  } else {
-    blinkLED(3, 200);  // Blink three times for no GPS fix
-  }
-
-  // Print GPS status if no fix
-  if (!gps.location.isValid()) {
-    Serial.printf("WARN:GPS: No fix --> Satellites: %d\n", gps.satellites.value());
-  }
-
-  // Print raw voltages for debugging
-  Serial.printf("INFO: Voltages - Turbidity: %.4fV, TDS: %.4fV, EC: %.4fV \n", 
-                turbidityVoltage, tdsVoltage, ecVoltage);
-
-  // Log data
-  logData(turbidity, tds, ec, waterTemp, airTemp, airHumidity, airPressure);
-
-  Serial.printf("INFO: GPS: location valid=%d, hdop valid=%d (%.2f), date valid=%d (%d), time valid=%d, sats=%d\n",
-    gps.location.isValid(),
-    gps.hdop.isValid(), gps.hdop.hdop(),
-    gps.date.isValid(), gps.date.year(),
-    gps.time.isValid(),
-    gps.satellites.value());
-}
-
-void calibrateSensors() {
-  Serial.println("Perform two rounds of calibration for each conductivity sensor.");
-  Serial.println("- First with a low value (eg water with 500uS/cm @ 25 degrees C)");
-  Serial.println("- Then with a high value (eg water with 5000uS/cm @ 25 degrees C)");
-  Serial.println("Calibration will work at any temperature - the system will automatically compensate.");
-  Serial.println("Starting 60s conductivity sensor calibration measurement session ...");
-  
-  unsigned long startTime = millis();
-  int readings = 0;
-  float sumTdsVoltage = 0;
-  float sumEcVoltage = 0;
-  float sumWaterTemp = 0;
-
-  while (millis() - startTime < 60000) {  // 60 seconds
-    // Read voltages
-    float tdsVoltage = ads.computeVolts(ads.readADC_SingleEnded(ADS_TDS_PIN));
-    float ecVoltage = ads.computeVolts(ads.readADC_SingleEnded(ADS_EC_PIN));
-    
-    // Read water temperature
-    waterTemperatureSensor.requestTemperatures();
-    float waterTemp = waterTemperatureSensor.getTempCByIndex(0);
-
-    // Add to sums (store raw voltages and temperature)
-    sumTdsVoltage += tdsVoltage;
-    sumEcVoltage += ecVoltage;
-    sumWaterTemp += waterTemp;
-    readings++;
-
-    // Print progress
-    if (readings % 10 == 0) {  // Every 10 readings
-      Serial.printf("Calibration progress: %d%% | Temp: %.1f°C | TDS: %.4fV | EC: %.4fV\n", 
-                   (millis() - startTime) * 100 / 60000, waterTemp, tdsVoltage, ecVoltage);
-    }
-
-    delay(100);  // 10 readings per second
-  }
-
-  // Calculate averages
-  float avgTdsVoltage = sumTdsVoltage / readings;
-  float avgEcVoltage = sumEcVoltage / readings;
-  float avgWaterTemp = sumWaterTemp / readings;
-
-  // Apply temperature compensation once at the end
-  float tdsVoltage25C = temperatureCompensation(avgTdsVoltage, avgWaterTemp);
-  float ecVoltage25C = temperatureCompensation(avgEcVoltage, avgWaterTemp);
-
-  Serial.println("\nCalibration measurements complete:");
-  Serial.printf("Number of readings: %d\n", readings);
-  Serial.printf("Average water temperature: %.2f °C\n", avgWaterTemp);
-  Serial.printf("Average TDS voltage (raw): %.4f V\n", avgTdsVoltage);
-  Serial.printf("Average EC voltage (raw): %.4f V\n", avgEcVoltage);
-  Serial.printf("TDS voltage (25°C equivalent): %.4f V\n", tdsVoltage25C);
-  Serial.printf("EC voltage (25°C equivalent): %.4f V\n", ecVoltage25C);
-  
-  Serial.println();
-  Serial.println("Copy these 25°C equivalent voltages in your device_config.h and then build the firmware again:");
-  Serial.printf("TDS voltage: %.4f V (calibrated at %.1f°C)\n", tdsVoltage25C, avgWaterTemp);
-  Serial.printf("EC voltage: %.4f V (calibrated at %.1f°C)\n", ecVoltage25C, avgWaterTemp);
-  Serial.println("The system will automatically apply temperature compensation during measurements.");
-  Serial.println();
-}
-
-
-
-
-
-
-
-int getDeviceVersionFromServer() {
-  StaticJsonDocument<2048> doc;
-  DeserializationError error = deserializeJson(doc, deviceJson);
-  if (error) {
-    Serial.println("ERROR: Failed to parse deviceJson! Aborting upload. Please check and fix your device_config.h.");
-    return -1; // abort
-  }
-  doc.remove("version"); // Remove version if present
-  String output;
-  serializeJson(doc, output);
-
-  HTTPClient http;
-  http.begin("https://arncxalleyggoqzdvgnh.supabase.co/functions/v1/upsert_device_config");
-  http.addHeader("apikey", SUPABASE_API_KEY);
-  http.addHeader("Authorization", "Bearer " + String(SUPABASE_API_KEY));
-  http.addHeader("Content-Type", "application/json");
-
-  int httpResponseCode = http.POST(output);
-  if (httpResponseCode > 0) {
-    String response = http.getString();
-    StaticJsonDocument<256> respDoc;
-    DeserializationError error = deserializeJson(respDoc, response);
-    if (!error && respDoc.containsKey("newVersion") && respDoc.containsKey("oldVersion")) {
-      int oldVersion = respDoc["oldVersion"];
-      int newVersion = respDoc["newVersion"];
-      if (newVersion > oldVersion) {
-        Serial.print("NOTICE: Device configuration updated. New version uploaded to server: version ");
-        Serial.println(newVersion);
-      } else {
-        Serial.println("NOTICE: Device configuration unchanged. No new version uploaded.");
-      }
-      // Use newVersion for your data uploads
-      return newVersion;
+    if (tempSensor.begin()) {
+        Serial.println("[SENSORS] EZO-RTD Temperature sensor initialized");
+        Serial.print("[SENSORS] - Serial: ");
+        Serial.println(tempSensor.getSerialNumber());
+        Serial.print("[SENSORS] - Calibration: ");
+        Serial.println(tempSensor.getLastCalibrationDate());
     } else {
-      Serial.print("ERROR: Invalid response from Server (upsert_device_config). Aborting upload. Server response: ");
-      Serial.println(response);
-      Serial.println("ERROR: Please check your config or have the server cleaned up (remove duplicate/corrupt device configs).");
-      return -1; // abort
+        Serial.println("[ERROR] Failed to initialize EZO-RTD sensor");
     }
-  } else {
-    Serial.print("ERROR: HTTP POST failed, code: ");
-    Serial.println(httpResponseCode);
-    Serial.println("ERROR: Aborting upload. Please check your network or server status.");
-    return -1; // abort
-  }
-  http.end();
+
+    if (ecSensor.begin()) {
+        Serial.println("[SENSORS] EZO-EC Conductivity sensor initialized");
+        Serial.print("[SENSORS] - Serial: ");
+        Serial.println(ecSensor.getSerialNumber());
+        Serial.print("[SENSORS] - Calibration: ");
+        Serial.println(ecSensor.getLastCalibrationDate());
+    } else {
+        Serial.println("[ERROR] Failed to initialize EZO-EC sensor");
+    }
+
+    // Initialize GPS
+    Serial.println("\n[GPS] Initializing GPS module...");
+    if (gps.begin(GPS_BAUD_RATE)) {
+        Serial.println("[GPS] GPS module initialized");
+        Serial.println("[GPS] Waiting for GPS fix (this may take 30-60 seconds outdoors)...");
+    } else {
+        Serial.println("[ERROR] Failed to initialize GPS module");
+    }
+
+    // Initialize storage
+    if (!storage.begin()) {
+        Serial.println("[ERROR] No storage systems available!");
+        Serial.println("[WARNING] Data will not be saved!");
+    }
+
+    // Initialize WiFi and web server
+    if (!webServer.begin()) {
+        Serial.println("[ERROR] Failed to start web server!");
+    }
+
+    // Initialize API uploader
+    Serial.println("\n[API] Initializing API uploader...");
+    UploadConfig uploadConfig;
+    uploadConfig.apiUrl = API_URL;
+    uploadConfig.apiKey = API_KEY;
+    uploadConfig.partnerID = getPartnerID();
+    uploadConfig.deviceGUID = getDeviceGUID();
+    uploadConfig.enabled = true;
+    uploadConfig.intervalMs = 300000;  // 5 minutes
+    uploadConfig.batchSize = 100;
+    uploadConfig.maxRetries = 5;
+
+    if (apiUploader.begin(uploadConfig)) {
+        Serial.println("[API] API uploader initialized");
+    } else {
+        Serial.println("[WARNING] API uploader initialization failed");
+    }
+
+    // Initialize pump controller
+    Serial.println("\n[PUMP] Initializing pump controller...");
+    if (pumpController.begin()) {
+        Serial.println("[PUMP] Pump controller initialized");
+    } else {
+        Serial.println("[WARNING] Pump controller initialization failed");
+    }
+
+    // TODO: Initialize NMEA2000
+
+    Serial.println("\n===========================================");
+    Serial.println("   SeaSense Logger - Ready");
+    Serial.println("===========================================\n");
+
+    digitalWrite(LED_PIN, LOW);
 }
 
-String getDeviceGuid() {
-  StaticJsonDocument<2048> doc;
-  DeserializationError error = deserializeJson(doc, deviceJson);
-  if (error) return "";
-  String guid = doc["device_guid"].as<String>();
-  return guid;
-}
+// ============================================================================
+// Main Loop
+// ============================================================================
 
 void loop() {
-  // Empty loop
-}
+    unsigned long now = millis();
 
-void loadCalibrationFromJson() {
-  StaticJsonDocument<4096> doc;
-  DeserializationError error = deserializeJson(doc, deviceJson);
-  if (error) {
-    Serial.println("ERROR: Failed to parse device_config.json for calibration");
-    return;
-  }
-  JsonArray sensors = doc["sensors"];
-  for (JsonObject sensor : sensors) {
-    String type = sensor["type"];
-    JsonArray cal = sensor["calibration"];
-    if (type == "Turbidity") {
-      for (JsonObject c : cal) {
-        int value = c["value"];
-        float voltage = c["voltage"];
-        String meaning = c["meaning"];
-        
-        // Turbidity uses specific percentage values (0% and 100%)
-        if (meaning == "clear" || value == 0) {
-          refVoltageTurbidityClear = voltage;
-          Serial.printf("NOTICE: Turbidity 0%% calibration: %.4fV (%s)\n", voltage, meaning.c_str());
+    // Update GPS (must be called frequently to process NMEA sentences)
+    gps.update();
+
+    // Update pump controller state machine
+    pumpController.update();
+
+    // Read sensors when pump controller signals ready
+    if (pumpController.shouldReadSensors()) {
+        // Blink LED to show activity
+        digitalWrite(LED_PIN, HIGH);
+
+        Serial.println("\n--- Sensor Reading ---");
+        Serial.print("Time: ");
+        Serial.print(now);
+        Serial.println(" ms");
+
+        // Get GPS data
+        GPSData gpsData = gps.getData();
+        if (gps.hasValidFix()) {
+            Serial.print("GPS: ");
+            Serial.print(gpsData.latitude, 6);
+            Serial.print("° N, ");
+            Serial.print(gpsData.longitude, 6);
+            Serial.print("° E");
+            Serial.print(" (");
+            Serial.print(gpsData.satellites);
+            Serial.print(" sats, HDOP: ");
+            Serial.print(gpsData.hdop, 1);
+            Serial.println(")");
+            Serial.print("GPS Time: ");
+            Serial.println(gps.getTimeUTC());
+        } else {
+            Serial.print("GPS: ");
+            Serial.println(gps.getStatusString());
         }
-        if (meaning == "cloudy" || value == 100) {
-          refVoltageTurbidityCloudy = voltage;
-          Serial.printf("NOTICE: Turbidity 100%% calibration: %.4fV (%s)\n", voltage, meaning.c_str());
+
+        // Read temperature
+        if (tempSensor.isEnabled() && tempSensor.read()) {
+            SensorData tempData = tempSensor.getData();
+
+            Serial.print("Temperature: ");
+            Serial.print(tempData.value, 2);
+            Serial.print(" ");
+            Serial.print(tempData.unit);
+            Serial.print(" [");
+            Serial.print(tempData.quality == SensorQuality::GOOD ? "GOOD" :
+                        tempData.quality == SensorQuality::FAIR ? "FAIR" :
+                        tempData.quality == SensorQuality::POOR ? "POOR" :
+                        tempData.quality == SensorQuality::NOT_CALIBRATED ? "NOT_CAL" : "ERROR");
+            Serial.println("]");
+
+            // Set temperature compensation for EC sensor
+            ecSensor.setTemperatureCompensation(tempData.value);
+
+            // Create DataRecord with GPS data
+            DataRecord record = sensorDataToRecord(tempData, gps.getTimeUTC());
+            if (gps.hasValidFix()) {
+                record.latitude = gpsData.latitude;
+                record.longitude = gpsData.longitude;
+                record.altitude = gpsData.altitude;
+                record.gps_satellites = gpsData.satellites;
+                record.gps_hdop = gpsData.hdop;
+            }
+
+            // Log to storage
+            if (!storage.writeRecord(record)) {
+                Serial.println("[STORAGE] Failed to log temperature");
+            }
+        } else {
+            Serial.println("Temperature: READ FAILED");
         }
-      }
-    } else if (type == "EC") {
-      for (JsonObject c : cal) {
-        int value = c["value"];
-        float voltage = c["voltage"];
-        String meaning = c["meaning"];
-        
-        // EC uses low/high meaning
-        if (meaning == "low") {
-          refVoltageEcLow = voltage;
-          refEcLow = value;
-          Serial.printf("NOTICE: EC low calibration: %.4fV at %d µS/cm (%s)\n", voltage, value, meaning.c_str());
+
+        // Read conductivity
+        if (ecSensor.isEnabled() && ecSensor.read()) {
+            SensorData ecData = ecSensor.getData();
+
+            Serial.print("Conductivity: ");
+            Serial.print(ecData.value, 0);
+            Serial.print(" ");
+            Serial.print(ecData.unit);
+            Serial.print(" [");
+            Serial.print(ecData.quality == SensorQuality::GOOD ? "GOOD" :
+                        ecData.quality == SensorQuality::FAIR ? "FAIR" :
+                        ecData.quality == SensorQuality::POOR ? "POOR" :
+                        ecData.quality == SensorQuality::NOT_CALIBRATED ? "NOT_CAL" : "ERROR");
+            Serial.println("]");
+
+            // Calculate and display salinity
+            float salinity = ecSensor.getSalinity();
+            Serial.print("Salinity: ");
+            Serial.print(salinity, 2);
+            Serial.println(" PSU");
+
+            // Create DataRecord with GPS data
+            DataRecord ecRecord = sensorDataToRecord(ecData, gps.getTimeUTC());
+            if (gps.hasValidFix()) {
+                ecRecord.latitude = gpsData.latitude;
+                ecRecord.longitude = gpsData.longitude;
+                ecRecord.altitude = gpsData.altitude;
+                ecRecord.gps_satellites = gpsData.satellites;
+                ecRecord.gps_hdop = gpsData.hdop;
+            }
+
+            // Log to storage
+            if (!storage.writeRecord(ecRecord)) {
+                Serial.println("[STORAGE] Failed to log conductivity");
+            }
+        } else {
+            Serial.println("Conductivity: READ FAILED");
         }
-        if (meaning == "high") {
-          refVoltageEcHigh = voltage;
-          refEcHigh = value;
-          Serial.printf("NOTICE: EC high calibration: %.4fV at %d µS/cm (%s)\n", voltage, value, meaning.c_str());
-        }
-      }
-    } else if (type == "TDS") {
-      for (JsonObject c : cal) {
-        int value = c["value"];
-        float voltage = c["voltage"];
-        String meaning = c["meaning"];
-        
-        // TDS uses low/high meaning
-        if (meaning == "low") {
-          refVoltageTdsLow = voltage;
-          refTdsLow = value;
-          Serial.printf("NOTICE: TDS low calibration: %.4fV at %d ppm (%s)\n", voltage, value, meaning.c_str());
-        }
-        if (meaning == "high") {
-          refVoltageTdsHigh = voltage;
-          refTdsHigh = value;
-          Serial.printf("NOTICE: TDS high calibration: %.4fV at %d ppm (%s)\n", voltage, value, meaning.c_str());
-        }
-      }
+
+        Serial.println("----------------------");
+
+        // TODO: Generate NMEA2000 PGNs
+
+        // Notify pump controller that measurement is complete
+        pumpController.notifyMeasurementComplete();
+
+        digitalWrite(LED_PIN, LOW);
     }
-  }
-}
 
+    // Process API upload (non-blocking)
+    apiUploader.process();
+
+    // Handle web server requests
+    webServer.handleClient();
+
+    // Update calibration state machine
+    calibration.update();
+
+    // Handle serial commands
+    serialCommands.process();
+
+    delay(10);  // Small delay to prevent watchdog issues
+}
