@@ -73,10 +73,6 @@ bool SeaSenseWebServer::begin() {
     _server->on("/api/config", std::bind(&SeaSenseWebServer::handleApiConfig, this));
     _server->on("/api/config/update", std::bind(&SeaSenseWebServer::handleApiConfigUpdate, this));
     _server->on("/api/status", std::bind(&SeaSenseWebServer::handleApiStatus, this));
-    _server->on("/api/pump/status", std::bind(&SeaSenseWebServer::handleApiPumpStatus, this));
-    _server->on("/api/pump/control", std::bind(&SeaSenseWebServer::handleApiPumpControl, this));
-    _server->on("/api/pump/config", std::bind(&SeaSenseWebServer::handleApiPumpConfig, this));
-    _server->on("/api/pump/config/update", std::bind(&SeaSenseWebServer::handleApiPumpConfigUpdate, this));
     _server->on("/api/config/reset", std::bind(&SeaSenseWebServer::handleApiConfigReset, this));
     _server->on("/api/system/restart", std::bind(&SeaSenseWebServer::handleApiSystemRestart, this));
 
@@ -779,61 +775,6 @@ void SeaSenseWebServer::handleSettings() {
             </div>
         </div>
 
-        <!-- Pump Configuration -->
-        <div class="section">
-            <h2>Pump Configuration</h2>
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" id="pump-enabled" name="pump-enabled">
-                    Enable Pump Controller
-                </label>
-            </div>
-            <div class="form-group">
-                <label>Cycle Interval (seconds)</label>
-                <input type="number" id="pump-cycle" name="pump-cycle" min="10" max="3600">
-                <small>Time between measurement cycles</small>
-            </div>
-            <div class="form-group">
-                <label>Startup Delay (milliseconds)</label>
-                <input type="number" id="pump-startup" name="pump-startup" min="0" max="10000">
-                <small>Wait for pump to start</small>
-            </div>
-            <div class="form-group">
-                <label>Stability Wait (milliseconds)</label>
-                <input type="number" id="pump-stability" name="pump-stability" min="0" max="10000">
-                <small>Wait for stable readings</small>
-            </div>
-            <div class="form-group">
-                <label>Measurement Count</label>
-                <input type="number" id="pump-count" name="pump-count" min="1" max="10">
-            </div>
-            <div class="form-group">
-                <label>Measurement Interval (milliseconds)</label>
-                <input type="number" id="pump-measure-interval" name="pump-measure-interval" min="0" max="10000">
-            </div>
-            <div class="form-group">
-                <label>Stop Delay (milliseconds)</label>
-                <input type="number" id="pump-stop" name="pump-stop" min="0" max="5000">
-                <small>Flush time after measurements</small>
-            </div>
-            <div class="form-group">
-                <label>Cooldown (milliseconds)</label>
-                <input type="number" id="pump-cooldown" name="pump-cooldown" min="0" max="300000">
-            </div>
-            <div class="form-group">
-                <label>Max On Time (milliseconds)</label>
-                <input type="number" id="pump-max-on" name="pump-max-on" min="1000" max="60000">
-                <small>Safety cutoff</small>
-            </div>
-            <div class="form-group">
-                <label>Stability Method</label>
-                <select id="pump-method" name="pump-method">
-                    <option value="FIXED_DELAY">Fixed Delay</option>
-                    <option value="VARIANCE_CHECK">Variance Check</option>
-                </select>
-            </div>
-        </div>
-
         <!-- Actions -->
         <div class="actions">
             <button type="submit" class="button">Save Configuration</button>
@@ -864,18 +805,6 @@ void SeaSenseWebServer::handleSettings() {
                 document.getElementById('partner-id').value = config.device.partner_id || '';
                 document.getElementById('firmware-version').value = config.device.firmware_version || '';
 
-                // Pump
-                document.getElementById('pump-enabled').checked = config.pump.enabled || false;
-                document.getElementById('pump-cycle').value = (config.pump.cycle_interval_ms / 1000) || 60;
-                document.getElementById('pump-startup').value = config.pump.startup_delay_ms || 2000;
-                document.getElementById('pump-stability').value = config.pump.stability_wait_ms || 3000;
-                document.getElementById('pump-count').value = config.pump.measurement_count || 1;
-                document.getElementById('pump-measure-interval').value = config.pump.measurement_interval_ms || 2000;
-                document.getElementById('pump-stop').value = config.pump.stop_delay_ms || 500;
-                document.getElementById('pump-cooldown').value = config.pump.cooldown_ms || 55000;
-                document.getElementById('pump-max-on').value = config.pump.max_on_time_ms || 30000;
-                document.getElementById('pump-method').value = config.pump.method || 'FIXED_DELAY';
-
             } catch (e) {
                 showToast('Failed to load configuration: ' + e.message, 'error');
             }
@@ -901,18 +830,6 @@ void SeaSenseWebServer::handleSettings() {
                     device_guid: document.getElementById('device-guid').value,
                     partner_id: document.getElementById('partner-id').value,
                     firmware_version: document.getElementById('firmware-version').value
-                },
-                pump: {
-                    enabled: document.getElementById('pump-enabled').checked,
-                    cycle_interval_ms: parseInt(document.getElementById('pump-cycle').value) * 1000,
-                    startup_delay_ms: parseInt(document.getElementById('pump-startup').value),
-                    stability_wait_ms: parseInt(document.getElementById('pump-stability').value),
-                    measurement_count: parseInt(document.getElementById('pump-count').value),
-                    measurement_interval_ms: parseInt(document.getElementById('pump-measure-interval').value),
-                    stop_delay_ms: parseInt(document.getElementById('pump-stop').value),
-                    cooldown_ms: parseInt(document.getElementById('pump-cooldown').value),
-                    max_on_time_ms: parseInt(document.getElementById('pump-max-on').value),
-                    method: document.getElementById('pump-method').value
                 }
             };
 
@@ -1196,23 +1113,6 @@ void SeaSenseWebServer::handleApiConfig() {
     deviceObj["partner_id"] = device.partnerID;
     deviceObj["firmware_version"] = device.firmwareVersion;
 
-    // Pump config
-    PumpConfig pump = _configManager->getPumpConfig();
-    JsonObject pumpObj = doc.createNestedObject("pump");
-    pumpObj["enabled"] = pump.enabled;
-    pumpObj["relay_pin"] = pump.relayPin;
-    pumpObj["cycle_interval_ms"] = pump.cycleIntervalMs;
-    pumpObj["startup_delay_ms"] = pump.pumpStartupDelayMs;
-    pumpObj["stability_wait_ms"] = pump.stabilityWaitMs;
-    pumpObj["measurement_count"] = pump.measurementCount;
-    pumpObj["measurement_interval_ms"] = pump.measurementIntervalMs;
-    pumpObj["stop_delay_ms"] = pump.pumpStopDelayMs;
-    pumpObj["cooldown_ms"] = pump.cooldownMs;
-    pumpObj["max_on_time_ms"] = pump.maxPumpOnTimeMs;
-    pumpObj["method"] = (pump.method == StabilityMethod::FIXED_DELAY ? "FIXED_DELAY" : "VARIANCE_CHECK");
-    pumpObj["temp_variance_threshold"] = pump.tempVarianceThreshold;
-    pumpObj["ec_variance_threshold"] = pump.ecVarianceThreshold;
-
     String json;
     serializeJson(doc, json);
     sendJSON(json);
@@ -1265,58 +1165,6 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
         device.partnerID = doc["device"]["partner_id"] | "";
         device.firmwareVersion = doc["device"]["firmware_version"] | "2.0.0";
         _configManager->setDeviceConfig(device);
-    }
-
-    // Update pump config
-    if (doc.containsKey("pump")) {
-        PumpConfig pump = _configManager->getPumpConfig();
-
-        if (doc["pump"].containsKey("enabled")) {
-            pump.enabled = doc["pump"]["enabled"];
-        }
-        if (doc["pump"].containsKey("relay_pin")) {
-            pump.relayPin = doc["pump"]["relay_pin"];
-        }
-        if (doc["pump"].containsKey("cycle_interval_ms")) {
-            pump.cycleIntervalMs = doc["pump"]["cycle_interval_ms"];
-        }
-        if (doc["pump"].containsKey("startup_delay_ms")) {
-            pump.pumpStartupDelayMs = doc["pump"]["startup_delay_ms"];
-        }
-        if (doc["pump"].containsKey("stability_wait_ms")) {
-            pump.stabilityWaitMs = doc["pump"]["stability_wait_ms"];
-        }
-        if (doc["pump"].containsKey("measurement_count")) {
-            pump.measurementCount = doc["pump"]["measurement_count"];
-        }
-        if (doc["pump"].containsKey("measurement_interval_ms")) {
-            pump.measurementIntervalMs = doc["pump"]["measurement_interval_ms"];
-        }
-        if (doc["pump"].containsKey("stop_delay_ms")) {
-            pump.pumpStopDelayMs = doc["pump"]["stop_delay_ms"];
-        }
-        if (doc["pump"].containsKey("cooldown_ms")) {
-            pump.cooldownMs = doc["pump"]["cooldown_ms"];
-        }
-        if (doc["pump"].containsKey("max_on_time_ms")) {
-            pump.maxPumpOnTimeMs = doc["pump"]["max_on_time_ms"];
-        }
-        if (doc["pump"].containsKey("method")) {
-            String method = doc["pump"]["method"];
-            if (method == "VARIANCE_CHECK") {
-                pump.method = StabilityMethod::VARIANCE_CHECK;
-            } else {
-                pump.method = StabilityMethod::FIXED_DELAY;
-            }
-        }
-        if (doc["pump"].containsKey("temp_variance_threshold")) {
-            pump.tempVarianceThreshold = doc["pump"]["temp_variance_threshold"];
-        }
-        if (doc["pump"].containsKey("ec_variance_threshold")) {
-            pump.ecVarianceThreshold = doc["pump"]["ec_variance_threshold"];
-        }
-
-        _configManager->setPumpConfig(pump);
     }
 
     // Save to SPIFFS
@@ -1432,170 +1280,6 @@ String SeaSenseWebServer::allSensorsToJSON() {
     String json;
     serializeJson(doc, json);
     return json;
-}
-
-// ============================================================================
-// API Handlers - Pump
-// ============================================================================
-
-void SeaSenseWebServer::handleApiPumpStatus() {
-    if (!_pumpController) {
-        sendError("Pump controller not available", 503);
-        return;
-    }
-
-    DynamicJsonDocument doc(512);
-    doc["state"] = pumpStateToString(_pumpController->getState());
-    doc["enabled"] = _pumpController->isEnabled();
-    doc["relay_on"] = _pumpController->isRelayOn();
-    doc["cycle_progress"] = _pumpController->getCycleProgress();
-    doc["cycle_elapsed_s"] = _pumpController->getCycleElapsed() / 1000;
-    doc["cycle_interval_s"] = _pumpController->getCycleInterval() / 1000;
-
-    String lastError = _pumpController->getLastError();
-    if (lastError.length() > 0) {
-        doc["last_error"] = lastError;
-    }
-
-    String json;
-    serializeJson(doc, json);
-    sendJSON(json);
-}
-
-void SeaSenseWebServer::handleApiPumpControl() {
-    if (!_pumpController) {
-        sendError("Pump controller not available", 503);
-        return;
-    }
-
-    if (_server->method() != HTTP_POST) {
-        sendError("Method not allowed", 405);
-        return;
-    }
-
-    // Parse request body
-    DynamicJsonDocument doc(256);
-    DeserializationError error = deserializeJson(doc, _server->arg("plain"));
-
-    if (error) {
-        sendError("Invalid JSON", 400);
-        return;
-    }
-
-    String action = doc["action"].as<String>();
-    action.toUpperCase();
-
-    if (action == "START") {
-        _pumpController->startPump();
-        sendJSON("{\"success\":true,\"message\":\"Pump started\"}");
-    }
-    else if (action == "STOP") {
-        _pumpController->stopPump();
-        sendJSON("{\"success\":true,\"message\":\"Pump stopped\"}");
-    }
-    else if (action == "PAUSE") {
-        _pumpController->pause();
-        sendJSON("{\"success\":true,\"message\":\"Pump paused\"}");
-    }
-    else if (action == "RESUME") {
-        _pumpController->resume();
-        sendJSON("{\"success\":true,\"message\":\"Pump resumed\"}");
-    }
-    else if (action == "ENABLE") {
-        _pumpController->setEnabled(true);
-        sendJSON("{\"success\":true,\"message\":\"Pump controller enabled\"}");
-    }
-    else if (action == "DISABLE") {
-        _pumpController->setEnabled(false);
-        sendJSON("{\"success\":true,\"message\":\"Pump controller disabled\"}");
-    }
-    else {
-        sendError("Unknown action: " + action, 400);
-    }
-}
-
-void SeaSenseWebServer::handleApiPumpConfig() {
-    if (!_pumpController) {
-        sendError("Pump controller not available", 503);
-        return;
-    }
-
-    const PumpConfig& config = _pumpController->getConfig();
-
-    DynamicJsonDocument doc(512);
-    doc["relay_pin"] = config.relayPin;
-    doc["enabled"] = config.enabled;
-    doc["pump_startup_delay_ms"] = config.pumpStartupDelayMs;
-    doc["stability_wait_ms"] = config.stabilityWaitMs;
-    doc["measurement_count"] = config.measurementCount;
-    doc["measurement_interval_ms"] = config.measurementIntervalMs;
-    doc["pump_stop_delay_ms"] = config.pumpStopDelayMs;
-    doc["cooldown_ms"] = config.cooldownMs;
-    doc["cycle_interval_ms"] = config.cycleIntervalMs;
-    doc["max_pump_on_time_ms"] = config.maxPumpOnTimeMs;
-    doc["stability_method"] = (config.method == StabilityMethod::FIXED_DELAY ? "FIXED_DELAY" : "VARIANCE");
-
-    String json;
-    serializeJson(doc, json);
-    sendJSON(json);
-}
-
-void SeaSenseWebServer::handleApiPumpConfigUpdate() {
-    if (!_pumpController) {
-        sendError("Pump controller not available", 503);
-        return;
-    }
-
-    if (_server->method() != HTTP_POST) {
-        sendError("Method not allowed", 405);
-        return;
-    }
-
-    // Parse request body
-    DynamicJsonDocument doc(512);
-    DeserializationError error = deserializeJson(doc, _server->arg("plain"));
-
-    if (error) {
-        sendError("Invalid JSON", 400);
-        return;
-    }
-
-    // Get current config
-    PumpConfig config = _pumpController->getConfig();
-
-    // Update fields if present
-    if (doc.containsKey("pump_startup_delay_ms")) {
-        config.pumpStartupDelayMs = doc["pump_startup_delay_ms"];
-    }
-    if (doc.containsKey("stability_wait_ms")) {
-        config.stabilityWaitMs = doc["stability_wait_ms"];
-    }
-    if (doc.containsKey("measurement_count")) {
-        config.measurementCount = doc["measurement_count"];
-    }
-    if (doc.containsKey("measurement_interval_ms")) {
-        config.measurementIntervalMs = doc["measurement_interval_ms"];
-    }
-    if (doc.containsKey("pump_stop_delay_ms")) {
-        config.pumpStopDelayMs = doc["pump_stop_delay_ms"];
-    }
-    if (doc.containsKey("cooldown_ms")) {
-        config.cooldownMs = doc["cooldown_ms"];
-    }
-    if (doc.containsKey("cycle_interval_ms")) {
-        config.cycleIntervalMs = doc["cycle_interval_ms"];
-    }
-    if (doc.containsKey("max_pump_on_time_ms")) {
-        config.maxPumpOnTimeMs = doc["max_pump_on_time_ms"];
-    }
-    if (doc.containsKey("enabled")) {
-        config.enabled = doc["enabled"];
-    }
-
-    // Apply new configuration
-    _pumpController->setConfig(config);
-
-    sendJSON("{\"success\":true,\"message\":\"Configuration updated\"}");
 }
 
 // ============================================================================

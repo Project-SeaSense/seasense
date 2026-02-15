@@ -70,13 +70,6 @@ void SerialCommands::processCommand(const String& command) {
         cmdTest();
     } else if (cmd == "SCAN") {
         cmdScan();
-    } else if (cmd.startsWith("PUMP")) {
-        String args = "";
-        int spaceIndex = cmd.indexOf(' ');
-        if (spaceIndex > 0) {
-            args = cmd.substring(spaceIndex + 1);
-        }
-        cmdPump(args);
     } else if (cmd == "HELP" || cmd == "?") {
         cmdHelp();
     } else if (cmd.length() > 0) {
@@ -314,35 +307,6 @@ void SerialCommands::cmdStatus() {
     }
 
     // Pump
-    if (_pumpController) {
-        printSeparator();
-        Serial.println("PUMP:");
-        printSeparator();
-
-        Serial.print("State: ");
-        Serial.println(_pumpController->getStatusString());
-
-        Serial.print("Enabled: ");
-        Serial.println(_pumpController->isEnabled() ? "Yes" : "No");
-
-        Serial.print("Relay: ");
-        Serial.println(_pumpController->isRelayOn() ? "ON" : "OFF");
-
-        Serial.print("Cycle progress: ");
-        Serial.print(_pumpController->getCycleElapsed() / 1000);
-        Serial.print("s / ");
-        Serial.print(_pumpController->getCycleInterval() / 1000);
-        Serial.println("s");
-
-        String lastError = _pumpController->getLastError();
-        if (lastError.length() > 0) {
-            Serial.print("Last error: ");
-            Serial.println(lastError);
-        }
-
-        Serial.println();
-    }
-
     printSeparator();
 }
 
@@ -468,102 +432,9 @@ void SerialCommands::cmdHelp() {
     Serial.println("STATUS       - Display system status and diagnostics");
     Serial.println("TEST         - Read sensors without logging");
     Serial.println("SCAN         - Scan I2C bus for connected devices");
-    Serial.println("PUMP STATUS  - Display pump controller status");
-    Serial.println("PUMP START   - Manually start pump cycle");
-    Serial.println("PUMP STOP    - Emergency stop pump");
-    Serial.println("PUMP PAUSE   - Pause pump cycles");
-    Serial.println("PUMP RESUME  - Resume pump cycles");
-    Serial.println("PUMP ENABLE  - Enable pump controller");
-    Serial.println("PUMP DISABLE - Disable pump controller");
     Serial.println("HELP         - Show this help message");
     Serial.println();
     Serial.println("Type any command and press Enter");
-}
-
-void SerialCommands::cmdPump(const String& args) {
-    if (!_pumpController) {
-        Serial.println("Pump controller not available");
-        return;
-    }
-
-    if (args == "STATUS" || args.length() == 0) {
-        printHeader("PUMP STATUS");
-
-        Serial.print("State: ");
-        Serial.println(_pumpController->getStatusString());
-
-        Serial.print("Enabled: ");
-        Serial.println(_pumpController->isEnabled() ? "Yes" : "No");
-
-        Serial.print("Relay: ");
-        Serial.println(_pumpController->isRelayOn() ? "ON" : "OFF");
-
-        Serial.print("Cycle progress: ");
-        Serial.print(_pumpController->getCycleProgress());
-        Serial.println("%");
-
-        Serial.print("Time in cycle: ");
-        Serial.print(_pumpController->getCycleElapsed() / 1000);
-        Serial.print("s / ");
-        Serial.print(_pumpController->getCycleInterval() / 1000);
-        Serial.println("s");
-
-        const PumpConfig& config = _pumpController->getConfig();
-        Serial.println();
-        Serial.println("Configuration:");
-        Serial.print("  Relay Pin: GPIO ");
-        Serial.println(config.relayPin);
-        Serial.print("  Cycle Interval: ");
-        Serial.print(config.cycleIntervalMs / 1000);
-        Serial.println("s");
-        Serial.print("  Startup Delay: ");
-        Serial.print(config.pumpStartupDelayMs);
-        Serial.println("ms");
-        Serial.print("  Stability Wait: ");
-        Serial.print(config.stabilityWaitMs);
-        Serial.println("ms");
-        Serial.print("  Measurements: ");
-        Serial.println(config.measurementCount);
-        Serial.print("  Max On Time: ");
-        Serial.print(config.maxPumpOnTimeMs / 1000);
-        Serial.println("s");
-
-        String lastError = _pumpController->getLastError();
-        if (lastError.length() > 0) {
-            Serial.println();
-            Serial.print("Last error: ");
-            Serial.println(lastError);
-        }
-    }
-    else if (args == "START") {
-        Serial.println("Starting pump cycle...");
-        _pumpController->startPump();
-    }
-    else if (args == "STOP") {
-        Serial.println("Emergency stop - stopping pump...");
-        _pumpController->stopPump();
-    }
-    else if (args == "PAUSE") {
-        Serial.println("Pausing pump controller...");
-        _pumpController->pause();
-    }
-    else if (args == "RESUME") {
-        Serial.println("Resuming pump controller...");
-        _pumpController->resume();
-    }
-    else if (args == "ENABLE") {
-        Serial.println("Enabling pump controller...");
-        _pumpController->setEnabled(true);
-    }
-    else if (args == "DISABLE") {
-        Serial.println("Disabling pump controller...");
-        _pumpController->setEnabled(false);
-    }
-    else {
-        Serial.print("Unknown PUMP command: ");
-        Serial.println(args);
-        Serial.println("Available: STATUS, START, STOP, PAUSE, RESUME, ENABLE, DISABLE");
-    }
 }
 
 void SerialCommands::printHeader(const String& title) {

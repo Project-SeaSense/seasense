@@ -51,9 +51,6 @@
 // Serial Commands
 #include "src/commands/SerialCommands.h"
 
-// Pump Control
-#include "src/pump/PumpController.h"
-
 // Configuration Manager
 #include "src/config/ConfigManager.h"
 
@@ -75,17 +72,14 @@ ConfigManager configManager;
 // Calibration
 CalibrationManager calibration(&tempSensor, &ecSensor);
 
-// Pump controller
-PumpController pumpController(&tempSensor, &ecSensor);
-
 // Web server
-SeaSenseWebServer webServer(&tempSensor, &ecSensor, &storage, &calibration, &pumpController, &configManager);
+SeaSenseWebServer webServer(&tempSensor, &ecSensor, &storage, &calibration, nullptr, &configManager);
 
 // API Uploader
 APIUploader apiUploader(&storage);
 
 // Serial Commands
-SerialCommands serialCommands(&tempSensor, &ecSensor, &gps, &storage, &apiUploader, &webServer, &pumpController);
+SerialCommands serialCommands(&tempSensor, &ecSensor, &gps, &storage, &apiUploader, &webServer, nullptr);
 
 // Device configuration
 StaticJsonDocument<4096> deviceConfigDoc;
@@ -275,16 +269,6 @@ void setup() {
         Serial.println("[WARNING] API uploader initialization failed");
     }
 
-    // Initialize pump controller
-    Serial.println("\n[PUMP] Initializing pump controller...");
-    PumpConfig pumpConfig = configManager.getPumpConfig();
-    pumpController.setConfig(pumpConfig);
-    if (pumpController.begin()) {
-        Serial.println("[PUMP] Pump controller initialized");
-    } else {
-        Serial.println("[WARNING] Pump controller initialization failed");
-    }
-
     // TODO: Initialize NMEA2000
 
     Serial.println("\n===========================================");
@@ -304,11 +288,10 @@ void loop() {
     // Update GPS (must be called frequently to process NMEA sentences)
     gps.update();
 
-    // Update pump controller state machine
-    pumpController.update();
-
-    // Read sensors when pump controller signals ready
-    if (pumpController.shouldReadSensors()) {
+    // Read sensors at regular intervals
+    static unsigned long lastSensorRead = 0;
+    if (now - lastSensorRead >= SENSOR_SAMPLING_INTERVAL_MS) {
+        lastSensorRead = now;
         // Blink LED to show activity
         digitalWrite(LED_PIN, HIGH);
 
@@ -415,9 +398,6 @@ void loop() {
         Serial.println("----------------------");
 
         // TODO: Generate NMEA2000 PGNs
-
-        // Notify pump controller that measurement is complete
-        pumpController.notifyMeasurementComplete();
 
         digitalWrite(LED_PIN, LOW);
     }
