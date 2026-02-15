@@ -219,15 +219,11 @@ void SeaSenseWebServer::handleDashboard() {
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #e8f4f8; color: #1a4d5e; }
 
         /* Header */
-        .header { background: linear-gradient(135deg, #0a4f66 0%, #0e7fa3 100%); color: white; padding: 12px 15px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 100; }
+        .header { background: linear-gradient(135deg, #0a4f66 0%, #0e7fa3 100%); color: white; padding: 12px 15px; display: flex; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 100; }
         .header-left { display: flex; align-items: center; gap: 12px; }
-        .hamburger { background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 5px; }
+        .hamburger { background: none; border: none; color: white; font-size: 28px; cursor: pointer; padding: 5px; line-height: 1; font-family: Arial, sans-serif; }
         .hamburger:hover { opacity: 0.8; }
         .title { font-size: 18px; font-weight: 600; white-space: nowrap; }
-        .refresh-btn { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
-        .refresh-btn:hover { background: rgba(255,255,255,0.3); }
-        .refresh-btn:active { transform: scale(0.95); }
-        .refresh-btn.loading { opacity: 0.6; pointer-events: none; }
 
         /* Sidebar */
         .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 200; }
@@ -246,13 +242,7 @@ void SeaSenseWebServer::handleDashboard() {
         /* Sensors */
         .sensors-grid { display: grid; gap: 12px; }
         .sensor-card { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); border-left: 4px solid #0e7fa3; }
-        .sensor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .sensor-name { font-size: 14px; font-weight: 600; color: #0a4f66; text-transform: uppercase; letter-spacing: 0.5px; }
-        .quality-badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
-        .quality-good { background: #4CAF50; color: white; }
-        .quality-fair { background: #FFC107; color: #333; }
-        .quality-error { background: #F44336; color: white; }
-        .quality-not_calibrated { background: #9E9E9E; color: white; }
+        .sensor-name { font-size: 14px; font-weight: 600; color: #0a4f66; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
         .sensor-value { font-size: 32px; font-weight: 700; color: #1a4d5e; line-height: 1.2; }
         .sensor-unit { font-size: 16px; font-weight: 400; color: #666; margin-left: 4px; }
         .sensor-meta { margin-top: 8px; font-size: 12px; color: #888; }
@@ -271,19 +261,16 @@ void SeaSenseWebServer::handleDashboard() {
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">Menu</div>
         <ul class="sidebar-nav">
-            <li><a href="/dashboard" class="active" onclick="closeMenu()">Dashboard</a></li>
-            <li><a href="/settings" onclick="closeMenu()">Settings</a></li>
-            <li><a href="/calibrate" onclick="closeMenu()">Calibration</a></li>
-            <li><a href="/data" onclick="closeMenu()">Data</a></li>
+            <li><a href="/dashboard" class="active">Dashboard</a></li>
+            <li><a href="/settings">Settings</a></li>
+            <li><a href="/calibrate">Calibration</a></li>
+            <li><a href="/data">Data</a></li>
         </ul>
     </div>
 
     <div class="header">
-        <div class="header-left">
-            <button class="hamburger" onclick="toggleMenu()">☰</button>
-            <div class="title">Project SeaSense</div>
-        </div>
-        <button class="refresh-btn" id="refreshBtn" onclick="forceRefresh()">↻ Refresh</button>
+        <button class="hamburger" onclick="toggleMenu()">&#9776;</button>
+        <div class="title">Project SeaSense</div>
     </div>
 
     <div class="container">
@@ -312,7 +299,6 @@ void SeaSenseWebServer::handleDashboard() {
                     let html = '';
                     if (data.sensors && data.sensors.length > 0) {
                         data.sensors.forEach(s => {
-                            const qualityClass = s.quality.toLowerCase().replace(' ', '_');
                             // Format value based on sensor type
                             let valueFormatted;
                             if (s.type.toLowerCase().includes('temperature')) {
@@ -324,10 +310,7 @@ void SeaSenseWebServer::handleDashboard() {
                             }
 
                             html += `<div class="sensor-card">
-                                <div class="sensor-header">
-                                    <div class="sensor-name">${s.type}</div>
-                                    <span class="quality-badge quality-${qualityClass}">${s.quality}</span>
-                                </div>
+                                <div class="sensor-name">${s.type}</div>
                                 <div class="sensor-value">
                                     ${valueFormatted}<span class="sensor-unit">${s.unit}</span>
                                 </div>
@@ -341,26 +324,6 @@ void SeaSenseWebServer::handleDashboard() {
                 })
                 .catch(err => {
                     document.getElementById('sensors').innerHTML = '<div class="status-msg">Error loading sensors</div>';
-                });
-        }
-
-        function forceRefresh() {
-            const btn = document.getElementById('refreshBtn');
-            btn.classList.add('loading');
-            btn.textContent = '⟳ Reading...';
-
-            fetch('/api/sensor/read', { method: 'POST' })
-                .then(() => {
-                    setTimeout(() => {
-                        update();
-                        btn.classList.remove('loading');
-                        btn.textContent = '↻ Refresh';
-                    }, 1500);
-                })
-                .catch(err => {
-                    btn.classList.remove('loading');
-                    btn.textContent = '↻ Refresh';
-                    update();
                 });
         }
 
@@ -388,7 +351,7 @@ void SeaSenseWebServer::handleCalibrate() {
         /* Header */
         .header { background: linear-gradient(135deg, #0a4f66 0%, #0e7fa3 100%); color: white; padding: 12px 15px; display: flex; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 100; }
         .header-left { display: flex; align-items: center; gap: 12px; }
-        .hamburger { background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 5px; }
+        .hamburger { background: none; border: none; color: white; font-size: 28px; cursor: pointer; padding: 5px; line-height: 1; font-family: Arial, sans-serif; }
         .hamburger:hover { opacity: 0.8; }
         .title { font-size: 18px; font-weight: 600; white-space: nowrap; }
 
@@ -456,10 +419,8 @@ void SeaSenseWebServer::handleCalibrate() {
     </div>
 
     <div class="header">
-        <div class="header-left">
-            <button class="hamburger" onclick="toggleMenu()">☰</button>
-            <div class="title">Project SeaSense</div>
-        </div>
+        <button class="hamburger" onclick="toggleMenu()">&#9776;</button>
+        <div class="title">Project SeaSense</div>
     </div>
 
     <div class="container">
@@ -470,13 +431,13 @@ void SeaSenseWebServer::handleCalibrate() {
             <div class="cal-header">Temperature Sensor <span class="status-current status-calibrated" id="tempStatus">Calibrated</span></div>
             <div class="cal-info">
                 <strong>EZO-RTD Temperature Sensor</strong><br>
-                Single-point calibration recommended. Use ice water (0°C) or room temperature with accurate thermometer.
+                Single-point calibration recommended. Use ice water (0&deg;C) or room temperature with accurate thermometer.
             </div>
 
             <div class="cal-section">
                 <div class="cal-section-title">Current Reading</div>
                 <div style="font-size: 24px; font-weight: 700; color: #0a4f66; margin: 10px 0;">
-                    <span id="tempReading">--</span> °C
+                    <span id="tempReading">--</span> &deg;C
                 </div>
             </div>
 
@@ -489,7 +450,7 @@ void SeaSenseWebServer::handleCalibrate() {
             </div>
 
             <div class="form-group" id="tempValueGroup">
-                <label>Reference Temperature (°C)</label>
+                <label>Reference Temperature (&deg;C)</label>
                 <input type="number" id="tempValue" step="0.1" placeholder="e.g. 0.0 for ice water">
                 <small>Enter the actual temperature of your calibration solution</small>
             </div>
@@ -672,46 +633,78 @@ void SeaSenseWebServer::handleSettings() {
     <title>Settings - SeaSense Logger</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: Arial; margin: 20px; background: #f5f5f5; }
-        .header { background: #2196F3; color: white; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-        .section { background: white; padding: 20px; margin: 15px 0; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .section h2 { margin-top: 0; color: #333; border-bottom: 2px solid #2196F3; padding-bottom: 10px; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #e8f4f8; color: #1a4d5e; }
+
+        /* Header */
+        .header { background: linear-gradient(135deg, #0a4f66 0%, #0e7fa3 100%); color: white; padding: 12px 15px; display: flex; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 100; }
+        .hamburger { background: none; border: none; color: white; font-size: 28px; cursor: pointer; padding: 5px; line-height: 1; font-family: Arial, sans-serif; }
+        .hamburger:hover { opacity: 0.8; }
+        .title { font-size: 18px; font-weight: 600; white-space: nowrap; }
+
+        /* Sidebar */
+        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 200; }
+        .sidebar.open { left: 0; }
+        .sidebar-header { background: #0a4f66; color: white; padding: 15px; font-weight: 600; }
+        .sidebar-nav { list-style: none; }
+        .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; transition: background 0.2s; }
+        .sidebar-nav a:hover { background: #e8f4f8; }
+        .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 150; }
+        .overlay.show { display: block; }
+
+        /* Main content */
+        .container { padding: 15px; max-width: 600px; margin: 0 auto; }
+
+        /* Sections */
+        .section { background: white; padding: 20px; margin: 15px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); border-left: 4px solid #0e7fa3; }
+        .section h2 { margin-top: 0; color: #0a4f66; border-bottom: 2px solid #0e7fa3; padding-bottom: 10px; font-size: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
         .form-group { margin: 15px 0; }
-        .form-group label { display: block; font-weight: bold; margin-bottom: 5px; color: #555; }
-        .form-group input, .form-group select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 3px; box-sizing: border-box; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 5px; color: #1a4d5e; font-size: 13px; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; border: 2px solid #d0e8f0; border-radius: 4px; box-sizing: border-box; font-size: 14px; transition: border 0.2s; }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: #0e7fa3; }
         .form-group input[type="checkbox"] { width: auto; }
-        .form-group small { color: #777; font-size: 12px; }
-        .button { background: #2196F3; color: white; padding: 10px 20px; border: none; border-radius: 3px; cursor: pointer; font-size: 14px; margin: 5px; }
-        .button:hover { background: #1976D2; }
-        .button-danger { background: #F44336; }
-        .button-danger:hover { background: #D32F2F; }
-        .button-warning { background: #FF9800; }
-        .button-warning:hover { background: #F57C00; }
-        .toast { position: fixed; top: 20px; right: 20px; padding: 15px 20px; border-radius: 3px; color: white; display: none; z-index: 1000; }
+        .form-group small { color: #888; font-size: 12px; display: block; margin-top: 5px; }
+
+        /* Buttons */
+        .button { background: #0e7fa3; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; margin: 5px; transition: all 0.2s; }
+        .button:hover { background: #0a4f66; }
+        .button-danger { background: #d32f2f; }
+        .button-danger:hover { background: #b71c1c; }
+        .button-warning { background: #f57c00; }
+        .button-warning:hover { background: #e65100; }
+
+        /* Toast notifications */
+        .toast { position: fixed; top: 70px; right: 20px; padding: 15px 20px; border-radius: 4px; color: white; display: none; z-index: 1000; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
         .toast-success { background: #4CAF50; }
         .toast-error { background: #F44336; }
-        .toast-info { background: #2196F3; }
+        .toast-info { background: #0e7fa3; }
+
         .actions { text-align: center; margin-top: 20px; }
-        .nav { background: white; padding: 10px; margin-bottom: 20px; border-radius: 5px; }
-        .nav a { margin-right: 15px; text-decoration: none; color: #2196F3; }
-        .nav a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
-    <div class="nav">
-        <a href="/dashboard">Dashboard</a>
-        <a href="/settings">Settings</a>
-        <a href="/calibrate">Calibration</a>
-        <a href="/data">Data</a>
+    <div class="overlay" id="overlay" onclick="closeMenu()"></div>
+
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">Menu</div>
+        <ul class="sidebar-nav">
+            <li><a href="/dashboard" onclick="closeMenu()">Dashboard</a></li>
+            <li><a href="/settings" class="active" onclick="closeMenu()">Settings</a></li>
+            <li><a href="/calibrate" onclick="closeMenu()">Calibration</a></li>
+            <li><a href="/data" onclick="closeMenu()">Data</a></li>
+        </ul>
     </div>
 
     <div class="header">
-        <h1 style="margin:0;">SeaSense Logger Settings</h1>
+        <button class="hamburger" onclick="toggleMenu()">&#9776;</button>
+        <div class="title">Project SeaSense</div>
     </div>
 
     <div id="toast" class="toast"></div>
 
-    <form id="configForm">
+    <div class="container">
+        <form id="configForm">
         <!-- WiFi Configuration -->
         <div class="section">
             <h2>WiFi Configuration</h2>
@@ -781,9 +774,20 @@ void SeaSenseWebServer::handleSettings() {
             <button type="button" class="button button-warning" onclick="resetConfig()">Reset to Defaults</button>
             <button type="button" class="button button-danger" onclick="restartDevice()">Restart Device</button>
         </div>
-    </form>
+        </form>
+    </div>
 
     <script>
+        function toggleMenu() {
+            document.getElementById('sidebar').classList.toggle('open');
+            document.getElementById('overlay').classList.toggle('show');
+        }
+
+        function closeMenu() {
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('overlay').classList.remove('show');
+        }
+
         async function loadConfig() {
             try {
                 const config = await fetch('/api/config').then(r => r.json());
