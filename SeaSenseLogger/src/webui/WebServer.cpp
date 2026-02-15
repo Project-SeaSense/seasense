@@ -218,8 +218,11 @@ void SeaSenseWebServer::handleDashboard() {
     <title>SeaSense Logger</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: Arial; margin: 20px; }
-        .sensor { padding: 15px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; }
+        body { font-family: Arial; margin: 20px; background: #f5f5f5; }
+        .nav { background: white; padding: 10px; margin-bottom: 20px; border-radius: 5px; }
+        .nav a { margin-right: 15px; text-decoration: none; color: #2196F3; }
+        .nav a:hover { text-decoration: underline; }
+        .sensor { padding: 15px; margin: 10px 0; background: white; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .value { font-size: 24px; font-weight: bold; }
         .unit { color: #666; }
         .quality { display: inline-block; padding: 3px 8px; border-radius: 3px; font-size: 12px; }
@@ -229,6 +232,12 @@ void SeaSenseWebServer::handleDashboard() {
     </style>
 </head>
 <body>
+    <div class="nav">
+        <a href="/dashboard">Dashboard</a>
+        <a href="/settings">Settings</a>
+        <a href="/calibrate">Calibration</a>
+        <a href="/data">Data</a>
+    </div>
     <h1>SeaSense Logger</h1>
     <div id="sensors"></div>
     <script>
@@ -266,7 +275,320 @@ void SeaSenseWebServer::handleData() {
 }
 
 void SeaSenseWebServer::handleSettings() {
-    _server->send(200, "text/html", "<h1>Settings</h1><p>Coming soon...</p>");
+    String html = R"HTML(
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Settings - SeaSense Logger</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: Arial; margin: 20px; background: #f5f5f5; }
+        .header { background: #2196F3; color: white; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .section { background: white; padding: 20px; margin: 15px 0; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .section h2 { margin-top: 0; color: #333; border-bottom: 2px solid #2196F3; padding-bottom: 10px; }
+        .form-group { margin: 15px 0; }
+        .form-group label { display: block; font-weight: bold; margin-bottom: 5px; color: #555; }
+        .form-group input, .form-group select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 3px; box-sizing: border-box; }
+        .form-group input[type="checkbox"] { width: auto; }
+        .form-group small { color: #777; font-size: 12px; }
+        .button { background: #2196F3; color: white; padding: 10px 20px; border: none; border-radius: 3px; cursor: pointer; font-size: 14px; margin: 5px; }
+        .button:hover { background: #1976D2; }
+        .button-danger { background: #F44336; }
+        .button-danger:hover { background: #D32F2F; }
+        .button-warning { background: #FF9800; }
+        .button-warning:hover { background: #F57C00; }
+        .toast { position: fixed; top: 20px; right: 20px; padding: 15px 20px; border-radius: 3px; color: white; display: none; z-index: 1000; }
+        .toast-success { background: #4CAF50; }
+        .toast-error { background: #F44336; }
+        .toast-info { background: #2196F3; }
+        .actions { text-align: center; margin-top: 20px; }
+        .nav { background: white; padding: 10px; margin-bottom: 20px; border-radius: 5px; }
+        .nav a { margin-right: 15px; text-decoration: none; color: #2196F3; }
+        .nav a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="/dashboard">Dashboard</a>
+        <a href="/settings">Settings</a>
+        <a href="/calibrate">Calibration</a>
+        <a href="/data">Data</a>
+    </div>
+
+    <div class="header">
+        <h1 style="margin:0;">SeaSense Logger Settings</h1>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <form id="configForm">
+        <!-- WiFi Configuration -->
+        <div class="section">
+            <h2>WiFi Configuration</h2>
+            <div class="form-group">
+                <label>Station SSID (Boat WiFi)</label>
+                <input type="text" id="wifi-ssid" name="wifi-ssid">
+                <small>Leave empty for AP mode only</small>
+            </div>
+            <div class="form-group">
+                <label>Station Password</label>
+                <input type="password" id="wifi-password" name="wifi-password">
+            </div>
+            <div class="form-group">
+                <label>AP Password</label>
+                <input type="password" id="wifi-ap-password" name="wifi-ap-password">
+                <small>Password for SeaSense-XXXX access point</small>
+            </div>
+        </div>
+
+        <!-- API Configuration -->
+        <div class="section">
+            <h2>API Configuration</h2>
+            <div class="form-group">
+                <label>API URL</label>
+                <input type="text" id="api-url" name="api-url">
+                <small>Example: https://test-api.projectseasense.org</small>
+            </div>
+            <div class="form-group">
+                <label>API Key</label>
+                <input type="password" id="api-key" name="api-key">
+            </div>
+            <div class="form-group">
+                <label>Upload Interval (minutes)</label>
+                <input type="number" id="api-interval" name="api-interval" min="1" max="1440">
+            </div>
+            <div class="form-group">
+                <label>Batch Size</label>
+                <input type="number" id="api-batch" name="api-batch" min="1" max="1000">
+                <small>Number of records per upload</small>
+            </div>
+            <div class="form-group">
+                <label>Max Retries</label>
+                <input type="number" id="api-retries" name="api-retries" min="1" max="10">
+            </div>
+        </div>
+
+        <!-- Device Configuration -->
+        <div class="section">
+            <h2>Device Configuration</h2>
+            <div class="form-group">
+                <label>Device GUID</label>
+                <input type="text" id="device-guid" name="device-guid">
+            </div>
+            <div class="form-group">
+                <label>Partner ID</label>
+                <input type="text" id="partner-id" name="partner-id">
+            </div>
+            <div class="form-group">
+                <label>Firmware Version</label>
+                <input type="text" id="firmware-version" name="firmware-version" readonly>
+            </div>
+        </div>
+
+        <!-- Pump Configuration -->
+        <div class="section">
+            <h2>Pump Configuration</h2>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="pump-enabled" name="pump-enabled">
+                    Enable Pump Controller
+                </label>
+            </div>
+            <div class="form-group">
+                <label>Cycle Interval (seconds)</label>
+                <input type="number" id="pump-cycle" name="pump-cycle" min="10" max="3600">
+                <small>Time between measurement cycles</small>
+            </div>
+            <div class="form-group">
+                <label>Startup Delay (milliseconds)</label>
+                <input type="number" id="pump-startup" name="pump-startup" min="0" max="10000">
+                <small>Wait for pump to start</small>
+            </div>
+            <div class="form-group">
+                <label>Stability Wait (milliseconds)</label>
+                <input type="number" id="pump-stability" name="pump-stability" min="0" max="10000">
+                <small>Wait for stable readings</small>
+            </div>
+            <div class="form-group">
+                <label>Measurement Count</label>
+                <input type="number" id="pump-count" name="pump-count" min="1" max="10">
+            </div>
+            <div class="form-group">
+                <label>Measurement Interval (milliseconds)</label>
+                <input type="number" id="pump-measure-interval" name="pump-measure-interval" min="0" max="10000">
+            </div>
+            <div class="form-group">
+                <label>Stop Delay (milliseconds)</label>
+                <input type="number" id="pump-stop" name="pump-stop" min="0" max="5000">
+                <small>Flush time after measurements</small>
+            </div>
+            <div class="form-group">
+                <label>Cooldown (milliseconds)</label>
+                <input type="number" id="pump-cooldown" name="pump-cooldown" min="0" max="300000">
+            </div>
+            <div class="form-group">
+                <label>Max On Time (milliseconds)</label>
+                <input type="number" id="pump-max-on" name="pump-max-on" min="1000" max="60000">
+                <small>Safety cutoff</small>
+            </div>
+            <div class="form-group">
+                <label>Stability Method</label>
+                <select id="pump-method" name="pump-method">
+                    <option value="FIXED_DELAY">Fixed Delay</option>
+                    <option value="VARIANCE_CHECK">Variance Check</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="actions">
+            <button type="submit" class="button">Save Configuration</button>
+            <button type="button" class="button button-warning" onclick="resetConfig()">Reset to Defaults</button>
+            <button type="button" class="button button-danger" onclick="restartDevice()">Restart Device</button>
+        </div>
+    </form>
+
+    <script>
+        async function loadConfig() {
+            try {
+                const config = await fetch('/api/config').then(r => r.json());
+
+                // WiFi
+                document.getElementById('wifi-ssid').value = config.wifi.station_ssid || '';
+                document.getElementById('wifi-password').value = config.wifi.station_password || '';
+                document.getElementById('wifi-ap-password').value = config.wifi.ap_password || '';
+
+                // API
+                document.getElementById('api-url').value = config.api.url || '';
+                document.getElementById('api-key').value = config.api.api_key || '';
+                document.getElementById('api-interval').value = (config.api.upload_interval_ms / 60000) || 5;
+                document.getElementById('api-batch').value = config.api.batch_size || 100;
+                document.getElementById('api-retries').value = config.api.max_retries || 5;
+
+                // Device
+                document.getElementById('device-guid').value = config.device.device_guid || '';
+                document.getElementById('partner-id').value = config.device.partner_id || '';
+                document.getElementById('firmware-version').value = config.device.firmware_version || '';
+
+                // Pump
+                document.getElementById('pump-enabled').checked = config.pump.enabled || false;
+                document.getElementById('pump-cycle').value = (config.pump.cycle_interval_ms / 1000) || 60;
+                document.getElementById('pump-startup').value = config.pump.startup_delay_ms || 2000;
+                document.getElementById('pump-stability').value = config.pump.stability_wait_ms || 3000;
+                document.getElementById('pump-count').value = config.pump.measurement_count || 1;
+                document.getElementById('pump-measure-interval').value = config.pump.measurement_interval_ms || 2000;
+                document.getElementById('pump-stop').value = config.pump.stop_delay_ms || 500;
+                document.getElementById('pump-cooldown').value = config.pump.cooldown_ms || 55000;
+                document.getElementById('pump-max-on').value = config.pump.max_on_time_ms || 30000;
+                document.getElementById('pump-method').value = config.pump.method || 'FIXED_DELAY';
+
+            } catch (e) {
+                showToast('Failed to load configuration: ' + e.message, 'error');
+            }
+        }
+
+        async function saveConfig(event) {
+            event.preventDefault();
+
+            const config = {
+                wifi: {
+                    station_ssid: document.getElementById('wifi-ssid').value,
+                    station_password: document.getElementById('wifi-password').value,
+                    ap_password: document.getElementById('wifi-ap-password').value
+                },
+                api: {
+                    url: document.getElementById('api-url').value,
+                    api_key: document.getElementById('api-key').value,
+                    upload_interval_ms: parseInt(document.getElementById('api-interval').value) * 60000,
+                    batch_size: parseInt(document.getElementById('api-batch').value),
+                    max_retries: parseInt(document.getElementById('api-retries').value)
+                },
+                device: {
+                    device_guid: document.getElementById('device-guid').value,
+                    partner_id: document.getElementById('partner-id').value,
+                    firmware_version: document.getElementById('firmware-version').value
+                },
+                pump: {
+                    enabled: document.getElementById('pump-enabled').checked,
+                    cycle_interval_ms: parseInt(document.getElementById('pump-cycle').value) * 1000,
+                    startup_delay_ms: parseInt(document.getElementById('pump-startup').value),
+                    stability_wait_ms: parseInt(document.getElementById('pump-stability').value),
+                    measurement_count: parseInt(document.getElementById('pump-count').value),
+                    measurement_interval_ms: parseInt(document.getElementById('pump-measure-interval').value),
+                    stop_delay_ms: parseInt(document.getElementById('pump-stop').value),
+                    cooldown_ms: parseInt(document.getElementById('pump-cooldown').value),
+                    max_on_time_ms: parseInt(document.getElementById('pump-max-on').value),
+                    method: document.getElementById('pump-method').value
+                }
+            };
+
+            try {
+                const response = await fetch('/api/config/update', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(config)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showToast(result.message || 'Configuration saved!', 'success');
+                } else {
+                    showToast('Error: ' + (result.error || 'Unknown error'), 'error');
+                }
+            } catch (e) {
+                showToast('Network error: ' + e.message, 'error');
+            }
+        }
+
+        async function resetConfig() {
+            if (!confirm('Reset all settings to defaults?')) return;
+
+            try {
+                const response = await fetch('/api/config/reset', {method: 'POST'});
+                const result = await response.json();
+
+                if (response.ok) {
+                    showToast('Configuration reset to defaults', 'success');
+                    setTimeout(() => loadConfig(), 1000);
+                } else {
+                    showToast('Error: ' + (result.error || 'Unknown error'), 'error');
+                }
+            } catch (e) {
+                showToast('Network error: ' + e.message, 'error');
+            }
+        }
+
+        async function restartDevice() {
+            if (!confirm('Restart the device? This will apply WiFi and API changes.')) return;
+
+            try {
+                await fetch('/api/system/restart', {method: 'POST'});
+                showToast('Device restarting... Reconnect in 30 seconds.', 'info');
+                setTimeout(() => {
+                    document.body.innerHTML = '<div style="text-align:center;padding:50px;"><h2>Device Restarting...</h2><p>Please wait 30 seconds and refresh the page.</p></div>';
+                }, 1000);
+            } catch (e) {
+                showToast('Restart command sent', 'info');
+            }
+        }
+
+        function showToast(message, type) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast toast-' + type;
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 5000);
+        }
+
+        document.getElementById('configForm').addEventListener('submit', saveConfig);
+        loadConfig();
+    </script>
+</body>
+</html>
+)HTML";
+
+    _server->send(200, "text/html", html);
 }
 
 void SeaSenseWebServer::handleNotFound() {

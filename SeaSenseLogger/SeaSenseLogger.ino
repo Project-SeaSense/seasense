@@ -54,6 +54,9 @@
 // Pump Control
 #include "src/pump/PumpController.h"
 
+// Configuration Manager
+#include "src/config/ConfigManager.h"
+
 // ============================================================================
 // Global Variables
 // ============================================================================
@@ -66,6 +69,9 @@ GPSModule gps(GPS_RX_PIN, GPS_TX_PIN);
 // Storage
 StorageManager storage(SPIFFS_CIRCULAR_BUFFER_SIZE, SD_CS_PIN);
 
+// Configuration
+ConfigManager configManager;
+
 // Calibration
 CalibrationManager calibration(&tempSensor, &ecSensor);
 
@@ -73,7 +79,7 @@ CalibrationManager calibration(&tempSensor, &ecSensor);
 PumpController pumpController(&tempSensor, &ecSensor);
 
 // Web server
-SeaSenseWebServer webServer(&tempSensor, &ecSensor, &storage, &calibration, &pumpController);
+SeaSenseWebServer webServer(&tempSensor, &ecSensor, &storage, &calibration, &pumpController, &configManager);
 
 // API Uploader
 APIUploader apiUploader(&storage);
@@ -231,6 +237,12 @@ void setup() {
         Serial.println("[ERROR] Failed to initialize GPS module");
     }
 
+    // Initialize configuration manager
+    Serial.println("\n[CONFIG] Loading runtime configuration...");
+    if (!configManager.begin()) {
+        Serial.println("[WARNING] Failed to load config from SPIFFS, using defaults");
+    }
+
     // Initialize storage
     if (!storage.begin()) {
         Serial.println("[ERROR] No storage systems available!");
@@ -244,15 +256,18 @@ void setup() {
 
     // Initialize API uploader
     Serial.println("\n[API] Initializing API uploader...");
+    ConfigManager::APIConfig apiConfig = configManager.getAPIConfig();
+    ConfigManager::DeviceConfig deviceConfig = configManager.getDeviceConfig();
+
     UploadConfig uploadConfig;
-    uploadConfig.apiUrl = API_URL;
-    uploadConfig.apiKey = API_KEY;
-    uploadConfig.partnerID = getPartnerID();
-    uploadConfig.deviceGUID = getDeviceGUID();
+    uploadConfig.apiUrl = apiConfig.url;
+    uploadConfig.apiKey = apiConfig.apiKey;
+    uploadConfig.partnerID = deviceConfig.partnerID;
+    uploadConfig.deviceGUID = deviceConfig.deviceGUID;
     uploadConfig.enabled = true;
-    uploadConfig.intervalMs = 300000;  // 5 minutes
-    uploadConfig.batchSize = 100;
-    uploadConfig.maxRetries = 5;
+    uploadConfig.intervalMs = apiConfig.uploadInterval;
+    uploadConfig.batchSize = apiConfig.batchSize;
+    uploadConfig.maxRetries = apiConfig.maxRetries;
 
     if (apiUploader.begin(uploadConfig)) {
         Serial.println("[API] API uploader initialized");
@@ -262,6 +277,8 @@ void setup() {
 
     // Initialize pump controller
     Serial.println("\n[PUMP] Initializing pump controller...");
+    PumpConfig pumpConfig = configManager.getPumpConfig();
+    pumpController.setConfig(pumpConfig);
     if (pumpController.begin()) {
         Serial.println("[PUMP] Pump controller initialized");
     } else {
