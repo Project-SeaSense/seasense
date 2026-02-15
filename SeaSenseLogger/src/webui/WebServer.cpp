@@ -304,7 +304,7 @@ void SeaSenseWebServer::handleDashboard() {
                             if (s.type.toLowerCase().includes('temperature')) {
                                 valueFormatted = s.value.toFixed(3); // 3 decimals for temperature
                             } else if (s.type.toLowerCase().includes('salinity')) {
-                                valueFormatted = Math.round(s.value); // No decimals for salinity
+                                valueFormatted = s.value.toFixed(2); // 2 decimals for salinity
                             } else {
                                 valueFormatted = s.value.toFixed(0); // No decimals for conductivity
                             }
@@ -411,10 +411,10 @@ void SeaSenseWebServer::handleCalibrate() {
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">Menu</div>
         <ul class="sidebar-nav">
-            <li><a href="/dashboard" onclick="closeMenu()">Dashboard</a></li>
-            <li><a href="/settings" onclick="closeMenu()">Settings</a></li>
-            <li><a href="/calibrate" class="active" onclick="closeMenu()">Calibration</a></li>
-            <li><a href="/data" onclick="closeMenu()">Data</a></li>
+            <li><a href="/dashboard">Dashboard</a></li>
+            <li><a href="/settings">Settings</a></li>
+            <li><a href="/calibrate" class="active">Calibration</a></li>
+            <li><a href="/data">Data</a></li>
         </ul>
     </div>
 
@@ -689,10 +689,10 @@ void SeaSenseWebServer::handleSettings() {
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">Menu</div>
         <ul class="sidebar-nav">
-            <li><a href="/dashboard" onclick="closeMenu()">Dashboard</a></li>
-            <li><a href="/settings" class="active" onclick="closeMenu()">Settings</a></li>
-            <li><a href="/calibrate" onclick="closeMenu()">Calibration</a></li>
-            <li><a href="/data" onclick="closeMenu()">Data</a></li>
+            <li><a href="/dashboard">Dashboard</a></li>
+            <li><a href="/settings" class="active">Settings</a></li>
+            <li><a href="/calibrate">Calibration</a></li>
+            <li><a href="/data">Data</a></li>
         </ul>
     </div>
 
