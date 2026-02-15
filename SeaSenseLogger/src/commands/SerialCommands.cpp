@@ -409,7 +409,7 @@ void SerialCommands::cmdScan() {
         Serial.println();
         Serial.println("Troubleshooting tips:");
         Serial.println("1. Check sensor power connections (5V and GND)");
-        Serial.println("2. Verify I2C wiring (SDA on GPIO1, SCL on GPIO2)");
+        Serial.println("2. Verify I2C wiring (SDA on GPIO8, SCL on GPIO9)");
         Serial.println("3. Check for loose connections");
         Serial.println("4. Verify sensors are powered on (LED should be lit)");
         Serial.println("5. Try different I2C pull-up resistors (4.7kΩ typical)");

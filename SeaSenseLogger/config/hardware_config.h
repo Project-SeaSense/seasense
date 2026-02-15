@@ -11,8 +11,8 @@
 // I2C Configuration - Atlas Scientific EZO Sensors
 // ============================================================================
 
-#define I2C_SDA_PIN 1
-#define I2C_SCL_PIN 2
+#define I2C_SDA_PIN 8   // GPIO8 - ESP32-S3 default I2C SDA
+#define I2C_SCL_PIN 9   // GPIO9 - ESP32-S3 default I2C SCL
 #define I2C_FREQUENCY 100000  // 100kHz (standard mode)
 
 // ============================================================================
@@ -48,14 +48,14 @@
 // ============================================================================
 
 #define CAN_TX_PIN 4
-#define CAN_RX_PIN 2
+#define CAN_RX_PIN 27  // Moved from GPIO2 to avoid conflict with onboard LED
 #define CAN_SPEED 250000  // 250kbps (NMEA2000 standard)
 
 // ============================================================================
 // Status LED
 // ============================================================================
 
-#define LED_PIN 13  // Moved from GPIO2 to avoid conflict with I2C_SCL and CAN_RX
+#define LED_PIN 2  // Onboard LED (hardwired on ESP32 board)
 
 // ============================================================================
 // Pump Control
