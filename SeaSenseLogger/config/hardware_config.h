@@ -141,11 +141,11 @@
 // Debug Configuration
 // ============================================================================
 
-// #define DEBUG_SENSORS       // Uncomment to enable sensor debug output
+#define DEBUG_SENSORS       // Uncomment to enable sensor debug output
 // #define DEBUG_STORAGE       // Uncomment to enable storage debug output
 // #define DEBUG_NMEA2000      // Uncomment to enable NMEA2000 debug output
 // #define DEBUG_API_UPLOAD    // Uncomment to enable API upload debug output
-// #define DEBUG_WIFI          // Uncomment to enable WiFi debug output
+#define DEBUG_WIFI          // Uncomment to enable WiFi debug output
 
 #ifdef DEBUG_SENSORS
   #define DEBUG_SENSOR_PRINT(x) Serial.print(x)

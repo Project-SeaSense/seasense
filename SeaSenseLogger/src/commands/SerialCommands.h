@@ -85,6 +85,11 @@ private:
     void cmdTest();
 
     /**
+     * SCAN - Scan I2C bus for connected devices
+     */
+    void cmdScan();
+
+    /**
      * HELP - Show available commands
      */
     void cmdHelp();

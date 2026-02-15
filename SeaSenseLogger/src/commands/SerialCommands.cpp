@@ -4,6 +4,7 @@
 
 #include "SerialCommands.h"
 #include "../webui/WebServer.h"
+#include <Wire.h>
 
 // ============================================================================
 // Constructor
@@ -67,6 +68,8 @@ void SerialCommands::processCommand(const String& command) {
         cmdStatus();
     } else if (cmd == "TEST") {
         cmdTest();
+    } else if (cmd == "SCAN") {
+        cmdScan();
     } else if (cmd.startsWith("PUMP")) {
         String args = "";
         int spaceIndex = cmd.indexOf(' ');
@@ -392,6 +395,71 @@ void SerialCommands::cmdTest() {
     Serial.println("Test complete");
 }
 
+void SerialCommands::cmdScan() {
+    printHeader("I2C BUS SCANNER");
+
+    Serial.println("Scanning I2C bus (0x01 - 0x7F)...");
+    Serial.println();
+
+    int devicesFound = 0;
+
+    Serial.println("Address  Device");
+    Serial.println("-------  ------------------");
+
+    for (uint8_t address = 1; address < 127; address++) {
+        Wire.beginTransmission(address);
+        uint8_t error = Wire.endTransmission();
+
+        if (error == 0) {
+            // Device found
+            Serial.print("0x");
+            if (address < 16) Serial.print("0");
+            Serial.print(address, HEX);
+            Serial.print("   ");
+
+            // Identify known devices
+            if (address == 0x66) {
+                Serial.println("EZO-RTD (Temperature)");
+            } else if (address == 0x64) {
+                Serial.println("EZO-EC (Conductivity)");
+            } else if (address == 0x61) {
+                Serial.println("EZO-DO (Dissolved Oxygen)");
+            } else if (address == 0x63) {
+                Serial.println("EZO-pH");
+            } else {
+                Serial.println("Unknown device");
+            }
+
+            devicesFound++;
+        } else if (error == 4) {
+            Serial.print("0x");
+            if (address < 16) Serial.print("0");
+            Serial.print(address, HEX);
+            Serial.println("   ERROR");
+        }
+    }
+
+    Serial.println();
+    if (devicesFound == 0) {
+        Serial.println("No I2C devices found!");
+        Serial.println();
+        Serial.println("Troubleshooting tips:");
+        Serial.println("1. Check sensor power connections (5V and GND)");
+        Serial.println("2. Verify I2C wiring (SDA on GPIO21, SCL on GPIO22)");
+        Serial.println("3. Check for loose connections");
+        Serial.println("4. Verify sensors are powered on (LED should be lit)");
+        Serial.println("5. Try different I2C pull-up resistors (4.7kΩ typical)");
+    } else {
+        Serial.print("Found ");
+        Serial.print(devicesFound);
+        Serial.println(" device(s)");
+        Serial.println();
+        Serial.println("Expected devices:");
+        Serial.println("  0x66 - EZO-RTD (Temperature sensor)");
+        Serial.println("  0x64 - EZO-EC (Conductivity sensor)");
+    }
+}
+
 void SerialCommands::cmdHelp() {
     printHeader("AVAILABLE COMMANDS");
 
@@ -399,6 +467,7 @@ void SerialCommands::cmdHelp() {
     Serial.println("CLEAR        - Delete all stored data (requires YES confirmation)");
     Serial.println("STATUS       - Display system status and diagnostics");
     Serial.println("TEST         - Read sensors without logging");
+    Serial.println("SCAN         - Scan I2C bus for connected devices");
     Serial.println("PUMP STATUS  - Display pump controller status");
     Serial.println("PUMP START   - Manually start pump cycle");
     Serial.println("PUMP STOP    - Emergency stop pump");

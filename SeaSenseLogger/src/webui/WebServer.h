@@ -22,6 +22,7 @@
 // Forward declarations
 class EZO_RTD;
 class EZO_EC;
+class ConfigManager;
 
 class SeaSenseWebServer {
 public:
@@ -33,7 +34,7 @@ public:
      * @param calibration Pointer to calibration manager
      * @param pumpController Pointer to pump controller
      */
-    SeaSenseWebServer(EZO_RTD* tempSensor, EZO_EC* ecSensor, StorageManager* storage, CalibrationManager* calibration, PumpController* pumpController = nullptr);
+    SeaSenseWebServer(EZO_RTD* tempSensor, EZO_EC* ecSensor, StorageManager* storage, CalibrationManager* calibration, PumpController* pumpController = nullptr, ConfigManager* configManager = nullptr);
 
     ~SeaSenseWebServer();
 
@@ -86,6 +87,9 @@ private:
 
     // Pump
     PumpController* _pumpController;
+
+    // Configuration
+    ConfigManager* _configManager;
 
     // WiFi
     String _apSSID;
@@ -155,6 +159,10 @@ private:
     void handleApiPumpControl();
     void handleApiPumpConfig();
     void handleApiPumpConfigUpdate();
+
+    // API - System
+    void handleApiSystemRestart();
+    void handleApiConfigReset();
 
     // ========================================================================
     // Helper Methods

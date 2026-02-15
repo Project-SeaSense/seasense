@@ -5,6 +5,7 @@
 #include "WebServer.h"
 #include "../sensors/EZO_RTD.h"
 #include "../sensors/EZO_EC.h"
+#include "../config/ConfigManager.h"
 #include "../../config/hardware_config.h"
 #include "../../config/secrets.h"
 #include <ArduinoJson.h>
@@ -14,12 +15,13 @@
 // Constructor / Destructor
 // ============================================================================
 
-SeaSenseWebServer::SeaSenseWebServer(EZO_RTD* tempSensor, EZO_EC* ecSensor, StorageManager* storage, CalibrationManager* calibration, PumpController* pumpController)
+SeaSenseWebServer::SeaSenseWebServer(EZO_RTD* tempSensor, EZO_EC* ecSensor, StorageManager* storage, CalibrationManager* calibration, PumpController* pumpController, ConfigManager* configManager)
     : _tempSensor(tempSensor),
       _ecSensor(ecSensor),
       _storage(storage),
       _calibration(calibration),
       _pumpController(pumpController),
+      _configManager(configManager),
       _apIP(192, 168, 4, 1),
       _stationConnected(false),
       _server(nullptr),
@@ -74,6 +76,8 @@ bool SeaSenseWebServer::begin() {
     _server->on("/api/pump/control", std::bind(&SeaSenseWebServer::handleApiPumpControl, this));
     _server->on("/api/pump/config", std::bind(&SeaSenseWebServer::handleApiPumpConfig, this));
     _server->on("/api/pump/config/update", std::bind(&SeaSenseWebServer::handleApiPumpConfigUpdate, this));
+    _server->on("/api/config/reset", std::bind(&SeaSenseWebServer::handleApiConfigReset, this));
+    _server->on("/api/system/restart", std::bind(&SeaSenseWebServer::handleApiSystemRestart, this));
 
     _server->onNotFound(std::bind(&SeaSenseWebServer::handleNotFound, this));
 
@@ -419,13 +423,165 @@ void SeaSenseWebServer::handleApiDataClear() {
 }
 
 void SeaSenseWebServer::handleApiConfig() {
-    // TODO: Implement config retrieval
-    sendJSON("{\"device_guid\":\"seasense-001\"}");
+    if (!_configManager) {
+        sendError("Configuration manager not available", 503);
+        return;
+    }
+
+    StaticJsonDocument<2048> doc;
+
+    // WiFi config
+    ConfigManager::WiFiConfig wifi = _configManager->getWiFiConfig();
+    JsonObject wifiObj = doc.createNestedObject("wifi");
+    wifiObj["station_ssid"] = wifi.stationSSID;
+    wifiObj["station_password"] = wifi.stationPassword;
+    wifiObj["ap_password"] = wifi.apPassword;
+
+    // API config
+    ConfigManager::APIConfig api = _configManager->getAPIConfig();
+    JsonObject apiObj = doc.createNestedObject("api");
+    apiObj["url"] = api.url;
+    apiObj["api_key"] = api.apiKey;
+    apiObj["upload_interval_ms"] = api.uploadInterval;
+    apiObj["batch_size"] = api.batchSize;
+    apiObj["max_retries"] = api.maxRetries;
+
+    // Device config
+    ConfigManager::DeviceConfig device = _configManager->getDeviceConfig();
+    JsonObject deviceObj = doc.createNestedObject("device");
+    deviceObj["device_guid"] = device.deviceGUID;
+    deviceObj["partner_id"] = device.partnerID;
+    deviceObj["firmware_version"] = device.firmwareVersion;
+
+    // Pump config
+    PumpConfig pump = _configManager->getPumpConfig();
+    JsonObject pumpObj = doc.createNestedObject("pump");
+    pumpObj["enabled"] = pump.enabled;
+    pumpObj["relay_pin"] = pump.relayPin;
+    pumpObj["cycle_interval_ms"] = pump.cycleIntervalMs;
+    pumpObj["startup_delay_ms"] = pump.pumpStartupDelayMs;
+    pumpObj["stability_wait_ms"] = pump.stabilityWaitMs;
+    pumpObj["measurement_count"] = pump.measurementCount;
+    pumpObj["measurement_interval_ms"] = pump.measurementIntervalMs;
+    pumpObj["stop_delay_ms"] = pump.pumpStopDelayMs;
+    pumpObj["cooldown_ms"] = pump.cooldownMs;
+    pumpObj["max_on_time_ms"] = pump.maxPumpOnTimeMs;
+    pumpObj["method"] = (pump.method == StabilityMethod::FIXED_DELAY ? "FIXED_DELAY" : "VARIANCE_CHECK");
+    pumpObj["temp_variance_threshold"] = pump.tempVarianceThreshold;
+    pumpObj["ec_variance_threshold"] = pump.ecVarianceThreshold;
+
+    String json;
+    serializeJson(doc, json);
+    sendJSON(json);
 }
 
 void SeaSenseWebServer::handleApiConfigUpdate() {
-    // TODO: Implement config update
-    sendError("Not implemented yet");
+    if (!_configManager) {
+        sendError("Configuration manager not available", 503);
+        return;
+    }
+
+    if (_server->method() != HTTP_POST) {
+        sendError("Method not allowed", 405);
+        return;
+    }
+
+    // Parse request body
+    StaticJsonDocument<2048> doc;
+    DeserializationError error = deserializeJson(doc, _server->arg("plain"));
+
+    if (error) {
+        sendError("Invalid JSON", 400);
+        return;
+    }
+
+    // Update WiFi config
+    if (doc.containsKey("wifi")) {
+        ConfigManager::WiFiConfig wifi;
+        wifi.stationSSID = doc["wifi"]["station_ssid"] | "";
+        wifi.stationPassword = doc["wifi"]["station_password"] | "";
+        wifi.apPassword = doc["wifi"]["ap_password"] | "protectplanet!";
+        _configManager->setWiFiConfig(wifi);
+    }
+
+    // Update API config
+    if (doc.containsKey("api")) {
+        ConfigManager::APIConfig api;
+        api.url = doc["api"]["url"] | "";
+        api.apiKey = doc["api"]["api_key"] | "";
+        api.uploadInterval = doc["api"]["upload_interval_ms"] | 300000;
+        api.batchSize = doc["api"]["batch_size"] | 100;
+        api.maxRetries = doc["api"]["max_retries"] | 5;
+        _configManager->setAPIConfig(api);
+    }
+
+    // Update device config
+    if (doc.containsKey("device")) {
+        ConfigManager::DeviceConfig device;
+        device.deviceGUID = doc["device"]["device_guid"] | "";
+        device.partnerID = doc["device"]["partner_id"] | "";
+        device.firmwareVersion = doc["device"]["firmware_version"] | "2.0.0";
+        _configManager->setDeviceConfig(device);
+    }
+
+    // Update pump config
+    if (doc.containsKey("pump")) {
+        PumpConfig pump = _configManager->getPumpConfig();
+
+        if (doc["pump"].containsKey("enabled")) {
+            pump.enabled = doc["pump"]["enabled"];
+        }
+        if (doc["pump"].containsKey("relay_pin")) {
+            pump.relayPin = doc["pump"]["relay_pin"];
+        }
+        if (doc["pump"].containsKey("cycle_interval_ms")) {
+            pump.cycleIntervalMs = doc["pump"]["cycle_interval_ms"];
+        }
+        if (doc["pump"].containsKey("startup_delay_ms")) {
+            pump.pumpStartupDelayMs = doc["pump"]["startup_delay_ms"];
+        }
+        if (doc["pump"].containsKey("stability_wait_ms")) {
+            pump.stabilityWaitMs = doc["pump"]["stability_wait_ms"];
+        }
+        if (doc["pump"].containsKey("measurement_count")) {
+            pump.measurementCount = doc["pump"]["measurement_count"];
+        }
+        if (doc["pump"].containsKey("measurement_interval_ms")) {
+            pump.measurementIntervalMs = doc["pump"]["measurement_interval_ms"];
+        }
+        if (doc["pump"].containsKey("stop_delay_ms")) {
+            pump.pumpStopDelayMs = doc["pump"]["stop_delay_ms"];
+        }
+        if (doc["pump"].containsKey("cooldown_ms")) {
+            pump.cooldownMs = doc["pump"]["cooldown_ms"];
+        }
+        if (doc["pump"].containsKey("max_on_time_ms")) {
+            pump.maxPumpOnTimeMs = doc["pump"]["max_on_time_ms"];
+        }
+        if (doc["pump"].containsKey("method")) {
+            String method = doc["pump"]["method"];
+            if (method == "VARIANCE_CHECK") {
+                pump.method = StabilityMethod::VARIANCE_CHECK;
+            } else {
+                pump.method = StabilityMethod::FIXED_DELAY;
+            }
+        }
+        if (doc["pump"].containsKey("temp_variance_threshold")) {
+            pump.tempVarianceThreshold = doc["pump"]["temp_variance_threshold"];
+        }
+        if (doc["pump"].containsKey("ec_variance_threshold")) {
+            pump.ecVarianceThreshold = doc["pump"]["ec_variance_threshold"];
+        }
+
+        _configManager->setPumpConfig(pump);
+    }
+
+    // Save to SPIFFS
+    if (_configManager->save()) {
+        sendJSON("{\"success\":true,\"message\":\"Configuration saved. Restart device to apply WiFi and API changes.\"}");
+    } else {
+        sendError("Failed to save configuration", 500);
+    }
 }
 
 void SeaSenseWebServer::handleApiStatus() {
@@ -697,4 +853,37 @@ void SeaSenseWebServer::handleApiPumpConfigUpdate() {
     _pumpController->setConfig(config);
 
     sendJSON("{\"success\":true,\"message\":\"Configuration updated\"}");
+}
+
+// ============================================================================
+// API Handlers - System
+// ============================================================================
+
+void SeaSenseWebServer::handleApiConfigReset() {
+    if (!_configManager) {
+        sendError("Configuration manager not available", 503);
+        return;
+    }
+
+    if (_server->method() != HTTP_POST) {
+        sendError("Method not allowed", 405);
+        return;
+    }
+
+    if (_configManager->reset()) {
+        sendJSON("{\"success\":true,\"message\":\"Configuration reset to defaults\"}");
+    } else {
+        sendError("Failed to reset configuration", 500);
+    }
+}
+
+void SeaSenseWebServer::handleApiSystemRestart() {
+    if (_server->method() != HTTP_POST) {
+        sendError("Method not allowed", 405);
+        return;
+    }
+
+    sendJSON("{\"success\":true,\"message\":\"Device restarting...\"}");
+    delay(500);  // Let response send
+    ESP.restart();
 }
