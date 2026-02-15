@@ -407,8 +407,7 @@ bool EZOSensor::writeI2C(const String& command) {
         Wire.write(command[i]);
     }
 
-    // EZO sensors expect commands to end with \r
-    Wire.write('\r');
+    // Note: I2C mode does NOT need '\r' terminator (only UART mode does)
 
     uint8_t error = Wire.endTransmission();
 

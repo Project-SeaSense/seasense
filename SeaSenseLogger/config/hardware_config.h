@@ -11,8 +11,8 @@
 // I2C Configuration - Atlas Scientific EZO Sensors
 // ============================================================================
 
-#define I2C_SDA_PIN 21
-#define I2C_SCL_PIN 22
+#define I2C_SDA_PIN 1
+#define I2C_SCL_PIN 2
 #define I2C_FREQUENCY 100000  // 100kHz (standard mode)
 
 // ============================================================================
@@ -84,8 +84,8 @@
 // ============================================================================
 
 #define SENSOR_SAMPLING_INTERVAL_MS 5000  // 5 seconds between sensor readings
-#define EZO_RTD_RESPONSE_TIME_MS 600      // EZO-RTD response time
-#define EZO_EC_RESPONSE_TIME_MS 600       // EZO-EC response time
+#define EZO_RTD_RESPONSE_TIME_MS 1000      // EZO-RTD response time (increased for reliability)
+#define EZO_EC_RESPONSE_TIME_MS 1000       // EZO-EC response time (increased for reliability)
 #define NMEA2000_METADATA_INTERVAL_MS 60000  // Send metadata PGNs every 60 seconds
 
 // ============================================================================
