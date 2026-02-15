@@ -137,6 +137,7 @@ private:
     // API - Sensors
     void handleApiSensors();
     void handleApiSensorReading();
+    void handleApiSensorRead();
 
     // API - Calibration
     void handleApiCalibrate();

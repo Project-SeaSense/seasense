@@ -64,6 +64,7 @@ bool SeaSenseWebServer::begin() {
     // Register API handlers
     _server->on("/api/sensors", std::bind(&SeaSenseWebServer::handleApiSensors, this));
     _server->on("/api/sensor/reading", std::bind(&SeaSenseWebServer::handleApiSensorReading, this));
+    _server->on("/api/sensor/read", std::bind(&SeaSenseWebServer::handleApiSensorRead, this));
     _server->on("/api/calibrate", std::bind(&SeaSenseWebServer::handleApiCalibrate, this));
     _server->on("/api/calibrate/status", std::bind(&SeaSenseWebServer::handleApiCalibrateStatus, this));
     _server->on("/api/data/list", std::bind(&SeaSenseWebServer::handleApiDataList, this));
@@ -215,49 +216,160 @@ void SeaSenseWebServer::handleDashboard() {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>SeaSense Logger</title>
+    <title>Project SeaSense</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: Arial; margin: 20px; background: #f5f5f5; }
-        .nav { background: white; padding: 10px; margin-bottom: 20px; border-radius: 5px; }
-        .nav a { margin-right: 15px; text-decoration: none; color: #2196F3; }
-        .nav a:hover { text-decoration: underline; }
-        .sensor { padding: 15px; margin: 10px 0; background: white; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .value { font-size: 24px; font-weight: bold; }
-        .unit { color: #666; }
-        .quality { display: inline-block; padding: 3px 8px; border-radius: 3px; font-size: 12px; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #e8f4f8; color: #1a4d5e; }
+
+        /* Header */
+        .header { background: linear-gradient(135deg, #0a4f66 0%, #0e7fa3 100%); color: white; padding: 12px 15px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 100; }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .hamburger { background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 5px; }
+        .hamburger:hover { opacity: 0.8; }
+        .title { font-size: 18px; font-weight: 600; white-space: nowrap; }
+        .refresh-btn { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+        .refresh-btn:hover { background: rgba(255,255,255,0.3); }
+        .refresh-btn:active { transform: scale(0.95); }
+        .refresh-btn.loading { opacity: 0.6; pointer-events: none; }
+
+        /* Sidebar */
+        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 200; }
+        .sidebar.open { left: 0; }
+        .sidebar-header { background: #0a4f66; color: white; padding: 15px; font-weight: 600; }
+        .sidebar-nav { list-style: none; }
+        .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; transition: background 0.2s; }
+        .sidebar-nav a:hover { background: #e8f4f8; }
+        .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 150; }
+        .overlay.show { display: block; }
+
+        /* Main content */
+        .container { padding: 15px; max-width: 600px; margin: 0 auto; }
+
+        /* Sensors */
+        .sensors-grid { display: grid; gap: 12px; }
+        .sensor-card { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); border-left: 4px solid #0e7fa3; }
+        .sensor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .sensor-name { font-size: 14px; font-weight: 600; color: #0a4f66; text-transform: uppercase; letter-spacing: 0.5px; }
+        .quality-badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
         .quality-good { background: #4CAF50; color: white; }
-        .quality-fair { background: #FFC107; color: black; }
+        .quality-fair { background: #FFC107; color: #333; }
         .quality-error { background: #F44336; color: white; }
+        .quality-not_calibrated { background: #9E9E9E; color: white; }
+        .sensor-value { font-size: 32px; font-weight: 700; color: #1a4d5e; line-height: 1.2; }
+        .sensor-unit { font-size: 16px; font-weight: 400; color: #666; margin-left: 4px; }
+        .sensor-meta { margin-top: 8px; font-size: 12px; color: #888; }
+
+        /* Loading state */
+        .loading-pulse { animation: pulse 1.5s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        /* Status message */
+        .status-msg { text-align: center; padding: 30px; color: #888; font-size: 14px; }
     </style>
 </head>
 <body>
-    <div class="nav">
-        <a href="/dashboard">Dashboard</a>
-        <a href="/settings">Settings</a>
-        <a href="/calibrate">Calibration</a>
-        <a href="/data">Data</a>
+    <div class="overlay" id="overlay" onclick="closeMenu()"></div>
+
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">Menu</div>
+        <ul class="sidebar-nav">
+            <li><a href="/dashboard" class="active" onclick="closeMenu()">Dashboard</a></li>
+            <li><a href="/settings" onclick="closeMenu()">Settings</a></li>
+            <li><a href="/calibrate" onclick="closeMenu()">Calibration</a></li>
+            <li><a href="/data" onclick="closeMenu()">Data</a></li>
+        </ul>
     </div>
-    <h1>SeaSense Logger</h1>
-    <div id="sensors"></div>
+
+    <div class="header">
+        <div class="header-left">
+            <button class="hamburger" onclick="toggleMenu()">☰</button>
+            <div class="title">Project SeaSense</div>
+        </div>
+        <button class="refresh-btn" id="refreshBtn" onclick="forceRefresh()">↻ Refresh</button>
+    </div>
+
+    <div class="container">
+        <div class="sensors-grid" id="sensors">
+            <div class="status-msg">Loading sensor data...</div>
+        </div>
+    </div>
+
     <script>
+        let autoUpdate = true;
+
+        function toggleMenu() {
+            document.getElementById('sidebar').classList.toggle('open');
+            document.getElementById('overlay').classList.toggle('show');
+        }
+
+        function closeMenu() {
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('overlay').classList.remove('show');
+        }
+
         function update() {
             fetch('/api/sensors')
                 .then(r => r.json())
                 .then(data => {
                     let html = '';
-                    data.sensors.forEach(s => {
-                        html += `<div class="sensor">
-                            <h3>${s.type}</h3>
-                            <div class="value">${s.value.toFixed(2)} <span class="unit">${s.unit}</span></div>
-                            <div><span class="quality quality-${s.quality}">${s.quality.toUpperCase()}</span></div>
-                        </div>`;
-                    });
+                    if (data.sensors && data.sensors.length > 0) {
+                        data.sensors.forEach(s => {
+                            const qualityClass = s.quality.toLowerCase().replace(' ', '_');
+                            // Format value based on sensor type
+                            let valueFormatted;
+                            if (s.type.toLowerCase().includes('temperature')) {
+                                valueFormatted = s.value.toFixed(3); // 3 decimals for temperature
+                            } else if (s.type.toLowerCase().includes('salinity')) {
+                                valueFormatted = Math.round(s.value); // No decimals for salinity
+                            } else {
+                                valueFormatted = s.value.toFixed(0); // No decimals for conductivity
+                            }
+
+                            html += `<div class="sensor-card">
+                                <div class="sensor-header">
+                                    <div class="sensor-name">${s.type}</div>
+                                    <span class="quality-badge quality-${qualityClass}">${s.quality}</span>
+                                </div>
+                                <div class="sensor-value">
+                                    ${valueFormatted}<span class="sensor-unit">${s.unit}</span>
+                                </div>
+                                ${s.serial ? `<div class="sensor-meta">Serial: ${s.serial}</div>` : ''}
+                            </div>`;
+                        });
+                    } else {
+                        html = '<div class="status-msg">No sensor data available</div>';
+                    }
                     document.getElementById('sensors').innerHTML = html;
+                })
+                .catch(err => {
+                    document.getElementById('sensors').innerHTML = '<div class="status-msg">Error loading sensors</div>';
                 });
         }
+
+        function forceRefresh() {
+            const btn = document.getElementById('refreshBtn');
+            btn.classList.add('loading');
+            btn.textContent = '⟳ Reading...';
+
+            fetch('/api/sensor/read', { method: 'POST' })
+                .then(() => {
+                    setTimeout(() => {
+                        update();
+                        btn.classList.remove('loading');
+                        btn.textContent = '↻ Refresh';
+                    }, 1500);
+                })
+                .catch(err => {
+                    btn.classList.remove('loading');
+                    btn.textContent = '↻ Refresh';
+                    update();
+                });
+        }
+
         update();
-        setInterval(update, 2000);
+        setInterval(() => { if(autoUpdate) update(); }, 3000);
     </script>
 </body>
 </html>
@@ -267,7 +379,289 @@ void SeaSenseWebServer::handleDashboard() {
 }
 
 void SeaSenseWebServer::handleCalibrate() {
-    _server->send(200, "text/html", "<h1>Calibration</h1><p>Coming soon...</p>");
+    String html = R"HTML(
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Calibration - Project SeaSense</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #e8f4f8; color: #1a4d5e; }
+
+        /* Header */
+        .header { background: linear-gradient(135deg, #0a4f66 0%, #0e7fa3 100%); color: white; padding: 12px 15px; display: flex; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 100; }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .hamburger { background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 5px; }
+        .hamburger:hover { opacity: 0.8; }
+        .title { font-size: 18px; font-weight: 600; white-space: nowrap; }
+
+        /* Sidebar */
+        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 200; }
+        .sidebar.open { left: 0; }
+        .sidebar-header { background: #0a4f66; color: white; padding: 15px; font-weight: 600; }
+        .sidebar-nav { list-style: none; }
+        .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; transition: background 0.2s; }
+        .sidebar-nav a:hover { background: #e8f4f8; }
+        .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 150; }
+        .overlay.show { display: block; }
+
+        /* Main content */
+        .container { padding: 15px; max-width: 600px; margin: 0 auto; }
+
+        /* Cards */
+        .cal-card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); border-left: 4px solid #0e7fa3; }
+        .cal-header { font-size: 16px; font-weight: 600; color: #0a4f66; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .cal-info { background: #e8f4f8; padding: 12px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; color: #1a4d5e; }
+        .cal-section { margin: 15px 0; }
+        .cal-section-title { font-size: 14px; font-weight: 600; color: #0a4f66; margin-bottom: 10px; }
+
+        /* Form elements */
+        .form-group { margin: 12px 0; }
+        .form-group label { display: block; font-size: 13px; font-weight: 600; color: #1a4d5e; margin-bottom: 5px; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; border: 2px solid #d0e8f0; border-radius: 4px; font-size: 14px; transition: border 0.2s; }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: #0e7fa3; }
+        .form-group small { display: block; margin-top: 5px; font-size: 12px; color: #888; }
+
+        /* Buttons */
+        .btn-group { display: flex; gap: 10px; margin-top: 15px; }
+        .btn { padding: 10px 20px; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; flex: 1; }
+        .btn-primary { background: #0e7fa3; color: white; }
+        .btn-primary:hover { background: #0a4f66; }
+        .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+        .btn-secondary { background: #e0e0e0; color: #333; }
+        .btn-secondary:hover { background: #d0d0d0; }
+
+        /* Status messages */
+        .alert { padding: 12px; border-radius: 4px; margin: 15px 0; font-size: 13px; }
+        .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .alert-info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .hidden { display: none; }
+
+        /* Status badge */
+        .status-current { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-left: 10px; }
+        .status-calibrated { background: #4CAF50; color: white; }
+        .status-not-calibrated { background: #F44336; color: white; }
+    </style>
+</head>
+<body>
+    <div class="overlay" id="overlay" onclick="closeMenu()"></div>
+
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">Menu</div>
+        <ul class="sidebar-nav">
+            <li><a href="/dashboard" onclick="closeMenu()">Dashboard</a></li>
+            <li><a href="/settings" onclick="closeMenu()">Settings</a></li>
+            <li><a href="/calibrate" class="active" onclick="closeMenu()">Calibration</a></li>
+            <li><a href="/data" onclick="closeMenu()">Data</a></li>
+        </ul>
+    </div>
+
+    <div class="header">
+        <div class="header-left">
+            <button class="hamburger" onclick="toggleMenu()">☰</button>
+            <div class="title">Project SeaSense</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div id="alertBox" class="alert hidden"></div>
+
+        <!-- Temperature Calibration -->
+        <div class="cal-card">
+            <div class="cal-header">Temperature Sensor <span class="status-current status-calibrated" id="tempStatus">Calibrated</span></div>
+            <div class="cal-info">
+                <strong>EZO-RTD Temperature Sensor</strong><br>
+                Single-point calibration recommended. Use ice water (0°C) or room temperature with accurate thermometer.
+            </div>
+
+            <div class="cal-section">
+                <div class="cal-section-title">Current Reading</div>
+                <div style="font-size: 24px; font-weight: 700; color: #0a4f66; margin: 10px 0;">
+                    <span id="tempReading">--</span> °C
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Calibration Type</label>
+                <select id="tempCalType">
+                    <option value="clear">Clear Calibration</option>
+                    <option value="single">Single Point</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="tempValueGroup">
+                <label>Reference Temperature (°C)</label>
+                <input type="number" id="tempValue" step="0.1" placeholder="e.g. 0.0 for ice water">
+                <small>Enter the actual temperature of your calibration solution</small>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-secondary" onclick="readTemp()">Read Sensor</button>
+                <button class="btn btn-primary" onclick="calibrateTemp()">Calibrate</button>
+            </div>
+        </div>
+
+        <!-- Conductivity Calibration -->
+        <div class="cal-card">
+            <div class="cal-header">Conductivity Sensor <span class="status-current status-calibrated" id="ecStatus">Calibrated</span></div>
+            <div class="cal-info">
+                <strong>EZO-EC Conductivity Sensor</strong><br>
+                Multi-point calibration recommended for best accuracy. Use standard calibration solutions (e.g. 1413 µS/cm, 12880 µS/cm).
+            </div>
+
+            <div class="cal-section">
+                <div class="cal-section-title">Current Reading</div>
+                <div style="font-size: 24px; font-weight: 700; color: #0a4f66; margin: 10px 0;">
+                    <span id="ecReading">--</span> µS/cm
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Calibration Type</label>
+                <select id="ecCalType">
+                    <option value="clear">Clear Calibration</option>
+                    <option value="dry">Dry Calibration</option>
+                    <option value="single">Single Point</option>
+                    <option value="low">Two-Point (Low)</option>
+                    <option value="high">Two-Point (High)</option>
+                </select>
+                <small>For two-point: calibrate low point first, then high point</small>
+            </div>
+
+            <div class="form-group" id="ecValueGroup">
+                <label>Reference Conductivity (µS/cm)</label>
+                <input type="number" id="ecValue" step="1" placeholder="e.g. 1413">
+                <small>Enter the value from your calibration solution bottle</small>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-secondary" onclick="readEC()">Read Sensor</button>
+                <button class="btn btn-primary" onclick="calibrateEC()">Calibrate</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleMenu() {
+            document.getElementById('sidebar').classList.toggle('open');
+            document.getElementById('overlay').classList.toggle('show');
+        }
+
+        function closeMenu() {
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('overlay').classList.remove('show');
+        }
+
+        function showAlert(message, type) {
+            const alert = document.getElementById('alertBox');
+            alert.className = 'alert alert-' + type;
+            alert.textContent = message;
+            setTimeout(() => alert.classList.add('hidden'), 5000);
+        }
+
+        function readTemp() {
+            fetch('/api/sensor/reading?type=temperature')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('tempReading').textContent = data.value.toFixed(2);
+                })
+                .catch(err => showAlert('Error reading temperature sensor', 'error'));
+        }
+
+        function readEC() {
+            fetch('/api/sensor/reading?type=conductivity')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('ecReading').textContent = data.value.toFixed(0);
+                })
+                .catch(err => showAlert('Error reading conductivity sensor', 'error'));
+        }
+
+        function calibrateTemp() {
+            const type = document.getElementById('tempCalType').value;
+            const value = parseFloat(document.getElementById('tempValue').value);
+
+            if (type !== 'clear' && !value && value !== 0) {
+                showAlert('Please enter a reference temperature value', 'error');
+                return;
+            }
+
+            const data = {
+                sensor: 'temperature',
+                type: type,
+                value: value || 0
+            };
+
+            fetch('/api/calibrate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (result.success) {
+                    showAlert('Temperature calibration successful!', 'success');
+                    setTimeout(readTemp, 1000);
+                } else {
+                    showAlert('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
+                }
+            })
+            .catch(err => showAlert('Error during calibration', 'error'));
+        }
+
+        function calibrateEC() {
+            const type = document.getElementById('ecCalType').value;
+            const value = parseFloat(document.getElementById('ecValue').value);
+
+            if (type !== 'clear' && type !== 'dry' && !value && value !== 0) {
+                showAlert('Please enter a reference conductivity value', 'error');
+                return;
+            }
+
+            const data = {
+                sensor: 'conductivity',
+                type: type,
+                value: value || 0
+            };
+
+            fetch('/api/calibrate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (result.success) {
+                    showAlert('Conductivity calibration successful!', 'success');
+                    setTimeout(readEC, 1000);
+                } else {
+                    showAlert('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
+                }
+            })
+            .catch(err => showAlert('Error during calibration', 'error'));
+        }
+
+        // Toggle value input visibility based on calibration type
+        document.getElementById('tempCalType').addEventListener('change', function() {
+            document.getElementById('tempValueGroup').style.display = this.value === 'clear' ? 'none' : 'block';
+        });
+
+        document.getElementById('ecCalType').addEventListener('change', function() {
+            document.getElementById('ecValueGroup').style.display = (this.value === 'clear' || this.value === 'dry') ? 'none' : 'block';
+        });
+
+        // Initial read
+        readTemp();
+        readEC();
+    </script>
+</body>
+</html>
+)HTML";
+
+    _server->send(200, "text/html", html);
 }
 
 void SeaSenseWebServer::handleData() {
@@ -614,6 +1008,33 @@ void SeaSenseWebServer::handleApiSensorReading() {
     } else {
         sendError("Unknown sensor type");
     }
+}
+
+void SeaSenseWebServer::handleApiSensorRead() {
+    if (_server->method() != HTTP_POST) {
+        sendError("Method not allowed", 405);
+        return;
+    }
+
+    // Force read both sensors
+    bool tempSuccess = false;
+    bool ecSuccess = false;
+
+    if (_tempSensor && _tempSensor->isEnabled()) {
+        tempSuccess = _tempSensor->read();
+
+        // Set temperature compensation for EC sensor
+        if (tempSuccess) {
+            SensorData tempData = _tempSensor->getData();
+            _ecSensor->setTemperatureCompensation(tempData.value);
+        }
+    }
+
+    if (_ecSensor && _ecSensor->isEnabled()) {
+        ecSuccess = _ecSensor->read();
+    }
+
+    sendJSON("{\"success\":true,\"temperature\":" + String(tempSuccess ? "true" : "false") + ",\"conductivity\":" + String(ecSuccess ? "true" : "false") + "}");
 }
 
 void SeaSenseWebServer::handleApiCalibrate() {
