@@ -55,7 +55,7 @@
 // Status LED
 // ============================================================================
 
-#define LED_PIN 2
+#define LED_PIN 13  // Moved from GPIO2 to avoid conflict with I2C_SCL and CAN_RX
 
 // ============================================================================
 // Pump Control
