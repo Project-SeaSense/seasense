@@ -234,7 +234,7 @@ void SeaSenseWebServer::handleDashboard() {
         .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; transition: background 0.2s; }
         .sidebar-nav a:hover { background: #e8f4f8; }
         .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
-        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; pointer-events: auto; cursor: pointer; }
         .overlay.show { display: block; }
 
         /* Main content */
@@ -292,6 +292,16 @@ void SeaSenseWebServer::handleDashboard() {
             document.getElementById('sidebar').classList.remove('open');
             document.getElementById('overlay').classList.remove('show');
         }
+
+        // Prevent clicks on sidebar from closing the menu
+        document.addEventListener('DOMContentLoaded', function() {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) {
+                sidebar.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
+            }
+        });
 
         function update() {
             fetch('/api/sensors')
@@ -365,7 +375,7 @@ void SeaSenseWebServer::handleCalibrate() {
         .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; transition: background 0.2s; }
         .sidebar-nav a:hover { background: #e8f4f8; }
         .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
-        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; pointer-events: auto; cursor: pointer; }
         .overlay.show { display: block; }
 
         /* Main content */
@@ -514,6 +524,16 @@ void SeaSenseWebServer::handleCalibrate() {
             document.getElementById('overlay').classList.remove('show');
         }
 
+        // Prevent clicks on sidebar from closing the menu
+        document.addEventListener('DOMContentLoaded', function() {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) {
+                sidebar.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
+            }
+        });
+
         function showAlert(message, type) {
             const alert = document.getElementById('alertBox');
             alert.className = 'alert alert-' + type;
@@ -653,7 +673,7 @@ void SeaSenseWebServer::handleSettings() {
         .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; transition: background 0.2s; }
         .sidebar-nav a:hover { background: #e8f4f8; }
         .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
-        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; pointer-events: auto; cursor: pointer; }
         .overlay.show { display: block; }
 
         /* Main content */
@@ -790,6 +810,16 @@ void SeaSenseWebServer::handleSettings() {
             document.getElementById('sidebar').classList.remove('open');
             document.getElementById('overlay').classList.remove('show');
         }
+
+        // Prevent clicks on sidebar from closing the menu
+        document.addEventListener('DOMContentLoaded', function() {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) {
+                sidebar.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
+            }
+        });
 
         async function loadConfig() {
             try {
