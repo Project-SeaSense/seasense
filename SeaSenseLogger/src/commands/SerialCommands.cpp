@@ -70,6 +70,13 @@ void SerialCommands::processCommand(const String& command) {
         cmdTest();
     } else if (cmd == "SCAN") {
         cmdScan();
+    } else if (cmd.startsWith("PUMP")) {
+        // Extract subcommand after "PUMP "
+        String args = "";
+        if (cmd.length() > 4) {
+            args = command.substring(4);  // Use original command (not uppercase)
+        }
+        cmdPump(args);
     } else if (cmd == "HELP" || cmd == "?") {
         cmdHelp();
     } else if (cmd.length() > 0) {
@@ -424,6 +431,134 @@ void SerialCommands::cmdScan() {
     }
 }
 
+void SerialCommands::cmdPump(const String& args) {
+    if (!_pumpController) {
+        Serial.println("ERROR: Pump controller not available");
+        return;
+    }
+
+    String cmd = args;
+    cmd.trim();
+    cmd.toUpperCase();
+
+    if (cmd == "" || cmd == "STATUS") {
+        // Show pump status
+        printHeader("PUMP STATUS");
+
+        Serial.print("Enabled: ");
+        Serial.println(_pumpController->isEnabled() ? "Yes" : "No");
+
+        Serial.print("State: ");
+        PumpState state = _pumpController->getState();
+        if (state == PumpState::IDLE) {
+            Serial.println("IDLE");
+        } else if (state == PumpState::PUMP_STARTING) {
+            Serial.println("PUMP_STARTING");
+        } else if (state == PumpState::STABILIZING) {
+            Serial.println("STABILIZING");
+        } else if (state == PumpState::MEASURING) {
+            Serial.println("MEASURING");
+        } else if (state == PumpState::PUMP_STOPPING) {
+            Serial.println("PUMP_STOPPING");
+        } else if (state == PumpState::COOLDOWN) {
+            Serial.println("COOLDOWN");
+        } else if (state == PumpState::ERROR) {
+            Serial.println("ERROR");
+        } else if (state == PumpState::PAUSED) {
+            Serial.println("PAUSED");
+        }
+
+        Serial.print("Relay: ");
+        Serial.println(_pumpController->isRelayOn() ? "ON" : "OFF");
+
+        Serial.print("Cycle progress: ");
+        Serial.print(_pumpController->getCycleProgress());
+        Serial.println("%");
+
+        Serial.print("Cycle elapsed: ");
+        Serial.print(_pumpController->getCycleElapsed() / 1000);
+        Serial.println(" seconds");
+
+    } else if (cmd == "START") {
+        Serial.println("Starting pump manually...");
+        _pumpController->startPump();
+        Serial.println("Pump started");
+
+    } else if (cmd == "STOP") {
+        Serial.println("Stopping pump...");
+        _pumpController->stopPump();
+        Serial.println("Pump stopped");
+
+    } else if (cmd == "PAUSE") {
+        Serial.println("Pausing automatic pump cycles...");
+        _pumpController->pause();
+        Serial.println("Pump paused");
+
+    } else if (cmd == "RESUME") {
+        Serial.println("Resuming automatic pump cycles...");
+        _pumpController->resume();
+        Serial.println("Pump resumed");
+
+    } else if (cmd == "ENABLE") {
+        Serial.println("Enabling pump controller...");
+        _pumpController->setEnabled(true);
+        Serial.println("Pump controller enabled");
+
+    } else if (cmd == "DISABLE") {
+        Serial.println("Disabling pump controller...");
+        _pumpController->setEnabled(false);
+        Serial.println("Pump controller disabled");
+
+    } else if (cmd == "CONFIG") {
+        // Show pump configuration
+        printHeader("PUMP CONFIGURATION");
+
+        // Note: Configuration is in ConfigManager, we'd need access to it
+        // For now, just show what we can get from the pump controller
+        Serial.println("Configuration stored in settings.json");
+        Serial.println("Use Web UI to modify pump configuration");
+        Serial.println();
+        Serial.println("Timing defaults (from hardware_config.h):");
+        Serial.print("  Startup delay: ");
+        Serial.print(PUMP_STARTUP_DELAY_MS);
+        Serial.println(" ms");
+        Serial.print("  Stability wait: ");
+        Serial.print(PUMP_STABILITY_WAIT_MS);
+        Serial.println(" ms");
+        Serial.print("  Measurement count: ");
+        Serial.println(PUMP_MEASUREMENT_COUNT);
+        Serial.print("  Measurement interval: ");
+        Serial.print(PUMP_MEASUREMENT_INTERVAL_MS);
+        Serial.println(" ms");
+        Serial.print("  Stop delay: ");
+        Serial.print(PUMP_STOP_DELAY_MS);
+        Serial.println(" ms");
+        Serial.print("  Cooldown: ");
+        Serial.print(PUMP_COOLDOWN_MS);
+        Serial.println(" ms");
+        Serial.print("  Cycle interval: ");
+        Serial.print(PUMP_CYCLE_INTERVAL_MS / 1000);
+        Serial.println(" seconds");
+        Serial.print("  Max on time: ");
+        Serial.print(PUMP_MAX_ON_TIME_MS / 1000);
+        Serial.println(" seconds");
+
+    } else {
+        Serial.print("Unknown PUMP subcommand: ");
+        Serial.println(cmd);
+        Serial.println();
+        Serial.println("Available PUMP subcommands:");
+        Serial.println("  PUMP [STATUS]  - Show pump status");
+        Serial.println("  PUMP START     - Start pump manually");
+        Serial.println("  PUMP STOP      - Stop pump");
+        Serial.println("  PUMP PAUSE     - Pause automatic cycles");
+        Serial.println("  PUMP RESUME    - Resume automatic cycles");
+        Serial.println("  PUMP ENABLE    - Enable pump controller");
+        Serial.println("  PUMP DISABLE   - Disable pump controller");
+        Serial.println("  PUMP CONFIG    - Show configuration");
+    }
+}
+
 void SerialCommands::cmdHelp() {
     printHeader("AVAILABLE COMMANDS");
 
@@ -432,6 +567,7 @@ void SerialCommands::cmdHelp() {
     Serial.println("STATUS       - Display system status and diagnostics");
     Serial.println("TEST         - Read sensors without logging");
     Serial.println("SCAN         - Scan I2C bus for connected devices");
+    Serial.println("PUMP [cmd]   - Pump control (STATUS, START, STOP, PAUSE, RESUME, etc.)");
     Serial.println("HELP         - Show this help message");
     Serial.println();
     Serial.println("Type any command and press Enter");

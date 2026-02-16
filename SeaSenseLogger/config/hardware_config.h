@@ -86,6 +86,8 @@
 #define SENSOR_SAMPLING_INTERVAL_MS 5000  // 5 seconds between sensor readings
 #define EZO_RTD_RESPONSE_TIME_MS 1000      // EZO-RTD response time (increased for reliability)
 #define EZO_EC_RESPONSE_TIME_MS 1000       // EZO-EC response time (increased for reliability)
+#define EZO_PH_RESPONSE_TIME_MS 1000       // EZO-pH response time
+#define EZO_DO_RESPONSE_TIME_MS 1000       // EZO-DO response time
 #define NMEA2000_METADATA_INTERVAL_MS 60000  // Send metadata PGNs every 60 seconds
 
 // ============================================================================

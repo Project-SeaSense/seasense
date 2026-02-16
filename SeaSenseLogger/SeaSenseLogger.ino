@@ -31,6 +31,8 @@
 #include "src/sensors/EZOSensor.h"
 #include "src/sensors/EZO_RTD.h"
 #include "src/sensors/EZO_EC.h"
+#include "src/sensors/EZO_pH.h"
+#include "src/sensors/EZO_DO.h"
 #include "src/sensors/GPSModule.h"
 
 // Storage
@@ -61,6 +63,8 @@
 // Sensors
 EZO_RTD tempSensor;
 EZO_EC ecSensor;
+EZO_pH phSensor;
+EZO_DO doSensor;
 GPSModule gps(GPS_RX_PIN, GPS_TX_PIN);
 
 // Storage
@@ -84,6 +88,9 @@ SerialCommands serialCommands(&tempSensor, &ecSensor, &gps, &storage, &apiUpload
 // Device configuration
 StaticJsonDocument<4096> deviceConfigDoc;
 bool configLoaded = false;
+
+// Runtime sampling interval (from ConfigManager)
+unsigned long sensorSamplingIntervalMs = 900000;  // Default 15 minutes
 
 // ============================================================================
 // Device Configuration Functions
@@ -222,6 +229,26 @@ void setup() {
         Serial.println("[ERROR] Failed to initialize EZO-EC sensor");
     }
 
+    if (phSensor.begin()) {
+        Serial.println("[SENSORS] EZO-pH sensor initialized");
+        Serial.print("[SENSORS] - Serial: ");
+        Serial.println(phSensor.getSerialNumber());
+        Serial.print("[SENSORS] - Calibration: ");
+        Serial.println(phSensor.getLastCalibrationDate());
+    } else {
+        Serial.println("[ERROR] Failed to initialize EZO-pH sensor");
+    }
+
+    if (doSensor.begin()) {
+        Serial.println("[SENSORS] EZO-DO Dissolved Oxygen sensor initialized");
+        Serial.print("[SENSORS] - Serial: ");
+        Serial.println(doSensor.getSerialNumber());
+        Serial.print("[SENSORS] - Calibration: ");
+        Serial.println(doSensor.getLastCalibrationDate());
+    } else {
+        Serial.println("[ERROR] Failed to initialize EZO-DO sensor");
+    }
+
     // Initialize GPS
     Serial.println("\n[GPS] Initializing GPS module...");
     if (gps.begin(GPS_BAUD_RATE)) {
@@ -236,6 +263,12 @@ void setup() {
     if (!configManager.begin()) {
         Serial.println("[WARNING] Failed to load config from SPIFFS, using defaults");
     }
+
+    // Load sampling interval from configuration
+    sensorSamplingIntervalMs = configManager.getSamplingConfig().sensorIntervalMs;
+    Serial.print("[CONFIG] Sensor sampling interval: ");
+    Serial.print(sensorSamplingIntervalMs / 1000);
+    Serial.println(" seconds");
 
     // Initialize storage
     if (!storage.begin()) {
@@ -290,7 +323,7 @@ void loop() {
 
     // Read sensors at regular intervals
     static unsigned long lastSensorRead = 0;
-    if (now - lastSensorRead >= SENSOR_SAMPLING_INTERVAL_MS) {
+    if (now - lastSensorRead >= sensorSamplingIntervalMs) {
         lastSensorRead = now;
         // Blink LED to show activity
         digitalWrite(LED_PIN, HIGH);
@@ -335,8 +368,10 @@ void loop() {
                         tempData.quality == SensorQuality::NOT_CALIBRATED ? "NOT_CAL" : "ERROR");
             Serial.println("]");
 
-            // Set temperature compensation for EC sensor
+            // Set temperature compensation for EC, pH, and DO sensors
             ecSensor.setTemperatureCompensation(tempData.value);
+            phSensor.setTemperatureCompensation(tempData.value);
+            doSensor.setTemperatureCompensation(tempData.value);
 
             // Create DataRecord with GPS data
             DataRecord record = sensorDataToRecord(tempData, gps.getTimeUTC());
@@ -393,6 +428,76 @@ void loop() {
             }
         } else {
             Serial.println("Conductivity: READ FAILED");
+        }
+
+        // Read pH
+        if (phSensor.isEnabled() && phSensor.read()) {
+            SensorData phData = phSensor.getData();
+
+            Serial.print("pH: ");
+            Serial.print(phData.value, 2);
+            Serial.print(" ");
+            Serial.print(phData.unit);
+            Serial.print(" [");
+            Serial.print(phData.quality == SensorQuality::GOOD ? "GOOD" :
+                        phData.quality == SensorQuality::FAIR ? "FAIR" :
+                        phData.quality == SensorQuality::POOR ? "POOR" :
+                        phData.quality == SensorQuality::NOT_CALIBRATED ? "NOT_CAL" : "ERROR");
+            Serial.println("]");
+
+            // Create DataRecord with GPS data
+            DataRecord phRecord = sensorDataToRecord(phData, gps.getTimeUTC());
+            if (gps.hasValidFix()) {
+                phRecord.latitude = gpsData.latitude;
+                phRecord.longitude = gpsData.longitude;
+                phRecord.altitude = gpsData.altitude;
+                phRecord.gps_satellites = gpsData.satellites;
+                phRecord.gps_hdop = gpsData.hdop;
+            }
+
+            // Log to storage
+            if (!storage.writeRecord(phRecord)) {
+                Serial.println("[STORAGE] Failed to log pH");
+            }
+        } else {
+            Serial.println("pH: READ FAILED");
+        }
+
+        // Read dissolved oxygen
+        if (doSensor.isEnabled() && doSensor.read()) {
+            SensorData doData = doSensor.getData();
+
+            // Set salinity compensation for DO sensor
+            float salinity = ecSensor.getSalinity();
+            doSensor.setSalinityCompensation(salinity);
+
+            Serial.print("Dissolved Oxygen: ");
+            Serial.print(doData.value, 2);
+            Serial.print(" ");
+            Serial.print(doData.unit);
+            Serial.print(" [");
+            Serial.print(doData.quality == SensorQuality::GOOD ? "GOOD" :
+                        doData.quality == SensorQuality::FAIR ? "FAIR" :
+                        doData.quality == SensorQuality::POOR ? "POOR" :
+                        doData.quality == SensorQuality::NOT_CALIBRATED ? "NOT_CAL" : "ERROR");
+            Serial.println("]");
+
+            // Create DataRecord with GPS data
+            DataRecord doRecord = sensorDataToRecord(doData, gps.getTimeUTC());
+            if (gps.hasValidFix()) {
+                doRecord.latitude = gpsData.latitude;
+                doRecord.longitude = gpsData.longitude;
+                doRecord.altitude = gpsData.altitude;
+                doRecord.gps_satellites = gpsData.satellites;
+                doRecord.gps_hdop = gpsData.hdop;
+            }
+
+            // Log to storage
+            if (!storage.writeRecord(doRecord)) {
+                Serial.println("[STORAGE] Failed to log dissolved oxygen");
+            }
+        } else {
+            Serial.println("Dissolved Oxygen: READ FAILED");
         }
 
         Serial.println("----------------------");

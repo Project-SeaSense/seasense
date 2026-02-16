@@ -95,6 +95,14 @@ void ConfigManager::setPumpConfig(const PumpConfig& config) {
     _pump = config;
 }
 
+ConfigManager::SamplingConfig ConfigManager::getSamplingConfig() const {
+    return _sampling;
+}
+
+void ConfigManager::setSamplingConfig(const SamplingConfig& config) {
+    _sampling = config;
+}
+
 // ============================================================================
 // Private Methods
 // ============================================================================
@@ -169,6 +177,12 @@ bool ConfigManager::loadFromFile() {
         _pump.ecVarianceThreshold = pump["ec_variance_threshold"] | 50.0;
     }
 
+    // Load sampling config
+    if (doc.containsKey("sampling")) {
+        JsonObject sampling = doc["sampling"];
+        _sampling.sensorIntervalMs = sampling["sensor_interval_ms"] | 900000;
+    }
+
     return true;
 }
 
@@ -219,6 +233,10 @@ bool ConfigManager::saveToFile() {
 
     pump["temp_variance_threshold"] = _pump.tempVarianceThreshold;
     pump["ec_variance_threshold"] = _pump.ecVarianceThreshold;
+
+    // Sampling section
+    JsonObject sampling = doc.createNestedObject("sampling");
+    sampling["sensor_interval_ms"] = _sampling.sensorIntervalMs;
 
     // Write to file
     File file = SPIFFS.open(CONFIG_FILE, "w");
@@ -296,4 +314,7 @@ void ConfigManager::setDefaults() {
     _pump.method = StabilityMethod::FIXED_DELAY;
     _pump.tempVarianceThreshold = 0.1;
     _pump.ecVarianceThreshold = 50.0;
+
+    // Sampling defaults
+    _sampling.sensorIntervalMs = 900000;  // 15 minutes
 }

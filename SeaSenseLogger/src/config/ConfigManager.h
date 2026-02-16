@@ -43,6 +43,13 @@ public:
     };
 
     /**
+     * Sampling configuration
+     */
+    struct SamplingConfig {
+        uint32_t sensorIntervalMs;  // milliseconds between sensor readings
+    };
+
+    /**
      * Constructor
      */
     ConfigManager();
@@ -113,6 +120,18 @@ public:
      */
     void setPumpConfig(const PumpConfig& config);
 
+    /**
+     * Get sampling configuration
+     * @return SamplingConfig struct
+     */
+    SamplingConfig getSamplingConfig() const;
+
+    /**
+     * Set sampling configuration
+     * @param config SamplingConfig struct
+     */
+    void setSamplingConfig(const SamplingConfig& config);
+
 private:
     static const char* CONFIG_FILE;  // "/settings.json"
 
@@ -120,6 +139,7 @@ private:
     APIConfig _api;
     DeviceConfig _device;
     PumpConfig _pump;
+    SamplingConfig _sampling;
 
     /**
      * Load configuration from SPIFFS file
