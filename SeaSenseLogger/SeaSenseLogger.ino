@@ -247,24 +247,36 @@ void setup() {
     // Initialize sensors
     Serial.println("\n[SENSORS] Initializing sensors...");
 
-    if (tempSensor.begin()) {
-        Serial.println("[SENSORS] EZO-RTD Temperature sensor initialized");
-        Serial.print("[SENSORS] - Serial: ");
-        Serial.println(tempSensor.getSerialNumber());
-        Serial.print("[SENSORS] - Calibration: ");
-        Serial.println(tempSensor.getLastCalibrationDate());
+    // Respect enabled flags from device config
+    tempSensor.setEnabled(isSensorEnabled("Temperature"));
+    ecSensor.setEnabled(isSensorEnabled("Conductivity"));
+
+    if (tempSensor.isEnabled()) {
+        if (tempSensor.begin()) {
+            Serial.println("[SENSORS] EZO-RTD Temperature sensor initialized");
+            Serial.print("[SENSORS] - Serial: ");
+            Serial.println(tempSensor.getSerialNumber());
+            Serial.print("[SENSORS] - Calibration: ");
+            Serial.println(tempSensor.getLastCalibrationDate());
+        } else {
+            Serial.println("[ERROR] Failed to initialize EZO-RTD sensor");
+        }
     } else {
-        Serial.println("[ERROR] Failed to initialize EZO-RTD sensor");
+        Serial.println("[SENSORS] Temperature sensor disabled by config");
     }
 
-    if (ecSensor.begin()) {
-        Serial.println("[SENSORS] EZO-EC Conductivity sensor initialized");
-        Serial.print("[SENSORS] - Serial: ");
-        Serial.println(ecSensor.getSerialNumber());
-        Serial.print("[SENSORS] - Calibration: ");
-        Serial.println(ecSensor.getLastCalibrationDate());
+    if (ecSensor.isEnabled()) {
+        if (ecSensor.begin()) {
+            Serial.println("[SENSORS] EZO-EC Conductivity sensor initialized");
+            Serial.print("[SENSORS] - Serial: ");
+            Serial.println(ecSensor.getSerialNumber());
+            Serial.print("[SENSORS] - Calibration: ");
+            Serial.println(ecSensor.getLastCalibrationDate());
+        } else {
+            Serial.println("[ERROR] Failed to initialize EZO-EC sensor");
+        }
     } else {
-        Serial.println("[ERROR] Failed to initialize EZO-EC sensor");
+        Serial.println("[SENSORS] Conductivity sensor disabled by config");
     }
 
     if (phSensor.begin()) {

@@ -1,4 +1,6 @@
 .DS_Store
-/SeaSenseLogger/secrets.h
-/SeaSenseLogger/device_config.h
 /node_modules
+
+# SeaSense sensitive/local config
+/SeaSenseLogger/config/secrets.h
+/SeaSenseLogger/config/device_config.h
