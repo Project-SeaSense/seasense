@@ -58,6 +58,9 @@
 // Configuration Manager
 #include "src/config/ConfigManager.h"
 
+// System Health (watchdog, boot loop protection, error tracking)
+#include "src/system/SystemHealth.h"
+
 // ============================================================================
 // Global Variables
 // ============================================================================
@@ -87,6 +90,9 @@ APIUploader apiUploader(&storage);
 
 // Serial Commands
 SerialCommands serialCommands(&tempSensor, &ecSensor, &gps, &storage, &apiUploader, &webServer, nullptr);
+
+// System Health
+SystemHealth systemHealth;
 
 // Device configuration
 StaticJsonDocument<4096> deviceConfigDoc;
@@ -324,11 +330,30 @@ void setup() {
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH);
 
+    // Initialize system health (watchdog, boot loop detection, error tracking)
+    // Must be early - before any subsystem that could hang
+    systemHealth.begin(WDT_TIMEOUT_MS, BOOT_LOOP_THRESHOLD, BOOT_LOOP_WINDOW_MS);
+
+    // In safe mode: only start WiFi AP + web server for diagnostics
+    if (systemHealth.isInSafeMode()) {
+        Serial.println("\n[SAFE MODE] Minimal boot - AP WiFi + web server only");
+        parseDeviceConfig();  // Best effort - needed for web UI
+        configManager.begin();
+        if (!webServer.begin()) {
+            Serial.println("[ERROR] Failed to start web server in safe mode!");
+        }
+        Serial.println("[SAFE MODE] Connect to SeaSense AP to diagnose");
+        Serial.println("[SAFE MODE] Device will attempt normal boot after power cycle");
+        digitalWrite(LED_PIN, LOW);
+        return;
+    }
+
     // Load device configuration
     Serial.println("\n[CONFIG] Loading device configuration...");
     if (!parseDeviceConfig()) {
         Serial.println("[ERROR] Failed to load device configuration!");
         while(1) {
+            systemHealth.feedWatchdog();  // Keep watchdog fed during error blink
             digitalWrite(LED_PIN, !digitalRead(LED_PIN));
             delay(LED_BLINK_ERROR);
         }
@@ -479,8 +504,33 @@ void setup() {
 // Main Loop
 // ============================================================================
 
+// I2C bus reset: toggles SCL to release stuck slaves
+void resetI2CBus() {
+    Wire.end();
+    pinMode(I2C_SCL_PIN, OUTPUT);
+    for (int i = 0; i < 9; i++) {
+        digitalWrite(I2C_SCL_PIN, LOW);
+        delayMicroseconds(5);
+        digitalWrite(I2C_SCL_PIN, HIGH);
+        delayMicroseconds(5);
+    }
+    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+    Wire.setClock(I2C_FREQUENCY);
+    Serial.println("[I2C] Bus reset performed");
+}
+
 void loop() {
+    // Feed watchdog first — if anything below hangs, WDT will reboot
+    systemHealth.feedWatchdog();
+
     unsigned long now = millis();
+
+    // Safe mode: only handle web server + serial commands
+    if (systemHealth.isInSafeMode()) {
+        webServer.handleClient();
+        serialCommands.process();
+        return;
+    }
 
     // Update GPS sources (must be called frequently)
     gps.update();
@@ -492,6 +542,9 @@ void loop() {
         if (gpsData.epoch > 0 && gpsData.epoch != g_systemEpoch) {
             g_systemEpoch = gpsData.epoch;
             EZOSensor::setSystemEpoch(g_systemEpoch);
+
+            // Stamp deploy_date on first valid GPS time (persists across reboots)
+            configManager.stampDeployDate(activeGPSGetTimeUTC());
         }
     }
 
@@ -531,6 +584,10 @@ void loop() {
             Serial.println(useNMEA2000GPS ? n2kGPS.getStatusString() : gps.getStatusString());
         }
 
+        // Track consecutive sensor failures for I2C bus reset
+        static uint8_t consecutiveSensorFails = 0;
+        uint8_t sensorFailsThisCycle = 0;
+
         // Read temperature
         if (tempSensor.isEnabled() && tempSensor.read()) {
             SensorData tempData = tempSensor.getData();
@@ -567,6 +624,8 @@ void loop() {
             }
         } else {
             Serial.println("Temperature: READ FAILED");
+            sensorFailsThisCycle++;
+            systemHealth.recordError(ErrorType::SENSOR);
         }
 
         // Read conductivity
@@ -606,6 +665,8 @@ void loop() {
             }
         } else {
             Serial.println("Conductivity: READ FAILED");
+            sensorFailsThisCycle++;
+            systemHealth.recordError(ErrorType::SENSOR);
         }
 
         // Read pH
@@ -639,6 +700,8 @@ void loop() {
             }
         } else {
             Serial.println("pH: READ FAILED");
+            sensorFailsThisCycle++;
+            systemHealth.recordError(ErrorType::SENSOR);
         }
 
         // Read dissolved oxygen
@@ -676,9 +739,23 @@ void loop() {
             }
         } else {
             Serial.println("Dissolved Oxygen: READ FAILED");
+            sensorFailsThisCycle++;
+            systemHealth.recordError(ErrorType::SENSOR);
         }
 
         Serial.println("----------------------");
+
+        // I2C bus reset if all sensors are consistently failing
+        if (sensorFailsThisCycle > 0) {
+            consecutiveSensorFails += sensorFailsThisCycle;
+        } else {
+            consecutiveSensorFails = 0;
+        }
+
+        if (consecutiveSensorFails >= I2C_BUS_RESET_THRESHOLD) {
+            resetI2CBus();
+            consecutiveSensorFails = 0;
+        }
 
         // TODO: Generate NMEA2000 PGNs
 
@@ -691,11 +768,12 @@ void loop() {
     // Handle web server requests
     webServer.handleClient();
 
+    // Check WiFi reconnection (non-blocking)
+    webServer.checkWiFiReconnect();
+
     // Update calibration state machine
     calibration.update();
 
     // Handle serial commands
     serialCommands.process();
-
-    delay(10);  // Small delay to prevent watchdog issues
 }

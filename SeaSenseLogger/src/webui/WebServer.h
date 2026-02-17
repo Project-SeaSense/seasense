@@ -74,6 +74,12 @@ public:
      */
     String getStationIP() const;
 
+    /**
+     * Non-blocking WiFi reconnection check.
+     * Call from loop() — attempts reconnect every WIFI_STATION_RECONNECT_INTERVAL_MS.
+     */
+    void checkWiFiReconnect();
+
 private:
     // Sensors
     EZO_RTD* _tempSensor;
@@ -95,6 +101,7 @@ private:
     String _apSSID;
     IPAddress _apIP;
     bool _stationConnected;
+    unsigned long _lastReconnectAttempt;
 
     // Web server
     WebServer* _server;

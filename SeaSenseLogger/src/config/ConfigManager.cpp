@@ -111,6 +111,25 @@ void ConfigManager::setGPSConfig(const GPSConfig& config) {
     _gps = config;
 }
 
+ConfigManager::DeploymentConfig ConfigManager::getDeploymentConfig() const {
+    return _deployment;
+}
+
+void ConfigManager::setDeploymentConfig(const DeploymentConfig& config) {
+    _deployment = config;
+}
+
+bool ConfigManager::stampDeployDate(const String& utcTimestamp) {
+    if (_deployment.deployDate.length() > 0) {
+        return false;  // Already stamped
+    }
+    _deployment.deployDate = utcTimestamp;
+    Serial.print("[CONFIG] Deploy date stamped: ");
+    Serial.println(utcTimestamp);
+    saveToFile();
+    return true;
+}
+
 // ============================================================================
 // Private Methods
 // ============================================================================
@@ -198,6 +217,14 @@ bool ConfigManager::loadFromFile() {
         _gps.fallbackToOnboard = gps["fallback_to_onboard"] | true;
     }
 
+    // Load deployment metadata
+    if (doc.containsKey("deployment")) {
+        JsonObject dep = doc["deployment"];
+        _deployment.deployDate = dep["deploy_date"] | "";
+        _deployment.purchaseDate = dep["purchase_date"] | "";
+        _deployment.depthCm = dep["depth_cm"] | 0.0f;
+    }
+
     return true;
 }
 
@@ -257,6 +284,12 @@ bool ConfigManager::saveToFile() {
     JsonObject gps = doc.createNestedObject("gps");
     gps["use_nmea2000"] = _gps.useNMEA2000;
     gps["fallback_to_onboard"] = _gps.fallbackToOnboard;
+
+    // Deployment metadata
+    JsonObject dep = doc.createNestedObject("deployment");
+    dep["deploy_date"] = _deployment.deployDate;
+    dep["purchase_date"] = _deployment.purchaseDate;
+    dep["depth_cm"] = _deployment.depthCm;
 
     // Write to file
     File file = SPIFFS.open(CONFIG_FILE, "w");
@@ -341,4 +374,9 @@ void ConfigManager::setDefaults() {
     // GPS defaults - use onboard GPS, fall back if NMEA2000 has no fix
     _gps.useNMEA2000 = false;
     _gps.fallbackToOnboard = true;
+
+    // Deployment defaults - empty until set
+    _deployment.deployDate = "";
+    _deployment.purchaseDate = "";
+    _deployment.depthCm = 0.0f;
 }

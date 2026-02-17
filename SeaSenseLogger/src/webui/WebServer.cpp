@@ -8,6 +8,7 @@
 #include "../config/ConfigManager.h"
 #include "../../config/hardware_config.h"
 #include "../../config/secrets.h"
+#include "../system/SystemHealth.h"
 #include <ArduinoJson.h>
 #include <SPIFFS.h>
 
@@ -24,6 +25,7 @@ SeaSenseWebServer::SeaSenseWebServer(EZO_RTD* tempSensor, EZO_EC* ecSensor, Stor
       _configManager(configManager),
       _apIP(192, 168, 4, 1),
       _stationConnected(false),
+      _lastReconnectAttempt(0),
       _server(nullptr),
       _dnsServer(nullptr)
 {
@@ -188,6 +190,33 @@ bool SeaSenseWebServer::startStation() {
         DEBUG_WIFI_PRINTLN("Connection failed");
         return false;
     }
+}
+
+void SeaSenseWebServer::checkWiFiReconnect() {
+    // Only attempt if station credentials are configured
+    String ssid = String(WIFI_STATION_SSID);
+    if (ssid.length() == 0) return;
+
+    // Already connected — update state if needed
+    if (WiFi.status() == WL_CONNECTED) {
+        if (!_stationConnected) {
+            _stationConnected = true;
+            Serial.print("[WIFI] Reconnected! IP: ");
+            Serial.println(WiFi.localIP());
+        }
+        return;
+    }
+
+    // Not connected — rate-limit reconnection attempts
+    unsigned long now = millis();
+    if (now - _lastReconnectAttempt < WIFI_STATION_RECONNECT_INTERVAL_MS) return;
+    _lastReconnectAttempt = now;
+
+    _stationConnected = false;
+    Serial.println("[WIFI] Station disconnected, attempting reconnection...");
+    WiFi.disconnect();
+    WiFi.begin(WIFI_STATION_SSID, WIFI_STATION_PASSWORD);
+    // Non-blocking on ESP32 AP+STA mode — status checked next iteration
 }
 
 String SeaSenseWebServer::generateAPSSID() {
@@ -1284,6 +1313,19 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
         _configManager->setDeviceConfig(device);
     }
 
+    // Update deployment metadata (purchase_date, depth_cm — deploy_date is auto-set)
+    if (doc.containsKey("deployment")) {
+        ConfigManager::DeploymentConfig dep = _configManager->getDeploymentConfig();
+        if (doc["deployment"].containsKey("purchase_date")) {
+            dep.purchaseDate = doc["deployment"]["purchase_date"].as<String>();
+        }
+        if (doc["deployment"].containsKey("depth_cm")) {
+            dep.depthCm = doc["deployment"]["depth_cm"] | 0.0f;
+        }
+        // deploy_date is NOT settable via API — it's auto-stamped on first boot
+        _configManager->setDeploymentConfig(dep);
+    }
+
     // Save to SPIFFS
     if (_configManager->save()) {
         sendJSON("{\"success\":true,\"message\":\"Configuration saved. Restart device to apply WiFi and API changes.\"}");
@@ -1293,19 +1335,47 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
 }
 
 void SeaSenseWebServer::handleApiStatus() {
-    StaticJsonDocument<512> doc;
+    extern SystemHealth systemHealth;
 
-    doc["uptime"] = millis();
+    StaticJsonDocument<1024> doc;
+
+    doc["uptime_ms"] = millis();
+
+    // WiFi
     doc["wifi"]["ap_ssid"] = _apSSID;
     doc["wifi"]["ap_ip"] = getAPIP();
     doc["wifi"]["station_connected"] = isWiFiConnected();
     if (isWiFiConnected()) {
         doc["wifi"]["station_ip"] = getStationIP();
+        doc["wifi"]["rssi"] = WiFi.RSSI();
     }
 
+    // Storage
     doc["storage"]["status"] = _storage->getStatusString();
     doc["storage"]["spiffs_mounted"] = _storage->isSPIFFSMounted();
     doc["storage"]["sd_mounted"] = _storage->isSDMounted();
+
+    // System health
+    doc["system"]["free_heap"] = ESP.getFreeHeap();
+    doc["system"]["min_free_heap"] = ESP.getMinFreeHeap();
+    doc["system"]["reset_reason"] = systemHealth.getResetReasonString();
+    doc["system"]["reboot_count"] = systemHealth.getRebootCount();
+    doc["system"]["consecutive_reboots"] = systemHealth.getConsecutiveReboots();
+    doc["system"]["safe_mode"] = systemHealth.isInSafeMode();
+
+    // Error counters
+    doc["errors"]["sensor"] = systemHealth.getErrorCount(ErrorType::SENSOR);
+    doc["errors"]["sd"] = systemHealth.getErrorCount(ErrorType::SD);
+    doc["errors"]["api"] = systemHealth.getErrorCount(ErrorType::API);
+    doc["errors"]["wifi"] = systemHealth.getErrorCount(ErrorType::WIFI);
+
+    // Deployment metadata
+    if (_configManager) {
+        ConfigManager::DeploymentConfig dep = _configManager->getDeploymentConfig();
+        doc["deployment"]["deploy_date"] = dep.deployDate;
+        doc["deployment"]["purchase_date"] = dep.purchaseDate;
+        doc["deployment"]["depth_cm"] = dep.depthCm;
+    }
 
     String json;
     serializeJson(doc, json);

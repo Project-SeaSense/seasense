@@ -140,6 +140,16 @@
 #define NMEA2000_INDUSTRY_GROUP 4        // Marine industry
 
 // ============================================================================
+// System Health / Watchdog Configuration
+// ============================================================================
+
+#define WDT_TIMEOUT_MS 30000              // 30 second watchdog timeout
+#define BOOT_LOOP_THRESHOLD 5             // Consecutive reboots before safe mode
+#define BOOT_LOOP_WINDOW_MS 120000        // 2 min stable operation clears counter
+#define I2C_BUS_RESET_THRESHOLD 8         // Consecutive sensor fails before bus reset
+#define EZO_HARD_TIMEOUT_MS 3000          // Absolute max wait for any EZO command
+
+// ============================================================================
 // Debug Configuration
 // ============================================================================
 

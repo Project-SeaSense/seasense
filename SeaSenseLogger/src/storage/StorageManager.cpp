@@ -87,8 +87,32 @@ bool StorageManager::writeRecord(const DataRecord& record) {
             success = true;
             DEBUG_STORAGE_PRINTLN("Written to SD card");
         } else {
-            Serial.println("[STORAGE] Warning: SD card write failed");
-            // Don't mark SD as unavailable - might be temporary issue
+            Serial.println("[STORAGE] SD write failed, attempting remount...");
+            _sdAvailable = _sd->begin();
+            if (_sdAvailable) {
+                Serial.println("[STORAGE] SD remounted, retrying write...");
+                if (_sd->writeRecord(record)) {
+                    success = true;
+                    DEBUG_STORAGE_PRINTLN("Written to SD card after remount");
+                } else {
+                    Serial.println("[STORAGE] SD write failed after remount");
+                }
+            } else {
+                Serial.println("[STORAGE] SD remount failed");
+            }
+        }
+    } else {
+        // Periodically try to remount SD (may have been reinserted)
+        static unsigned long lastSDRemountAttempt = 0;
+        if (millis() - lastSDRemountAttempt > 30000) {  // Every 30 seconds
+            lastSDRemountAttempt = millis();
+            _sdAvailable = _sd->begin();
+            if (_sdAvailable) {
+                Serial.println("[STORAGE] SD card detected and remounted!");
+                if (_sd->writeRecord(record)) {
+                    success = true;
+                }
+            }
         }
     }
 

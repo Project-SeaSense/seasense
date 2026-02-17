@@ -271,8 +271,18 @@ EZOResponseCode EZOSensor::sendCommand(
         return EZOResponseCode::ERROR;
     }
 
-    // Wait for sensor to process command
-    delay(waitTime);
+    // Wait for sensor to process command (with hard timeout)
+    uint16_t hardTimeout = min((uint16_t)(waitTime + 500), (uint16_t)EZO_HARD_TIMEOUT_MS);
+    unsigned long deadline = millis() + hardTimeout;
+    unsigned long waitUntil = millis() + waitTime;
+
+    while (millis() < waitUntil) {
+        delay(10);
+        if (millis() > deadline) {
+            DEBUG_SENSOR_PRINTLN("Hard timeout exceeded!");
+            return EZOResponseCode::ERROR;
+        }
+    }
 
     // Read response
     char buffer[64];

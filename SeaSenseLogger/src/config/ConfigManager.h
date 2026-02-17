@@ -58,6 +58,15 @@ public:
     };
 
     /**
+     * Deployment metadata
+     */
+    struct DeploymentConfig {
+        String deployDate;      // ISO8601 - auto-set on first boot, persisted
+        String purchaseDate;    // ISO8601 - set via web UI / API
+        float depthCm;          // Sensor depth below waterline in cm
+    };
+
+    /**
      * Constructor
      */
     ConfigManager();
@@ -152,6 +161,26 @@ public:
      */
     void setGPSConfig(const GPSConfig& config);
 
+    /**
+     * Get deployment metadata
+     * @return DeploymentConfig struct
+     */
+    DeploymentConfig getDeploymentConfig() const;
+
+    /**
+     * Set deployment metadata
+     * @param config DeploymentConfig struct
+     */
+    void setDeploymentConfig(const DeploymentConfig& config);
+
+    /**
+     * Set deploy_date to current UTC time if not already set.
+     * Call from setup() after time sync.
+     * @param utcTimestamp ISO8601 UTC string (e.g. from GPS)
+     * @return true if deploy_date was set (first boot)
+     */
+    bool stampDeployDate(const String& utcTimestamp);
+
 private:
     static const char* CONFIG_FILE;  // "/settings.json"
 
@@ -161,6 +190,7 @@ private:
     PumpConfig _pump;
     SamplingConfig _sampling;
     GPSConfig _gps;
+    DeploymentConfig _deployment;
 
     /**
      * Load configuration from SPIFFS file

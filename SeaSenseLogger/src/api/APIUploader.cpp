@@ -3,6 +3,8 @@
  */
 
 #include "APIUploader.h"
+#include "../system/SystemHealth.h"
+#include "../config/ConfigManager.h"
 #include "../../config/hardware_config.h"
 #include "../../config/secrets.h"
 #include <ArduinoJson.h>
@@ -142,6 +144,8 @@ void APIUploader::process() {
     } else {
         _status = UploadStatus::ERROR_API;
         Serial.println("[API] Upload failed");
+        extern SystemHealth systemHealth;
+        systemHealth.recordError(ErrorType::API);
         scheduleRetry();
     }
 }
@@ -251,6 +255,30 @@ String APIUploader::buildPayload(const std::vector<DataRecord>& records) const {
     collector["device"] = "SeaSense ESP32 Logger";
     collector["firmware_version"] = "1.0.0";
     collector["export_generated_at_utc"] = millisToUTC(millis());
+
+    // Device health telemetry (piggybacks on every upload)
+    extern SystemHealth systemHealth;
+    JsonObject health = metadata.createNestedObject("device_health");
+    health["uptime_ms"] = millis();
+    health["free_heap"] = ESP.getFreeHeap();
+    health["reset_reason"] = systemHealth.getResetReasonString();
+    health["reboot_count"] = systemHealth.getRebootCount();
+    health["sensor_errors"] = systemHealth.getErrorCount(ErrorType::SENSOR);
+    health["sd_errors"] = systemHealth.getErrorCount(ErrorType::SD);
+    health["api_errors"] = systemHealth.getErrorCount(ErrorType::API);
+
+    // Deployment metadata
+    extern ConfigManager configManager;
+    ConfigManager::DeploymentConfig dep = configManager.getDeploymentConfig();
+    if (dep.deployDate.length() > 0) {
+        metadata["deploy_date"] = dep.deployDate;
+    }
+    if (dep.purchaseDate.length() > 0) {
+        metadata["purchase_date"] = dep.purchaseDate;
+    }
+    if (dep.depthCm > 0) {
+        metadata["depth_cm"] = dep.depthCm;
+    }
 
     // Datapoints
     JsonArray datapoints = doc.createNestedArray("datapoints");
