@@ -55,7 +55,13 @@ Doel: one-shot deployment die blijft draaien zonder fysieke toegang.
 
 ## P2 — Nice to have
 
-- [ ] OTA dual partition + rollback
+- [ ] **OTA firmware updates via Web UI**
+  - [ ] Partitie switchen: `no_ota` → `min_spiffs` (eenmalig via USB)
+  - [ ] Upload endpoint toevoegen aan WebServer (`Update.h` handler)
+  - [ ] HTML upload form in web UI
+  - [ ] Rollback-beveiliging (`esp_ota_mark_app_valid()`)
+  - [ ] Firmware size bewaken (moet < ~1.5MB blijven)
+  - [ ] Optioneel later: HTTP Pull OTA voor remote updates zonder WiFi-bereik
 - [ ] Remote safe mode
 - [ ] Dagelijkse health summary
 

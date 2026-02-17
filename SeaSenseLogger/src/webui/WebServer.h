@@ -162,6 +162,9 @@ private:
     // API - System
     void handleApiStatus();
 
+    // API - Environment (NMEA2000)
+    void handleApiEnvironment();
+
     // API - Pump
     void handleApiPumpStatus();
     void handleApiPumpControl();
