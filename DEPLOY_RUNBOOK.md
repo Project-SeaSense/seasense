@@ -1,21 +1,21 @@
-# SeaSense Deploy Runbook (Dom afvinken)
+# SeaSense Deployment Runbook (Simple Checkbox Version)
 
-Doel: zonder twijfel bepalen of deze firmware veilig op de boot van meneer Kurk kan.
+Goal: decide with high confidence whether this firmware is safe to deploy on Mr. Kurk’s boat.
 
-**Regel 1:** Als een MUST test faalt => **STOP**. Eerst fixen, dan opnieuw testen.
+**Rule #1:** If any MUST test fails => **STOP**. Fix first, then restart testing.
 
 ---
 
-## 0) Voorbereiding (1x)
+## 0) Preparation (one-time)
 
-- [ ] Laptop + USB kabel klaar
-- [ ] Device voeding stabiel (zoals op boot, liefst vergelijkbaar)
-- [ ] SD kaart geplaatst
-- [ ] Sensoren aangesloten (minimaal temp + EC + GPS)
-- [ ] Repo up-to-date (`git pull`)
+- [ ] Laptop + USB cable ready
+- [ ] Stable power supply for device (as close as possible to real boat conditions)
+- [ ] SD card inserted
+- [ ] Sensors connected (at least temp + EC + GPS)
+- [ ] Repo up to date (`git pull`)
 
-Notities:
-- Datum: __________
+Notes:
+- Date: __________
 - Tester: __________
 - Device ID: __________
 
@@ -23,70 +23,70 @@ Notities:
 
 ## 1) Release freeze (MUST)
 
-- [ ] Kies 1 commit als release kandidaat
-- [ ] Noteer commit hash: `____________________`
-- [ ] Noteer build target: `s3` of `s3-octal` => `____________`
-- [ ] Noteer N2K status: `FEATURE_NMEA2000=0/1` => `____________`
-- [ ] Geen nieuwe codewijzigingen meer tijdens deze testronde
+- [ ] Select one commit as the release candidate
+- [ ] Record commit hash: `____________________`
+- [ ] Record build target: `s3` or `s3-octal` => `____________`
+- [ ] Record N2K status: `FEATURE_NMEA2000=0/1` => `____________`
+- [ ] No code changes during this test round
 
 ---
 
 ## 2) Build + Flash (MUST)
 
-Gebruik exact 1 van deze:
+Use exactly one of these:
 
-### Optie A — ESP32-S3 standaard (met huge_app)
+### Option A — ESP32-S3 standard (with huge_app)
 ```bash
 cd SeaSenseLogger
 ./scripts/build.sh s3
 ```
 
-### Optie B — ESP32-S3 octal
+### Option B — ESP32-S3 octal
 ```bash
 cd SeaSenseLogger
 ./scripts/build.sh s3-octal
 ```
 
-Als N2K aan moet:
+If N2K must be enabled:
 ```bash
 ENABLE_N2K=1 ./scripts/build.sh s3-octal
 ```
 
-Aftekenen:
-- [ ] Build geslaagd
-- [ ] Flash/upload geslaagd
-- [ ] Device boot zonder crash
-- [ ] Web UI bereikbaar
-- [ ] Sensor logging start zichtbaar
+Checklist:
+- [ ] Build succeeded
+- [ ] Flash/upload succeeded
+- [ ] Device boots without crash
+- [ ] Web UI is reachable
+- [ ] Sensor logging starts
 
-Boot log opmerking: ____________________________________________
+Boot log note: ____________________________________________
 
 ---
 
-## 3) Smoke test (MUST, 10 minuten)
+## 3) Smoke test (MUST, 10 minutes)
 
-- [ ] Uptime loopt op
-- [ ] Geen reboot-loop
+- [ ] Uptime is increasing
+- [ ] No reboot loop
 - [ ] SD mounted
 - [ ] SPIFFS mounted
-- [ ] GPS status logisch (fix of searching)
-- [ ] Minstens 1 meetcyclus afgerond
-- [ ] Minstens 1 record opgeslagen
+- [ ] GPS status is reasonable (fix or searching)
+- [ ] At least 1 measurement cycle completed
+- [ ] At least 1 record saved
 
-Resultaat: PASS / FAIL
-Opmerking: ____________________________________________
+Result: PASS / FAIL
+Note: ____________________________________________
 
 ---
 
 ## 4) Cold boot test x20 (MUST)
 
 **Procedure:**
-1. Volledig uit
-2. 5 sec wachten
-3. Aan
-4. Wachten tot “Ready” / normale meetloop
+1. Full power off
+2. Wait 5 seconds
+3. Power on
+4. Wait for “Ready” / normal measurement loop
 
-Aftekenen:
+Checklist:
 - [ ] 1
 - [ ] 2
 - [ ] 3
@@ -108,16 +108,16 @@ Aftekenen:
 - [ ] 19
 - [ ] 20
 
-Criteria PASS:
-- [ ] Alle 20 boots komen terug zonder handmatige recovery
+PASS criteria:
+- [ ] All 20 boots recover without manual intervention
 
 ---
 
 ## 5) Power dip/reset test x20 (MUST)
 
-**Procedure:** korte onderbreking simuleren en herstel.
+**Procedure:** simulate short power interruptions and recovery.
 
-Aftekenen:
+Checklist:
 - [ ] 1
 - [ ] 2
 - [ ] 3
@@ -139,100 +139,100 @@ Aftekenen:
 - [ ] 19
 - [ ] 20
 
-Criteria PASS:
-- [ ] Geen corruptie
-- [ ] Unit herstelt zelfstandig
+PASS criteria:
+- [ ] No corruption
+- [ ] Unit self-recovers each time
 
 ---
 
 ## 6) SD failover test (MUST)
 
-**Procedure:** tijdens runtime SD tijdelijk verwijderen en terugplaatsen.
+**Procedure:** remove SD during runtime, then reinsert.
 
-Aftekenen:
-- [ ] SD verwijderd tijdens actieve meetloop
-- [ ] Device blijft draaien (geen freeze)
-- [ ] Fallback gedrag zichtbaar (SPIFFS / foutmelding maar doorgaan)
-- [ ] SD teruggeplaatst
-- [ ] Logging herstelt
+Checklist:
+- [ ] SD removed during active measurement loop
+- [ ] Device keeps running (no freeze)
+- [ ] Fallback behavior observed (SPIFFS / graceful errors)
+- [ ] SD reinserted
+- [ ] Logging recovers
 
-Resultaat: PASS / FAIL
-Opmerking: ____________________________________________
+Result: PASS / FAIL
+Note: ____________________________________________
 
 ---
 
 ## 7) Offline buffering + reconnect (MUST)
 
-**Procedure:** netwerk uit, 12 uur laten loggen, netwerk terug.
+**Procedure:** disable network, let it log for 12 hours, then restore network.
 
-Aftekenen:
-- [ ] 12 uur offline gelogd
-- [ ] Geen crash/freeze in offline periode
-- [ ] Na reconnect upload komt op gang
-- [ ] Geen duidelijk dataverlies
+Checklist:
+- [ ] Logged 12h offline
+- [ ] No crash/freeze during offline period
+- [ ] Upload resumes after reconnect
+- [ ] No obvious data loss
 
-Resultaat: PASS / FAIL
-Opmerking: ____________________________________________
+Result: PASS / FAIL
+Note: ____________________________________________
 
 ---
 
 ## 8) GPS source test (MUST)
 
-- [ ] Start zonder GPS fix (of zonder GPS data)
-- [ ] Device blijft normaal meten/loggen
-- [ ] Daarna GPS fix aanwezig
-- [ ] Timestamps/positie worden correct gevuld
+- [ ] Start without GPS fix (or no GPS input)
+- [ ] Device keeps measuring/logging
+- [ ] GPS fix appears later
+- [ ] Timestamps/position fields become valid
 
-Resultaat: PASS / FAIL
-Opmerking: ____________________________________________
+Result: PASS / FAIL
+Note: ____________________________________________
 
 ---
 
 ## 9) 24h soak test (MUST)
 
-**Procedure:** 24 uur continue run met normale configuratie.
+**Procedure:** run continuously for 24 hours under normal config.
 
-Aftekenen:
-- [ ] 24h gehaald
-- [ ] Geen freeze
-- [ ] Geen reset storm
-- [ ] Data blijft binnenkomen
-- [ ] API/upload gedrag blijft stabiel
+Checklist:
+- [ ] 24h completed
+- [ ] No freeze
+- [ ] No reset storm
+- [ ] Data keeps coming in
+- [ ] API/upload behavior stays stable
 
-Resultaat: PASS / FAIL
-Opmerking: ____________________________________________
+Result: PASS / FAIL
+Note: ____________________________________________
 
 ---
 
 ## 10) API failure/backoff (SHOULD)
 
-- [ ] API tijdelijk onbereikbaar gemaakt
-- [ ] Device blijft meten/loggen (non-blocking)
-- [ ] Retries/backoff zichtbaar
-- [ ] Herstel na API terug online
+- [ ] API made temporarily unavailable
+- [ ] Device keeps measuring/logging (non-blocking)
+- [ ] Retry/backoff behavior observed
+- [ ] Recovery after API is back online
 
-Resultaat: PASS / FAIL
-
----
-
-## 11) Sensor fault injectie (SHOULD)
-
-- [ ] 1 sensor tijdelijk los of fout simuleren
-- [ ] Device degradeert netjes
-- [ ] Geen totale crash
-- [ ] Herstel na reconnect
-
-Resultaat: PASS / FAIL
+Result: PASS / FAIL
 
 ---
 
-## 12) Release administratie (MUST)
+## 11) Sensor fault injection (SHOULD)
 
-- [ ] Commit hash vastgelegd
-- [ ] Build target + flags vastgelegd
-- [ ] Config snapshot opgeslagen (zonder secrets)
-- [ ] Secrets geprovisioned op device
-- [ ] Testlog opgeslagen
+- [ ] Temporarily disconnect or fault one sensor
+- [ ] Device degrades gracefully
+- [ ] No full-system crash
+- [ ] Recovery after reconnect
+
+Result: PASS / FAIL
+
+---
+
+## 12) Release administration (MUST)
+
+- [ ] Commit hash recorded
+- [ ] Build target + flags recorded
+- [ ] Config snapshot saved (without secrets)
+- [ ] Secrets provisioned on device
+- [ ] Test log saved
 
 Commit hash: ____________________
 Build target: ____________________
@@ -240,17 +240,17 @@ Flags (N2K etc): ____________________
 
 ---
 
-## 13) GO / NO-GO besluit (MUST)
+## 13) GO / NO-GO decision (MUST)
 
-- [ ] Alle MUST tests PASS
+- [ ] All MUST tests are PASS
 
-Besluit:
-- [ ] **GO** (deploy op boot)
-- [ ] **NO-GO** (eerst fixen)
+Decision:
+- [ ] **GO** (deploy to boat)
+- [ ] **NO-GO** (fix first)
 
-Reden / notities:
+Reason / notes:
 ____________________________________________________________
 ____________________________________________________________
 
-Naam + datum:
+Name + date:
 ____________________________________________________________
