@@ -21,6 +21,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <time.h>
 #include "SensorInterface.h"
 
 /**
@@ -132,6 +133,19 @@ public:
     bool clearCalibration();
 
     /**
+     * Update calibration date in memory (called after successful calibration)
+     * @param date ISO 8601 date string (e.g. "2025-06-01T14:00:00Z"), or "" if GPS unavailable
+     */
+    void setCalibrationDate(const String& date) { _calibrationDate = date; }
+
+    /**
+     * Set system epoch for calibration age checks
+     * Call from main loop whenever GPS has a valid fix
+     * @param t Unix timestamp (UTC)
+     */
+    static void setSystemEpoch(time_t t) { _systemEpoch = t; }
+
+    /**
      * Check if sensor is responding on I2C bus
      * @return true if sensor is present and responding
      */
@@ -175,6 +189,12 @@ protected:
     String _deviceInfo;            // Full device info string
 
     /**
+     * Check whether the calibration is older than maxAgeDays.
+     * Returns true (stale) only when system time is known and date is parseable.
+     */
+    bool isCalibrationStale(int maxAgeDays) const;
+
+    /**
      * Parse sensor reading from response string
      * Override this in derived classes for sensor-specific parsing
      * @param response Response string from sensor
@@ -195,6 +215,9 @@ protected:
      * @return true if successful, false otherwise
      */
     bool loadMetadata();
+
+    // System epoch (set from GPS); used for calibration age checks
+    static time_t _systemEpoch;
 
 private:
     // ========================================================================

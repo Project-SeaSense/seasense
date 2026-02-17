@@ -81,7 +81,6 @@ bool EZO_pH::calibrateMidPoint(float ph) {
 
     DEBUG_SENSOR_PRINTLN("Mid point calibration successful");
 
-    // TODO: Update calibration date in device_config.h
     return true;
 }
 
@@ -103,7 +102,6 @@ bool EZO_pH::calibrateLowPoint(float ph) {
     DEBUG_SENSOR_PRINTLN("Low point calibration successful");
     DEBUG_SENSOR_PRINTLN("Two-point calibration complete");
 
-    // TODO: Update calibration date in device_config.h
     return true;
 }
 
@@ -125,7 +123,6 @@ bool EZO_pH::calibrateHighPoint(float ph) {
     DEBUG_SENSOR_PRINTLN("High point calibration successful");
     DEBUG_SENSOR_PRINTLN("Three-point calibration complete (best accuracy)");
 
-    // TODO: Update calibration date in device_config.h
     return true;
 }
 
@@ -161,8 +158,7 @@ SensorQuality EZO_pH::assessQuality() {
         return SensorQuality::FAIR;
     }
 
-    // TODO: Check calibration age and return FAIR if old (>6 months for pH)
-    // pH probes need regular calibration to maintain accuracy
+    if (isCalibrationStale(180)) return SensorQuality::FAIR;  // >6 months
 
     return SensorQuality::GOOD;
 }

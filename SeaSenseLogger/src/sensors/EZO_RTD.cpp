@@ -53,10 +53,6 @@ bool EZO_RTD::calibrate(float referenceTemp) {
 
     DEBUG_SENSOR_PRINTLN("Calibration successful");
 
-    // Update metadata
-    // TODO: Update calibration date in device_config.h
-    // This would require implementing updateSensorCalibration() function
-
     return true;
 }
 
@@ -85,8 +81,7 @@ SensorQuality EZO_RTD::assessQuality() {
         return SensorQuality::FAIR;
     }
 
-    // TODO: Check calibration age and return FAIR if old (>1 year)
-    // Would require parsing calibrationDate and comparing to current time
+    if (isCalibrationStale(365)) return SensorQuality::FAIR;  // >1 year
 
     return SensorQuality::GOOD;
 }

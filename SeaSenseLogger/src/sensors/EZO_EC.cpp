@@ -78,8 +78,6 @@ bool EZO_EC::calibrateDry() {
     }
 
     DEBUG_SENSOR_PRINTLN("Dry calibration successful");
-
-    // TODO: Update calibration date in device_config.h
     return true;
 }
 
@@ -99,8 +97,6 @@ bool EZO_EC::calibrateSinglePoint(float solutionValue) {
     }
 
     DEBUG_SENSOR_PRINTLN("Single point calibration successful (±2% accuracy)");
-
-    // TODO: Update calibration date in device_config.h
     return true;
 }
 
@@ -121,8 +117,6 @@ bool EZO_EC::calibrateLowPoint(float lowValue) {
 
     DEBUG_SENSOR_PRINTLN("Low point calibration successful");
     DEBUG_SENSOR_PRINTLN("Next: calibrate HIGH point for ±1% accuracy");
-
-    // TODO: Update calibration date in device_config.h
     return true;
 }
 
@@ -142,8 +136,6 @@ bool EZO_EC::calibrateHighPoint(float highValue) {
     }
 
     DEBUG_SENSOR_PRINTLN("High point calibration successful (±1% accuracy)");
-
-    // TODO: Update calibration date in device_config.h
     return true;
 }
 
@@ -238,8 +230,7 @@ SensorQuality EZO_EC::assessQuality() {
         return SensorQuality::FAIR;
     }
 
-    // TODO: Check calibration age and return FAIR if old (>3 months for EC)
-    // Conductivity probes need more frequent calibration than temperature
+    if (isCalibrationStale(90)) return SensorQuality::FAIR;  // >3 months
 
     return SensorQuality::GOOD;
 }

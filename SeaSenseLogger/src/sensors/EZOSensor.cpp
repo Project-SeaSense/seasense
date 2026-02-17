@@ -9,6 +9,25 @@
 // External function declarations (implemented in main .ino file)
 extern JsonObject getSensorMetadata(const String& sensorType);
 
+// Static member definition
+time_t EZOSensor::_systemEpoch = 0;
+
+// ============================================================================
+// Helper: parse ISO 8601 "YYYY-MM-DDTHH:MM:SSZ" to time_t (UTC)
+// Returns 0 on failure.
+// ============================================================================
+static time_t parseISO8601(const String& s) {
+    if (s.length() < 19) return 0;
+    struct tm t = {};
+    t.tm_year  = s.substring(0, 4).toInt()  - 1900;
+    t.tm_mon   = s.substring(5, 7).toInt()  - 1;
+    t.tm_mday  = s.substring(8, 10).toInt();
+    t.tm_hour  = s.substring(11, 13).toInt();
+    t.tm_min   = s.substring(14, 16).toInt();
+    t.tm_sec   = s.substring(17, 19).toInt();
+    return mktime(&t);  // note: mktime treats tm as local time; on ESP32 default TZ is UTC
+}
+
 // ============================================================================
 // Constructor
 // ============================================================================
@@ -334,6 +353,14 @@ bool EZOSensor::isPresent() {
 // Protected Methods
 // ============================================================================
 
+bool EZOSensor::isCalibrationStale(int maxAgeDays) const {
+    if (_systemEpoch == 0) return false;  // no GPS time yet
+    if (_calibrationDate.length() == 0) return false;  // no date to compare
+    time_t calEpoch = parseISO8601(_calibrationDate);
+    if (calEpoch == 0) return false;
+    return (_systemEpoch - calEpoch) > (time_t)maxAgeDays * 86400L;
+}
+
 bool EZOSensor::parseReading(const String& response) {
     // Default implementation: parse as simple float
     // Override in derived classes if needed
@@ -353,8 +380,8 @@ SensorQuality EZOSensor::assessQuality() {
         return SensorQuality::NOT_CALIBRATED;
     }
 
-    // TODO: Check calibration age and return FAIR if old (>1 year)
-    // For now, just return GOOD
+    if (isCalibrationStale(365)) return SensorQuality::FAIR;
+
     return SensorQuality::GOOD;
 }
 

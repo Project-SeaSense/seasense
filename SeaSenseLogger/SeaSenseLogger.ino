@@ -20,6 +20,7 @@
 
 #include <Wire.h>
 #include <ArduinoJson.h>
+#include <time.h>
 
 // Configuration
 #include "config/hardware_config.h"
@@ -97,22 +98,124 @@ unsigned long sensorSamplingIntervalMs = 900000;  // Default 15 minutes
 // Runtime GPS source selection (from ConfigManager)
 bool useNMEA2000GPS = false;  // false = onboard GPS, true = NMEA2000 network
 
+// System epoch for calibration age checks (updated from GPS when fix available)
+time_t g_systemEpoch = 0;
+
 // ============================================================================
 // Device Configuration Functions
 // ============================================================================
 
 bool parseDeviceConfig() {
+    // First load compile-time defaults
     DeserializationError error = deserializeJson(deviceConfigDoc, DEVICE_CONFIG_JSON);
-
     if (error) {
         Serial.print("Failed to parse device config: ");
         Serial.println(error.c_str());
         return false;
     }
-
     configLoaded = true;
+
+    // Overlay runtime calibration data from SPIFFS if available
+    if (SPIFFS.exists("/device_config.json")) {
+        File f = SPIFFS.open("/device_config.json", "r");
+        if (f) {
+            StaticJsonDocument<4096> overlay;
+            if (deserializeJson(overlay, f) == DeserializationError::Ok) {
+                // Merge calibration arrays from overlay into deviceConfigDoc
+                if (overlay.containsKey("sensors") && deviceConfigDoc.containsKey("sensors")) {
+                    JsonArray overlaySensors = overlay["sensors"].as<JsonArray>();
+                    JsonArray docSensors = deviceConfigDoc["sensors"].as<JsonArray>();
+                    for (JsonObject ov : overlaySensors) {
+                        String ovType = ov["type"].as<String>();
+                        for (JsonObject ds : docSensors) {
+                            if (ds["type"].as<String>() == ovType && ov.containsKey("calibration")) {
+                                ds["calibration"] = ov["calibration"];
+                            }
+                        }
+                    }
+                }
+                Serial.println("Runtime calibration data merged from SPIFFS");
+            }
+            f.close();
+        }
+    }
+
     Serial.println("Device configuration loaded successfully");
     return true;
+}
+
+bool saveDeviceConfig() {
+    if (!configLoaded) return false;
+    File f = SPIFFS.open("/device_config.json", "w");
+    if (!f) {
+        Serial.println("[CONFIG] Failed to open /device_config.json for write");
+        return false;
+    }
+    // Save only the sensors array (calibration data we need to persist)
+    StaticJsonDocument<2048> out;
+    JsonArray outSensors = out.createNestedArray("sensors");
+    for (JsonObject s : deviceConfigDoc["sensors"].as<JsonArray>()) {
+        JsonObject os = outSensors.createNestedObject();
+        os["type"] = s["type"];
+        os["calibration"] = s["calibration"];
+    }
+    bool ok = (serializeJson(out, f) > 0);
+    f.close();
+    if (ok) Serial.println("[CONFIG] Calibration data saved to SPIFFS");
+    return ok;
+}
+
+bool updateSensorCalibration(
+    const String& sensorType,
+    const String& calibrationType,
+    float calibrationValue,
+    const String& note
+) {
+    if (!configLoaded) return false;
+
+    // Build ISO 8601 timestamp
+    String timestamp = "";
+    if (g_systemEpoch > 0) {
+        struct tm* t = gmtime(&g_systemEpoch);
+        char buf[25];
+        snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+                 t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+                 t->tm_hour, t->tm_min, t->tm_sec);
+        timestamp = String(buf);
+    }
+
+    // Find sensor in deviceConfigDoc and append calibration entry
+    JsonArray sensors = deviceConfigDoc["sensors"].as<JsonArray>();
+    for (JsonObject sensor : sensors) {
+        if (sensor["type"].as<String>() == sensorType) {
+            JsonArray cal = sensor["calibration"].as<JsonArray>();
+            JsonObject entry = cal.createNestedObject();
+            entry["date"] = timestamp.length() > 0 ? timestamp : "unknown";
+            entry["type"] = calibrationType;
+            if (calibrationValue != 0) entry["value"] = calibrationValue;
+            if (note.length() > 0)     entry["note"]  = note;
+
+            // Update in-memory calibration date on the matching sensor object
+            if      (sensorType == "Temperature")        tempSensor.setCalibrationDate(timestamp);
+            else if (sensorType == "Conductivity")       ecSensor.setCalibrationDate(timestamp);
+            else if (sensorType == "pH")                 phSensor.setCalibrationDate(timestamp);
+            else if (sensorType == "Dissolved Oxygen")   doSensor.setCalibrationDate(timestamp);
+
+            // Persist to SPIFFS
+            saveDeviceConfig();
+
+            Serial.print("[CONFIG] Calibration recorded for ");
+            Serial.print(sensorType);
+            Serial.print(" (");
+            Serial.print(calibrationType);
+            Serial.println(")");
+            return true;
+        }
+    }
+
+    Serial.print("[CONFIG] Sensor not found for calibration update: ");
+    Serial.println(sensorType);
+    return false;
 }
 
 String getDeviceGUID() {
@@ -382,6 +485,15 @@ void loop() {
     // Update GPS sources (must be called frequently)
     gps.update();
     n2kGPS.update();
+
+    // Keep system epoch current for calibration age checks
+    if (activeGPSHasValidFix()) {
+        GPSData gpsData = activeGPSGetData();
+        if (gpsData.epoch > 0 && gpsData.epoch != g_systemEpoch) {
+            g_systemEpoch = gpsData.epoch;
+            EZOSensor::setSystemEpoch(g_systemEpoch);
+        }
+    }
 
     // Read sensors at regular intervals
     static unsigned long lastSensorRead = 0;

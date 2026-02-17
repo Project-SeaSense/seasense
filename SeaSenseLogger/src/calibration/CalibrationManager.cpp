@@ -4,6 +4,12 @@
 
 #include "CalibrationManager.h"
 
+// Implemented in SeaSenseLogger.ino
+extern bool updateSensorCalibration(const String& sensorType,
+                                    const String& calibrationType,
+                                    float calibrationValue,
+                                    const String& note);
+
 // ============================================================================
 // Constructor
 // ============================================================================
@@ -246,8 +252,21 @@ bool CalibrationManager::performCalibration() {
             break;
     }
 
-    // TODO: Update device_config.h with new calibration date
-    // Would need to implement updateSensorCalibration() function
+    if (success) {
+        // Map CalibrationType to a human-readable string for the log
+        String calTypeStr;
+        switch (_state.type) {
+            case CalibrationType::TEMPERATURE_SINGLE: calTypeStr = "single";    break;
+            case CalibrationType::EC_DRY:             calTypeStr = "dry";       break;
+            case CalibrationType::EC_SINGLE:          calTypeStr = "single";    break;
+            case CalibrationType::EC_TWO_LOW:         calTypeStr = "two-low";   break;
+            case CalibrationType::EC_TWO_HIGH:        calTypeStr = "two-high";  break;
+            default:                                  calTypeStr = "unknown";   break;
+        }
+        // Sensor type strings must match what getSensorMetadata() expects
+        String sensorType = (_state.sensorType == "temperature") ? "Temperature" : "Conductivity";
+        updateSensorCalibration(sensorType, calTypeStr, _state.referenceValue, "");
+    }
 
     return success;
 }

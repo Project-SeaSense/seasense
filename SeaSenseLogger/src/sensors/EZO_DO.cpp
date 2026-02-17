@@ -123,7 +123,6 @@ bool EZO_DO::calibrateAtmospheric() {
 
     DEBUG_SENSOR_PRINTLN("Atmospheric calibration successful");
 
-    // TODO: Update calibration date in device_config.h
     return true;
 }
 
@@ -141,7 +140,6 @@ bool EZO_DO::calibrateZero() {
 
     DEBUG_SENSOR_PRINTLN("Zero calibration successful");
 
-    // TODO: Update calibration date in device_config.h
     return true;
 }
 
@@ -177,8 +175,7 @@ SensorQuality EZO_DO::assessQuality() {
         return SensorQuality::FAIR;
     }
 
-    // TODO: Check calibration age and return FAIR if old (>3 months for DO)
-    // DO probes need regular calibration to maintain accuracy
+    if (isCalibrationStale(90)) return SensorQuality::FAIR;  // >3 months
 
     return SensorQuality::GOOD;
 }
