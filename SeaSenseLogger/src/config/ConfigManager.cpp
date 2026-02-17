@@ -103,6 +103,14 @@ void ConfigManager::setSamplingConfig(const SamplingConfig& config) {
     _sampling = config;
 }
 
+ConfigManager::GPSConfig ConfigManager::getGPSConfig() const {
+    return _gps;
+}
+
+void ConfigManager::setGPSConfig(const GPSConfig& config) {
+    _gps = config;
+}
+
 // ============================================================================
 // Private Methods
 // ============================================================================
@@ -183,6 +191,13 @@ bool ConfigManager::loadFromFile() {
         _sampling.sensorIntervalMs = sampling["sensor_interval_ms"] | 900000;
     }
 
+    // Load GPS config
+    if (doc.containsKey("gps")) {
+        JsonObject gps = doc["gps"];
+        _gps.useNMEA2000 = gps["use_nmea2000"] | false;
+        _gps.fallbackToOnboard = gps["fallback_to_onboard"] | true;
+    }
+
     return true;
 }
 
@@ -237,6 +252,11 @@ bool ConfigManager::saveToFile() {
     // Sampling section
     JsonObject sampling = doc.createNestedObject("sampling");
     sampling["sensor_interval_ms"] = _sampling.sensorIntervalMs;
+
+    // GPS section
+    JsonObject gps = doc.createNestedObject("gps");
+    gps["use_nmea2000"] = _gps.useNMEA2000;
+    gps["fallback_to_onboard"] = _gps.fallbackToOnboard;
 
     // Write to file
     File file = SPIFFS.open(CONFIG_FILE, "w");
@@ -317,4 +337,8 @@ void ConfigManager::setDefaults() {
 
     // Sampling defaults
     _sampling.sensorIntervalMs = 900000;  // 15 minutes
+
+    // GPS defaults - use onboard GPS, fall back if NMEA2000 has no fix
+    _gps.useNMEA2000 = false;
+    _gps.fallbackToOnboard = true;
 }

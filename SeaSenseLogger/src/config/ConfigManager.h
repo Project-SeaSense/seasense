@@ -50,6 +50,14 @@ public:
     };
 
     /**
+     * GPS source configuration
+     */
+    struct GPSConfig {
+        bool useNMEA2000;       // false = onboard GPS, true = NMEA2000 network
+        bool fallbackToOnboard; // fall back to onboard GPS if NMEA2000 has no fix
+    };
+
+    /**
      * Constructor
      */
     ConfigManager();
@@ -132,6 +140,18 @@ public:
      */
     void setSamplingConfig(const SamplingConfig& config);
 
+    /**
+     * Get GPS source configuration
+     * @return GPSConfig struct
+     */
+    GPSConfig getGPSConfig() const;
+
+    /**
+     * Set GPS source configuration
+     * @param config GPSConfig struct
+     */
+    void setGPSConfig(const GPSConfig& config);
+
 private:
     static const char* CONFIG_FILE;  // "/settings.json"
 
@@ -140,6 +160,7 @@ private:
     DeviceConfig _device;
     PumpConfig _pump;
     SamplingConfig _sampling;
+    GPSConfig _gps;
 
     /**
      * Load configuration from SPIFFS file

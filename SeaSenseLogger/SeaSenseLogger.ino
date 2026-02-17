@@ -34,6 +34,7 @@
 #include "src/sensors/EZO_pH.h"
 #include "src/sensors/EZO_DO.h"
 #include "src/sensors/GPSModule.h"
+#include "src/sensors/NMEA2000GPS.h"
 
 // Storage
 #include "src/storage/StorageInterface.h"
@@ -66,6 +67,7 @@ EZO_EC ecSensor;
 EZO_pH phSensor;
 EZO_DO doSensor;
 GPSModule gps(GPS_RX_PIN, GPS_TX_PIN);
+NMEA2000GPS n2kGPS;
 
 // Storage
 StorageManager storage(SPIFFS_CIRCULAR_BUFFER_SIZE, SD_CS_PIN);
@@ -91,6 +93,9 @@ bool configLoaded = false;
 
 // Runtime sampling interval (from ConfigManager)
 unsigned long sensorSamplingIntervalMs = 900000;  // Default 15 minutes
+
+// Runtime GPS source selection (from ConfigManager)
+bool useNMEA2000GPS = false;  // false = onboard GPS, true = NMEA2000 network
 
 // ============================================================================
 // Device Configuration Functions
@@ -164,6 +169,39 @@ bool isSensorEnabled(const String& sensorType) {
     if (metadata.isNull()) return false;
 
     return metadata["enabled"].as<bool>();
+}
+
+// ============================================================================
+// GPS Source Selection Helpers
+// ============================================================================
+
+bool activeGPSHasValidFix() {
+    ConfigManager::GPSConfig gpsCfg = configManager.getGPSConfig();
+    if (gpsCfg.useNMEA2000) {
+        if (n2kGPS.hasValidFix()) return true;
+        if (gpsCfg.fallbackToOnboard) return gps.hasValidFix();
+        return false;
+    }
+    return gps.hasValidFix();
+}
+
+GPSData activeGPSGetData() {
+    ConfigManager::GPSConfig gpsCfg = configManager.getGPSConfig();
+    if (gpsCfg.useNMEA2000) {
+        if (n2kGPS.hasValidFix()) return n2kGPS.getData();
+        if (gpsCfg.fallbackToOnboard) return gps.getData();
+    }
+    return gps.getData();
+}
+
+String activeGPSGetTimeUTC() {
+    ConfigManager::GPSConfig gpsCfg = configManager.getGPSConfig();
+    if (gpsCfg.useNMEA2000) {
+        if (n2kGPS.hasValidFix()) return n2kGPS.getTimeUTC();
+        if (gpsCfg.fallbackToOnboard) return gps.getTimeUTC();
+        return "";
+    }
+    return gps.getTimeUTC();
 }
 
 // ============================================================================
@@ -302,7 +340,18 @@ void setup() {
         Serial.println("[WARNING] API uploader initialization failed");
     }
 
-    // TODO: Initialize NMEA2000
+    // Initialize NMEA2000 GPS listener
+    Serial.println("\n[N2K] Initializing NMEA2000 GPS listener...");
+    if (n2kGPS.begin()) {
+        Serial.println("[N2K] NMEA2000 GPS listener initialized");
+    } else {
+        Serial.println("[WARNING] NMEA2000 GPS init failed (CAN bus unavailable?)");
+    }
+
+    // Load GPS source preference
+    useNMEA2000GPS = configManager.getGPSConfig().useNMEA2000;
+    Serial.print("[GPS] GPS source: ");
+    Serial.println(useNMEA2000GPS ? "NMEA2000 Network" : "Onboard GPS");
 
     Serial.println("\n===========================================");
     Serial.println("   SeaSense Logger - Ready");
@@ -318,8 +367,9 @@ void setup() {
 void loop() {
     unsigned long now = millis();
 
-    // Update GPS (must be called frequently to process NMEA sentences)
+    // Update GPS sources (must be called frequently)
     gps.update();
+    n2kGPS.update();
 
     // Read sensors at regular intervals
     static unsigned long lastSensorRead = 0;
@@ -333,10 +383,12 @@ void loop() {
         Serial.print(now);
         Serial.println(" ms");
 
-        // Get GPS data
-        GPSData gpsData = gps.getData();
-        if (gps.hasValidFix()) {
-            Serial.print("GPS: ");
+        // Get GPS data from active source (onboard or NMEA2000)
+        GPSData gpsData = activeGPSGetData();
+        if (activeGPSHasValidFix()) {
+            Serial.print("GPS [");
+            Serial.print(useNMEA2000GPS ? "N2K" : "NEO");
+            Serial.print("]: ");
             Serial.print(gpsData.latitude, 6);
             Serial.print("° N, ");
             Serial.print(gpsData.longitude, 6);
@@ -347,10 +399,12 @@ void loop() {
             Serial.print(gpsData.hdop, 1);
             Serial.println(")");
             Serial.print("GPS Time: ");
-            Serial.println(gps.getTimeUTC());
+            Serial.println(activeGPSGetTimeUTC());
         } else {
-            Serial.print("GPS: ");
-            Serial.println(gps.getStatusString());
+            Serial.print("GPS [");
+            Serial.print(useNMEA2000GPS ? "N2K" : "NEO");
+            Serial.print("]: ");
+            Serial.println(useNMEA2000GPS ? n2kGPS.getStatusString() : gps.getStatusString());
         }
 
         // Read temperature
@@ -374,8 +428,8 @@ void loop() {
             doSensor.setTemperatureCompensation(tempData.value);
 
             // Create DataRecord with GPS data
-            DataRecord record = sensorDataToRecord(tempData, gps.getTimeUTC());
-            if (gps.hasValidFix()) {
+            DataRecord record = sensorDataToRecord(tempData, activeGPSGetTimeUTC());
+            if (activeGPSHasValidFix()) {
                 record.latitude = gpsData.latitude;
                 record.longitude = gpsData.longitude;
                 record.altitude = gpsData.altitude;
@@ -413,8 +467,8 @@ void loop() {
             Serial.println(" PSU");
 
             // Create DataRecord with GPS data
-            DataRecord ecRecord = sensorDataToRecord(ecData, gps.getTimeUTC());
-            if (gps.hasValidFix()) {
+            DataRecord ecRecord = sensorDataToRecord(ecData, activeGPSGetTimeUTC());
+            if (activeGPSHasValidFix()) {
                 ecRecord.latitude = gpsData.latitude;
                 ecRecord.longitude = gpsData.longitude;
                 ecRecord.altitude = gpsData.altitude;
@@ -446,8 +500,8 @@ void loop() {
             Serial.println("]");
 
             // Create DataRecord with GPS data
-            DataRecord phRecord = sensorDataToRecord(phData, gps.getTimeUTC());
-            if (gps.hasValidFix()) {
+            DataRecord phRecord = sensorDataToRecord(phData, activeGPSGetTimeUTC());
+            if (activeGPSHasValidFix()) {
                 phRecord.latitude = gpsData.latitude;
                 phRecord.longitude = gpsData.longitude;
                 phRecord.altitude = gpsData.altitude;
@@ -483,8 +537,8 @@ void loop() {
             Serial.println("]");
 
             // Create DataRecord with GPS data
-            DataRecord doRecord = sensorDataToRecord(doData, gps.getTimeUTC());
-            if (gps.hasValidFix()) {
+            DataRecord doRecord = sensorDataToRecord(doData, activeGPSGetTimeUTC());
+            if (activeGPSHasValidFix()) {
                 doRecord.latitude = gpsData.latitude;
                 doRecord.longitude = gpsData.longitude;
                 doRecord.altitude = gpsData.altitude;

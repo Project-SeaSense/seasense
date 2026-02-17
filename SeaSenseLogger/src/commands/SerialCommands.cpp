@@ -216,6 +216,10 @@ void SerialCommands::cmdStatus() {
         Serial.println("GPS:");
         printSeparator();
 
+        extern bool useNMEA2000GPS;
+        Serial.print("Source: ");
+        Serial.println(useNMEA2000GPS ? "NMEA2000 Network" : "Onboard GPS (NEO-6M)");
+
         Serial.print("Status: ");
         Serial.println(_gpsModule->getStatusString());
 

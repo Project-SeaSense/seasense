@@ -783,6 +783,22 @@ void SeaSenseWebServer::handleSettings() {
                 <input type="number" id="sensor-interval" name="sensor-interval" min="0.083" max="1440" step="0.1" value="15">
                 <small>How often to read sensors. Range: 5 seconds to 24 hours. Default: 15 minutes.</small>
             </div>
+
+            <h3>GPS Source</h3>
+            <div class="form-group">
+                <label>Position &amp; Time Source</label>
+                <select id="gps-source" name="gps-source">
+                    <option value="onboard">Onboard GPS (NEO-6M)</option>
+                    <option value="nmea2000">NMEA2000 Network</option>
+                </select>
+                <small>Select NMEA2000 if the device is installed in the bilge without sky visibility. Requires a GPS chartplotter on the NMEA2000 bus.</small>
+            </div>
+            <div class="form-group">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" id="gps-fallback" name="gps-fallback" style="width:auto;margin:0;">
+                    Fall back to onboard GPS if NMEA2000 has no fix
+                </label>
+            </div>
         </div>
 
         <!-- Device Configuration -->
@@ -853,6 +869,12 @@ void SeaSenseWebServer::handleSettings() {
                     document.getElementById('sensor-interval').value = (config.sampling.sensor_interval_ms / 60000) || 15;
                 }
 
+                // GPS source
+                if (config.gps) {
+                    document.getElementById('gps-source').value = config.gps.use_nmea2000 ? 'nmea2000' : 'onboard';
+                    document.getElementById('gps-fallback').checked = config.gps.fallback_to_onboard !== false;
+                }
+
                 // Device
                 document.getElementById('device-guid').value = config.device.device_guid || '';
                 document.getElementById('partner-id').value = config.device.partner_id || '';
@@ -881,6 +903,10 @@ void SeaSenseWebServer::handleSettings() {
                 },
                 sampling: {
                     sensor_interval_ms: parseFloat(document.getElementById('sensor-interval').value) * 60000
+                },
+                gps: {
+                    use_nmea2000: document.getElementById('gps-source').value === 'nmea2000',
+                    fallback_to_onboard: document.getElementById('gps-fallback').checked
                 },
                 device: {
                     device_guid: document.getElementById('device-guid').value,
@@ -1167,6 +1193,12 @@ void SeaSenseWebServer::handleApiConfig() {
     JsonObject samplingObj = doc.createNestedObject("sampling");
     samplingObj["sensor_interval_ms"] = sampling.sensorIntervalMs;
 
+    // GPS config
+    ConfigManager::GPSConfig gpsConfig = _configManager->getGPSConfig();
+    JsonObject gpsObj = doc.createNestedObject("gps");
+    gpsObj["use_nmea2000"] = gpsConfig.useNMEA2000;
+    gpsObj["fallback_to_onboard"] = gpsConfig.fallbackToOnboard;
+
     // Device config
     ConfigManager::DeviceConfig device = _configManager->getDeviceConfig();
     JsonObject deviceObj = doc.createNestedObject("device");
@@ -1230,6 +1262,17 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
         // The main loop will use the new value on next iteration
         extern unsigned long sensorSamplingIntervalMs;
         sensorSamplingIntervalMs = sampling.sensorIntervalMs;
+    }
+
+    // Update GPS config
+    if (doc.containsKey("gps")) {
+        ConfigManager::GPSConfig gps;
+        gps.useNMEA2000 = doc["gps"]["use_nmea2000"] | false;
+        gps.fallbackToOnboard = doc["gps"]["fallback_to_onboard"] | true;
+        _configManager->setGPSConfig(gps);
+        // Update global flag so main loop uses new source immediately
+        extern bool useNMEA2000GPS;
+        useNMEA2000GPS = gps.useNMEA2000;
     }
 
     // Update device config
