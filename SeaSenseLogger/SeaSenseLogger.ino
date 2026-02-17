@@ -36,6 +36,7 @@
 #include "src/sensors/EZO_DO.h"
 #include "src/sensors/GPSModule.h"
 #include "src/sensors/NMEA2000GPS.h"
+#include "src/sensors/NMEA2000Environment.h"
 
 // Storage
 #include "src/storage/StorageInterface.h"
@@ -72,6 +73,7 @@ EZO_pH phSensor;
 EZO_DO doSensor;
 GPSModule gps(GPS_RX_PIN, GPS_TX_PIN);
 NMEA2000GPS n2kGPS;
+NMEA2000Environment n2kEnv;
 
 // Storage
 StorageManager storage(SPIFFS_CIRCULAR_BUFFER_SIZE, SD_CS_PIN);
@@ -314,6 +316,14 @@ String activeGPSGetTimeUTC() {
 }
 
 // ============================================================================
+// NMEA2000 message forward callback (bridges GPS handler → Environment handler)
+// ============================================================================
+
+void n2kMsgForward(const tN2kMsg& msg) {
+    n2kEnv.handleMsg(msg);
+}
+
+// ============================================================================
 // Setup
 // ============================================================================
 
@@ -484,6 +494,14 @@ void setup() {
     Serial.println("\n[N2K] Initializing NMEA2000 GPS listener...");
     if (n2kGPS.begin()) {
         Serial.println("[N2K] NMEA2000 GPS listener initialized");
+
+        // Initialize NMEA2000 environmental listener (shares CAN bus with GPS)
+        tNMEA2000* n2kInstance = n2kGPS.getN2kInstance();
+        if (n2kInstance) {
+            n2kEnv.begin(n2kInstance);
+            n2kGPS.setMsgForwardCallback(n2kMsgForward);
+            Serial.println("[N2K] NMEA2000 environmental listener initialized");
+        }
     } else {
         Serial.println("[WARNING] NMEA2000 GPS init failed (CAN bus unavailable?)");
     }
@@ -503,6 +521,25 @@ void setup() {
 // ============================================================================
 // Main Loop
 // ============================================================================
+
+// Stamp NMEA2000 environmental context onto a DataRecord
+void stampEnvironmentData(DataRecord& record, const N2kEnvironmentData& env) {
+    record.windSpeedTrue     = env.windSpeedTrue;
+    record.windAngleTrue     = env.windAngleTrue;
+    record.windSpeedApparent = env.windSpeedApparent;
+    record.windAngleApparent = env.windAngleApparent;
+    record.waterDepth        = env.waterDepth;
+    record.speedThroughWater = env.speedThroughWater;
+    record.waterTempExternal = env.waterTempExternal;
+    record.airTemp           = env.airTemp;
+    record.baroPressure      = env.baroPressure;
+    record.humidity          = env.humidity;
+    record.cogTrue           = env.cogTrue;
+    record.sog               = env.sog;
+    record.heading           = env.heading;
+    record.pitch             = env.pitch;
+    record.roll              = env.roll;
+}
 
 // I2C bus reset: toggles SCL to release stuck slaves
 void resetI2CBus() {
@@ -584,6 +621,13 @@ void loop() {
             Serial.println(useNMEA2000GPS ? n2kGPS.getStatusString() : gps.getStatusString());
         }
 
+        // Snapshot NMEA2000 environmental data from boat instruments
+        N2kEnvironmentData envData = n2kEnv.getSnapshot();
+        if (n2kEnv.hasAnyData()) {
+            Serial.print("N2K Env: ");
+            Serial.println(n2kEnv.getStatusString());
+        }
+
         // Track consecutive sensor failures for I2C bus reset
         static uint8_t consecutiveSensorFails = 0;
         uint8_t sensorFailsThisCycle = 0;
@@ -608,7 +652,7 @@ void loop() {
             phSensor.setTemperatureCompensation(tempData.value);
             doSensor.setTemperatureCompensation(tempData.value);
 
-            // Create DataRecord with GPS data
+            // Create DataRecord with GPS + environmental data
             DataRecord record = sensorDataToRecord(tempData, activeGPSGetTimeUTC());
             if (activeGPSHasValidFix()) {
                 record.latitude = gpsData.latitude;
@@ -617,6 +661,7 @@ void loop() {
                 record.gps_satellites = gpsData.satellites;
                 record.gps_hdop = gpsData.hdop;
             }
+            stampEnvironmentData(record, envData);
 
             // Log to storage
             if (!storage.writeRecord(record)) {
@@ -649,7 +694,7 @@ void loop() {
             Serial.print(salinity, 2);
             Serial.println(" PSU");
 
-            // Create DataRecord with GPS data
+            // Create DataRecord with GPS + environmental data
             DataRecord ecRecord = sensorDataToRecord(ecData, activeGPSGetTimeUTC());
             if (activeGPSHasValidFix()) {
                 ecRecord.latitude = gpsData.latitude;
@@ -658,6 +703,7 @@ void loop() {
                 ecRecord.gps_satellites = gpsData.satellites;
                 ecRecord.gps_hdop = gpsData.hdop;
             }
+            stampEnvironmentData(ecRecord, envData);
 
             // Log to storage
             if (!storage.writeRecord(ecRecord)) {
@@ -684,7 +730,7 @@ void loop() {
                         phData.quality == SensorQuality::NOT_CALIBRATED ? "NOT_CAL" : "ERROR");
             Serial.println("]");
 
-            // Create DataRecord with GPS data
+            // Create DataRecord with GPS + environmental data
             DataRecord phRecord = sensorDataToRecord(phData, activeGPSGetTimeUTC());
             if (activeGPSHasValidFix()) {
                 phRecord.latitude = gpsData.latitude;
@@ -693,6 +739,7 @@ void loop() {
                 phRecord.gps_satellites = gpsData.satellites;
                 phRecord.gps_hdop = gpsData.hdop;
             }
+            stampEnvironmentData(phRecord, envData);
 
             // Log to storage
             if (!storage.writeRecord(phRecord)) {
@@ -723,7 +770,7 @@ void loop() {
                         doData.quality == SensorQuality::NOT_CALIBRATED ? "NOT_CAL" : "ERROR");
             Serial.println("]");
 
-            // Create DataRecord with GPS data
+            // Create DataRecord with GPS + environmental data
             DataRecord doRecord = sensorDataToRecord(doData, activeGPSGetTimeUTC());
             if (activeGPSHasValidFix()) {
                 doRecord.latitude = gpsData.latitude;
@@ -732,6 +779,7 @@ void loop() {
                 doRecord.gps_satellites = gpsData.satellites;
                 doRecord.gps_hdop = gpsData.hdop;
             }
+            stampEnvironmentData(doRecord, envData);
 
             // Log to storage
             if (!storage.writeRecord(doRecord)) {

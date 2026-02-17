@@ -81,6 +81,20 @@ public:
      */
     unsigned long getAgeMs() const;
 
+    /**
+     * Get the underlying tNMEA2000 instance.
+     * Used by NMEA2000Environment to share the same CAN bus.
+     * @return Pointer to tNMEA2000 instance, or nullptr if not initialized
+     */
+    tNMEA2000* getN2kInstance() const { return _n2k; }
+
+    /**
+     * Set a callback for forwarding messages to additional listeners
+     * (e.g., NMEA2000Environment). Called after GPS handles each message.
+     */
+    typedef void (*MsgForwardCallback)(const tN2kMsg& msg);
+    void setMsgForwardCallback(MsgForwardCallback cb) { _forwardCallback = cb; }
+
 private:
     tNMEA2000* _n2k;  // owned NMEA2000 instance using custom TWAI driver
     GPSData _data;
@@ -89,6 +103,8 @@ private:
 
     bool _hasPosition;
     bool _hasTime;
+
+    MsgForwardCallback _forwardCallback;
 
     static NMEA2000GPS* _instance;
     static void staticMsgHandler(const tN2kMsg& msg);

@@ -245,7 +245,7 @@ String APIUploader::millisToUTC(unsigned long millisTimestamp) const {
 }
 
 String APIUploader::buildPayload(const std::vector<DataRecord>& records) const {
-    DynamicJsonDocument doc(8192);  // Large buffer for batch uploads
+    DynamicJsonDocument doc(16384);  // Large buffer for batch uploads (env fields add ~300 bytes/record)
 
     // Metadata
     JsonObject metadata = doc.createNestedObject("metadata");
@@ -321,6 +321,23 @@ String APIUploader::buildPayload(const std::vector<DataRecord>& records) const {
         dp["sensor_serial"] = record.sensorSerial;
         dp["sensor_instance"] = record.sensorInstance;
         dp["calibration_date"] = record.calibrationDate;
+
+        // NMEA2000 environmental context (only include non-NaN fields)
+        if (!isnan(record.windSpeedTrue))     dp["wind_speed_true_ms"] = record.windSpeedTrue;
+        if (!isnan(record.windAngleTrue))     dp["wind_angle_true_deg"] = record.windAngleTrue;
+        if (!isnan(record.windSpeedApparent)) dp["wind_speed_app_ms"] = record.windSpeedApparent;
+        if (!isnan(record.windAngleApparent)) dp["wind_angle_app_deg"] = record.windAngleApparent;
+        if (!isnan(record.waterDepth))        dp["water_depth_m"] = record.waterDepth;
+        if (!isnan(record.speedThroughWater)) dp["speed_through_water_ms"] = record.speedThroughWater;
+        if (!isnan(record.waterTempExternal)) dp["water_temp_external_c"] = record.waterTempExternal;
+        if (!isnan(record.airTemp))           dp["air_temp_c"] = record.airTemp;
+        if (!isnan(record.baroPressure))      dp["baro_pressure_pa"] = record.baroPressure;
+        if (!isnan(record.humidity))          dp["humidity_pct"] = record.humidity;
+        if (!isnan(record.cogTrue))           dp["cog_true_deg"] = record.cogTrue;
+        if (!isnan(record.sog))              dp["sog_ms"] = record.sog;
+        if (!isnan(record.heading))           dp["heading_true_deg"] = record.heading;
+        if (!isnan(record.pitch))             dp["pitch_deg"] = record.pitch;
+        if (!isnan(record.roll))              dp["roll_deg"] = record.roll;
     }
 
     String payload;

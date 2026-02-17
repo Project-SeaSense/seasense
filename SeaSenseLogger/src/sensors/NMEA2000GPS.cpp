@@ -85,7 +85,8 @@ NMEA2000GPS::NMEA2000GPS()
       _initialized(false),
       _lastUpdateMs(0),
       _hasPosition(false),
-      _hasTime(false)
+      _hasTime(false),
+      _forwardCallback(nullptr)
 {
     memset(&_data, 0, sizeof(_data));
     _data.valid = false;
@@ -203,6 +204,11 @@ void NMEA2000GPS::handleMsg(const tN2kMsg& msg) {
         case 129029: handlePGN129029(msg); break;
         case 126992: handlePGN126992(msg); break;
         case 129025: handlePGN129025(msg); break;
+    }
+
+    // Forward to additional listeners (e.g., NMEA2000Environment)
+    if (_forwardCallback) {
+        _forwardCallback(msg);
     }
 }
 

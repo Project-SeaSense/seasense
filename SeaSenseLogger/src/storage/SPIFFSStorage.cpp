@@ -236,7 +236,18 @@ bool SPIFFSStorage::flush() {
 }
 
 String SPIFFSStorage::getCSVHeader() const {
-    return "millis,timestamp_utc,latitude,longitude,altitude,gps_sats,gps_hdop,sensor_type,sensor_model,sensor_serial,sensor_instance,calibration_date,value,unit,quality";
+    return "millis,timestamp_utc,latitude,longitude,altitude,gps_sats,gps_hdop,"
+           "sensor_type,sensor_model,sensor_serial,sensor_instance,calibration_date,"
+           "value,unit,quality,"
+           "wind_speed_true_ms,wind_angle_true_deg,wind_speed_app_ms,wind_angle_app_deg,"
+           "water_depth_m,stw_ms,water_temp_ext_c,air_temp_c,baro_pressure_pa,"
+           "humidity_pct,cog_deg,sog_ms,heading_deg,pitch_deg,roll_deg";
+}
+
+// Helper: format float for CSV, empty string if NaN
+static String csvFloat(float v, int decimals) {
+    if (isnan(v)) return "";
+    return String(v, decimals);
 }
 
 String SPIFFSStorage::recordToCSV(const DataRecord& record) const {
@@ -270,6 +281,22 @@ String SPIFFSStorage::recordToCSV(const DataRecord& record) const {
     csv += record.unit;
     csv += ",";
     csv += record.quality;
+    // NMEA2000 environmental fields (empty if NaN/unavailable)
+    csv += "," + csvFloat(record.windSpeedTrue, 2);
+    csv += "," + csvFloat(record.windAngleTrue, 1);
+    csv += "," + csvFloat(record.windSpeedApparent, 2);
+    csv += "," + csvFloat(record.windAngleApparent, 1);
+    csv += "," + csvFloat(record.waterDepth, 2);
+    csv += "," + csvFloat(record.speedThroughWater, 2);
+    csv += "," + csvFloat(record.waterTempExternal, 2);
+    csv += "," + csvFloat(record.airTemp, 2);
+    csv += "," + csvFloat(record.baroPressure, 0);
+    csv += "," + csvFloat(record.humidity, 1);
+    csv += "," + csvFloat(record.cogTrue, 1);
+    csv += "," + csvFloat(record.sog, 2);
+    csv += "," + csvFloat(record.heading, 1);
+    csv += "," + csvFloat(record.pitch, 1);
+    csv += "," + csvFloat(record.roll, 1);
     return csv;
 }
 
@@ -399,17 +426,41 @@ bool SPIFFSStorage::trimOldRecords() {
     return true;
 }
 
+// Helper: parse a CSV field as float, returning NaN for empty fields
+static float parseOptionalFloat(const String& field) {
+    if (field.length() == 0) return NAN;
+    return field.toFloat();
+}
+
 bool SPIFFSStorage::parseCSVLine(const String& line, DataRecord& record) const {
     // Parse CSV: millis,timestamp_utc,latitude,longitude,altitude,gps_sats,gps_hdop,
     //            sensor_type,sensor_model,sensor_serial,sensor_instance,
-    //            calibration_date,value,unit,quality
+    //            calibration_date,value,unit,quality,
+    //            [env fields 15-29...]
+
+    // Initialize environmental fields to NaN (backwards compat with old CSV)
+    record.windSpeedTrue = NAN;
+    record.windAngleTrue = NAN;
+    record.windSpeedApparent = NAN;
+    record.windAngleApparent = NAN;
+    record.waterDepth = NAN;
+    record.speedThroughWater = NAN;
+    record.waterTempExternal = NAN;
+    record.airTemp = NAN;
+    record.baroPressure = NAN;
+    record.humidity = NAN;
+    record.cogTrue = NAN;
+    record.sog = NAN;
+    record.heading = NAN;
+    record.pitch = NAN;
+    record.roll = NAN;
 
     int fieldIndex = 0;
     int lastComma = -1;
     int nextComma = 0;
 
-    for (int i = 0; i <= line.length(); i++) {
-        if (i == line.length() || line[i] == ',') {
+    for (int i = 0; i <= (int)line.length(); i++) {
+        if (i == (int)line.length() || line[i] == ',') {
             nextComma = i;
             String field = line.substring(lastComma + 1, nextComma);
             field.trim();
@@ -430,6 +481,22 @@ bool SPIFFSStorage::parseCSVLine(const String& line, DataRecord& record) const {
                 case 12: record.value = field.toFloat(); break;
                 case 13: record.unit = field; break;
                 case 14: record.quality = field; break;
+                // NMEA2000 environmental fields (optional)
+                case 15: record.windSpeedTrue = parseOptionalFloat(field); break;
+                case 16: record.windAngleTrue = parseOptionalFloat(field); break;
+                case 17: record.windSpeedApparent = parseOptionalFloat(field); break;
+                case 18: record.windAngleApparent = parseOptionalFloat(field); break;
+                case 19: record.waterDepth = parseOptionalFloat(field); break;
+                case 20: record.speedThroughWater = parseOptionalFloat(field); break;
+                case 21: record.waterTempExternal = parseOptionalFloat(field); break;
+                case 22: record.airTemp = parseOptionalFloat(field); break;
+                case 23: record.baroPressure = parseOptionalFloat(field); break;
+                case 24: record.humidity = parseOptionalFloat(field); break;
+                case 25: record.cogTrue = parseOptionalFloat(field); break;
+                case 26: record.sog = parseOptionalFloat(field); break;
+                case 27: record.heading = parseOptionalFloat(field); break;
+                case 28: record.pitch = parseOptionalFloat(field); break;
+                case 29: record.roll = parseOptionalFloat(field); break;
             }
 
             fieldIndex++;
@@ -437,7 +504,7 @@ bool SPIFFSStorage::parseCSVLine(const String& line, DataRecord& record) const {
         }
     }
 
-    // Support both old format (10 fields) and new format (15 fields) for backwards compatibility
+    // Support old format (15 fields) and new format (30 fields)
     return (fieldIndex >= 10);
 }
 

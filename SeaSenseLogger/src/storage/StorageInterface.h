@@ -43,7 +43,10 @@ struct StorageStats {
  * Data record structure for CSV storage
  * Matches the CSV format: millis,timestamp_utc,latitude,longitude,altitude,
  * gps_sats,gps_hdop,sensor_type,sensor_model,sensor_serial,
- * sensor_instance,calibration_date,value,unit,quality
+ * sensor_instance,calibration_date,value,unit,quality,
+ * wind_speed_true_ms,wind_angle_true_deg,wind_speed_app_ms,wind_angle_app_deg,
+ * water_depth_m,stw_ms,water_temp_ext_c,air_temp_c,baro_pressure_pa,
+ * humidity_pct,cog_deg,sog_ms,heading_deg,pitch_deg,roll_deg
  */
 struct DataRecord {
     unsigned long millis;      // millis() when reading was taken
@@ -61,6 +64,23 @@ struct DataRecord {
     float value;               // Sensor reading value
     String unit;               // Unit of measurement
     String quality;            // Quality indicator string
+
+    // NMEA2000 environmental context (NaN = not available)
+    float windSpeedTrue;       // m/s
+    float windAngleTrue;       // degrees
+    float windSpeedApparent;   // m/s
+    float windAngleApparent;   // degrees
+    float waterDepth;          // meters below transducer
+    float speedThroughWater;   // m/s
+    float waterTempExternal;   // °C from boat transducer
+    float airTemp;             // °C
+    float baroPressure;        // Pascals
+    float humidity;            // % relative
+    float cogTrue;             // degrees
+    float sog;                 // m/s
+    float heading;             // degrees true
+    float pitch;               // degrees
+    float roll;                // degrees
 };
 
 /**
@@ -194,6 +214,22 @@ inline DataRecord sensorDataToRecord(const SensorData& data, const String& times
     record.value = data.value;
     record.unit = data.unit;
     record.quality = sensorQualityToString(data.quality);
+    // Initialize NMEA2000 environmental fields to NaN (not available)
+    record.windSpeedTrue = NAN;
+    record.windAngleTrue = NAN;
+    record.windSpeedApparent = NAN;
+    record.windAngleApparent = NAN;
+    record.waterDepth = NAN;
+    record.speedThroughWater = NAN;
+    record.waterTempExternal = NAN;
+    record.airTemp = NAN;
+    record.baroPressure = NAN;
+    record.humidity = NAN;
+    record.cogTrue = NAN;
+    record.sog = NAN;
+    record.heading = NAN;
+    record.pitch = NAN;
+    record.roll = NAN;
     return record;
 }
 
