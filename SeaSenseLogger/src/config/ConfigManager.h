@@ -208,6 +208,11 @@ private:
      * Set default values from compile-time defines
      */
     void setDefaults();
+
+    /**
+     * Clamp all config values to safe operating bounds
+     */
+    void clampConfig();
 };
 
 #endif // CONFIG_MANAGER_H

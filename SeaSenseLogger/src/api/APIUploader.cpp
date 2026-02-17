@@ -169,11 +169,12 @@ uint32_t APIUploader::getPendingRecords() const {
     if (!_storage) return 0;
 
     StorageStats stats = _storage->getStats();
-    unsigned long lastUploaded = _storage->getLastUploadedMillis();
 
-    // Estimate pending records
-    // TODO: More accurate count by querying storage
-    return stats.totalRecords;
+    // If we've never uploaded, everything is pending
+    if (_lastUploadTime == 0) return stats.totalRecords;
+
+    // Estimate: records written since last upload based on recordsSinceUpload if available
+    return stats.recordsSinceUpload > 0 ? stats.recordsSinceUpload : stats.totalRecords;
 }
 
 unsigned long APIUploader::getTimeUntilNext() const {
@@ -202,9 +203,10 @@ bool APIUploader::syncNTP() {
 
     configTime(NTP_GMT_OFFSET_SEC, NTP_DAYLIGHT_OFFSET_SEC, NTP_SERVER);
 
-    // Wait for time sync (max 5 seconds)
-    int attempts = 0;
-    while (attempts < 50) {
+    // Non-blocking wait for time sync (max 5 seconds)
+    extern SystemHealth systemHealth;
+    unsigned long deadline = millis() + 5000;
+    while (millis() < deadline) {
         time_t now = time(nullptr);
         if (now > 1000000000) {  // Valid timestamp
             _bootTimeEpoch = now - (millis() / 1000);
@@ -217,8 +219,8 @@ bool APIUploader::syncNTP() {
 
             return true;
         }
+        systemHealth.feedWatchdog();
         delay(100);
-        attempts++;
     }
 
     return false;
@@ -263,9 +265,12 @@ String APIUploader::buildPayload(const std::vector<DataRecord>& records) const {
     health["free_heap"] = ESP.getFreeHeap();
     health["reset_reason"] = systemHealth.getResetReasonString();
     health["reboot_count"] = systemHealth.getRebootCount();
+    health["consecutive_reboots"] = systemHealth.getConsecutiveReboots();
+    health["safe_mode"] = systemHealth.isInSafeMode();
     health["sensor_errors"] = systemHealth.getErrorCount(ErrorType::SENSOR);
     health["sd_errors"] = systemHealth.getErrorCount(ErrorType::SD);
     health["api_errors"] = systemHealth.getErrorCount(ErrorType::API);
+    health["wifi_errors"] = systemHealth.getErrorCount(ErrorType::WIFI);
 
     // Deployment metadata
     extern ConfigManager configManager;
@@ -330,7 +335,8 @@ bool APIUploader::uploadPayload(const String& payload) {
     http.begin(_config.apiUrl + "/v1/ingest/datapoints");
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-API-Key", _config.apiKey);
-    http.setTimeout(10000);  // 10 second timeout
+    http.setConnectTimeout(API_CONNECT_TIMEOUT_MS);  // Fast DNS/connect failure
+    http.setTimeout(10000);  // 10 second response timeout
 
     DEBUG_API_PRINT("Payload size: ");
     DEBUG_API_PRINT(payload.length());

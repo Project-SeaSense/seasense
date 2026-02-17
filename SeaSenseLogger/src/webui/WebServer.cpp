@@ -9,6 +9,8 @@
 #include "../../config/hardware_config.h"
 #include "../../config/secrets.h"
 #include "../system/SystemHealth.h"
+#include "../sensors/GPSModule.h"
+#include "../api/APIUploader.h"
 #include <ArduinoJson.h>
 #include <SPIFFS.h>
 
@@ -81,6 +83,7 @@ bool SeaSenseWebServer::begin() {
     _server->on("/api/pump/config/update", std::bind(&SeaSenseWebServer::handleApiPumpConfigUpdate, this));
     _server->on("/api/config/reset", std::bind(&SeaSenseWebServer::handleApiConfigReset, this));
     _server->on("/api/system/restart", std::bind(&SeaSenseWebServer::handleApiSystemRestart, this));
+    _server->on("/api/system/clear-safe-mode", std::bind(&SeaSenseWebServer::handleApiClearSafeMode, this));
 
     _server->onNotFound(std::bind(&SeaSenseWebServer::handleNotFound, this));
 
@@ -1337,7 +1340,7 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
 void SeaSenseWebServer::handleApiStatus() {
     extern SystemHealth systemHealth;
 
-    StaticJsonDocument<1024> doc;
+    StaticJsonDocument<1536> doc;
 
     doc["uptime_ms"] = millis();
 
@@ -1368,6 +1371,26 @@ void SeaSenseWebServer::handleApiStatus() {
     doc["errors"]["sd"] = systemHealth.getErrorCount(ErrorType::SD);
     doc["errors"]["api"] = systemHealth.getErrorCount(ErrorType::API);
     doc["errors"]["wifi"] = systemHealth.getErrorCount(ErrorType::WIFI);
+
+    // GPS status (via extern globals from main sketch)
+    extern bool activeGPSHasValidFix();
+    extern GPSData activeGPSGetData();
+    extern bool useNMEA2000GPS;
+    doc["gps"]["has_fix"] = activeGPSHasValidFix();
+    doc["gps"]["source"] = useNMEA2000GPS ? "nmea2000" : "onboard";
+    if (activeGPSHasValidFix()) {
+        GPSData gd = activeGPSGetData();
+        doc["gps"]["satellites"] = gd.satellites;
+        doc["gps"]["hdop"] = gd.hdop;
+    }
+
+    // Upload status (via extern to apiUploader)
+    extern APIUploader apiUploader;
+    doc["upload"]["status"] = apiUploader.getStatusString();
+    doc["upload"]["pending_records"] = apiUploader.getPendingRecords();
+    doc["upload"]["last_success_ms"] = apiUploader.getLastUploadTime();
+    doc["upload"]["retry_count"] = apiUploader.getRetryCount();
+    doc["upload"]["next_upload_ms"] = apiUploader.getTimeUntilNext();
 
     // Deployment metadata
     if (_configManager) {
@@ -1670,6 +1693,20 @@ void SeaSenseWebServer::handleApiSystemRestart() {
     }
 
     sendJSON("{\"success\":true,\"message\":\"Device restarting...\"}");
+    delay(500);  // Let response send
+    ESP.restart();
+}
+
+void SeaSenseWebServer::handleApiClearSafeMode() {
+    if (_server->method() != HTTP_POST) {
+        sendError("Method not allowed", 405);
+        return;
+    }
+
+    extern SystemHealth systemHealth;
+    systemHealth.clearSafeMode();
+
+    sendJSON("{\"success\":true,\"message\":\"Safe mode cleared, restarting...\"}");
     delay(500);  // Let response send
     ESP.restart();
 }

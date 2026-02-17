@@ -4,6 +4,7 @@
 
 #include "StorageManager.h"
 #include "../../config/hardware_config.h"
+#include "../system/SystemHealth.h"
 
 // ============================================================================
 // Constructor / Destructor
@@ -96,9 +97,13 @@ bool StorageManager::writeRecord(const DataRecord& record) {
                     DEBUG_STORAGE_PRINTLN("Written to SD card after remount");
                 } else {
                     Serial.println("[STORAGE] SD write failed after remount");
+                    extern SystemHealth systemHealth;
+                    systemHealth.recordError(ErrorType::SD);
                 }
             } else {
                 Serial.println("[STORAGE] SD remount failed");
+                extern SystemHealth systemHealth;
+                systemHealth.recordError(ErrorType::SD);
             }
         }
     } else {

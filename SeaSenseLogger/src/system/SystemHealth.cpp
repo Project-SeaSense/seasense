@@ -179,6 +179,16 @@ String SystemHealth::getResetReasonString() const {
     }
 }
 
+void SystemHealth::clearSafeMode() {
+    if (_nvsReady) {
+        writeNVS(KEY_CONSEC_REBOOT, 0);
+        nvs_commit(_nvsHandle);
+        Serial.println("[HEALTH] Safe mode cleared - will boot normally on next restart");
+    }
+    _safeMode = false;
+    _consecutiveReboots = 0;
+}
+
 bool SystemHealth::openNVS() {
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &_nvsHandle);
     if (err != ESP_OK) {

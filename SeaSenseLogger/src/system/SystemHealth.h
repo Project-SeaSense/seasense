@@ -79,6 +79,12 @@ public:
      */
     String getResetReasonString() const;
 
+    /**
+     * Clear safe mode: zeroes consecutive reboot counter in NVS.
+     * Call before ESP.restart() to exit safe mode on next boot.
+     */
+    void clearSafeMode();
+
 private:
     bool _safeMode;
     bool _nvsReady;

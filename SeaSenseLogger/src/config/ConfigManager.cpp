@@ -77,6 +77,7 @@ ConfigManager::APIConfig ConfigManager::getAPIConfig() const {
 
 void ConfigManager::setAPIConfig(const APIConfig& config) {
     _api = config;
+    clampConfig();
 }
 
 ConfigManager::DeviceConfig ConfigManager::getDeviceConfig() const {
@@ -93,6 +94,7 @@ PumpConfig ConfigManager::getPumpConfig() const {
 
 void ConfigManager::setPumpConfig(const PumpConfig& config) {
     _pump = config;
+    clampConfig();
 }
 
 ConfigManager::SamplingConfig ConfigManager::getSamplingConfig() const {
@@ -101,6 +103,7 @@ ConfigManager::SamplingConfig ConfigManager::getSamplingConfig() const {
 
 void ConfigManager::setSamplingConfig(const SamplingConfig& config) {
     _sampling = config;
+    clampConfig();
 }
 
 ConfigManager::GPSConfig ConfigManager::getGPSConfig() const {
@@ -225,6 +228,7 @@ bool ConfigManager::loadFromFile() {
         _deployment.depthCm = dep["depth_cm"] | 0.0f;
     }
 
+    clampConfig();
     return true;
 }
 
@@ -379,4 +383,18 @@ void ConfigManager::setDefaults() {
     _deployment.deployDate = "";
     _deployment.purchaseDate = "";
     _deployment.depthCm = 0.0f;
+}
+
+void ConfigManager::clampConfig() {
+    // Sampling bounds: 5 seconds to 24 hours
+    _sampling.sensorIntervalMs = constrain(_sampling.sensorIntervalMs, (uint32_t)5000, (uint32_t)86400000);
+
+    // API upload bounds: 1 minute to 24 hours
+    _api.uploadInterval = constrain(_api.uploadInterval, (uint32_t)60000, (uint32_t)86400000);
+    _api.batchSize = constrain(_api.batchSize, (uint8_t)1, (uint8_t)255);
+    _api.maxRetries = constrain(_api.maxRetries, (uint8_t)1, (uint8_t)20);
+
+    // Pump bounds
+    _pump.cycleIntervalMs = constrain(_pump.cycleIntervalMs, (uint32_t)10000, (uint32_t)3600000);
+    _pump.maxPumpOnTimeMs = constrain(_pump.maxPumpOnTimeMs, (uint32_t)5000, (uint32_t)120000);
 }

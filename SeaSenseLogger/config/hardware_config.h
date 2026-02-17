@@ -124,7 +124,7 @@
 // ============================================================================
 
 #define SPIFFS_MOUNT_POINT "/spiffs"
-#define SPIFFS_CIRCULAR_BUFFER_SIZE 100  // Keep last 100 records in SPIFFS
+#define SPIFFS_CIRCULAR_BUFFER_SIZE 1000 // Keep last 1000 records in SPIFFS (~62h offline at 16 rec/hr)
 #define SD_MOUNT_POINT "/sd"
 #define SD_CSV_FILENAME "/sd/seasense_data.csv"
 #define SD_WRITE_BUFFER_SIZE 512
@@ -148,6 +148,7 @@
 #define BOOT_LOOP_WINDOW_MS 120000        // 2 min stable operation clears counter
 #define I2C_BUS_RESET_THRESHOLD 8         // Consecutive sensor fails before bus reset
 #define EZO_HARD_TIMEOUT_MS 3000          // Absolute max wait for any EZO command
+#define API_CONNECT_TIMEOUT_MS 5000       // HTTP connect timeout (DNS + TCP)
 
 // ============================================================================
 // Debug Configuration

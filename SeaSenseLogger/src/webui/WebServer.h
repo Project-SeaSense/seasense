@@ -171,6 +171,7 @@ private:
     // API - System
     void handleApiSystemRestart();
     void handleApiConfigReset();
+    void handleApiClearSafeMode();
 
     // ========================================================================
     // Helper Methods

@@ -105,6 +105,12 @@ public:
     bool isTimeSynced() const { return _timeSynced; }
 
     /**
+     * Get current retry count
+     * @return Number of consecutive failed upload attempts
+     */
+    uint8_t getRetryCount() const { return _retryCount; }
+
+    /**
      * Force immediate upload attempt
      * Ignores interval timing
      */
