@@ -144,8 +144,7 @@ bool ConfigManager::loadFromFile() {
         return false;
     }
 
-    // Use StaticJsonDocument for memory efficiency
-    StaticJsonDocument<2048> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, file);
     file.close();
 
@@ -156,7 +155,7 @@ bool ConfigManager::loadFromFile() {
     }
 
     // Load WiFi config
-    if (doc.containsKey("wifi")) {
+    if (doc["wifi"].is<JsonObject>()) {
         JsonObject wifi = doc["wifi"];
         _wifi.stationSSID = wifi["station_ssid"] | "";
         _wifi.stationPassword = wifi["station_password"] | "";
@@ -164,7 +163,7 @@ bool ConfigManager::loadFromFile() {
     }
 
     // Load API config
-    if (doc.containsKey("api")) {
+    if (doc["api"].is<JsonObject>()) {
         JsonObject api = doc["api"];
         _api.url = api["url"] | "";
         _api.apiKey = api["api_key"] | "";
@@ -174,7 +173,7 @@ bool ConfigManager::loadFromFile() {
     }
 
     // Load device config
-    if (doc.containsKey("device")) {
+    if (doc["device"].is<JsonObject>()) {
         JsonObject device = doc["device"];
         _device.deviceGUID = device["device_guid"] | "";
         _device.partnerID = device["partner_id"] | "";
@@ -182,7 +181,7 @@ bool ConfigManager::loadFromFile() {
     }
 
     // Load pump config
-    if (doc.containsKey("pump")) {
+    if (doc["pump"].is<JsonObject>()) {
         JsonObject pump = doc["pump"];
         _pump.enabled = pump["enabled"] | true;
         _pump.relayPin = pump["relay_pin"] | PUMP_RELAY_PIN;
@@ -208,20 +207,20 @@ bool ConfigManager::loadFromFile() {
     }
 
     // Load sampling config
-    if (doc.containsKey("sampling")) {
+    if (doc["sampling"].is<JsonObject>()) {
         JsonObject sampling = doc["sampling"];
         _sampling.sensorIntervalMs = sampling["sensor_interval_ms"] | 900000;
     }
 
     // Load GPS config
-    if (doc.containsKey("gps")) {
+    if (doc["gps"].is<JsonObject>()) {
         JsonObject gps = doc["gps"];
         _gps.useNMEA2000 = gps["use_nmea2000"] | false;
         _gps.fallbackToOnboard = gps["fallback_to_onboard"] | true;
     }
 
     // Load deployment metadata
-    if (doc.containsKey("deployment")) {
+    if (doc["deployment"].is<JsonObject>()) {
         JsonObject dep = doc["deployment"];
         _deployment.deployDate = dep["deploy_date"] | "";
         _deployment.purchaseDate = dep["purchase_date"] | "";
@@ -235,16 +234,16 @@ bool ConfigManager::loadFromFile() {
 bool ConfigManager::saveToFile() {
     Serial.println("[CONFIG] Saving configuration to SPIFFS...");
 
-    StaticJsonDocument<2048> doc;
+    JsonDocument doc;
 
     // WiFi section
-    JsonObject wifi = doc.createNestedObject("wifi");
+    JsonObject wifi = doc["wifi"].to<JsonObject>();
     wifi["station_ssid"] = _wifi.stationSSID;
     wifi["station_password"] = _wifi.stationPassword;
     wifi["ap_password"] = _wifi.apPassword;
 
     // API section
-    JsonObject api = doc.createNestedObject("api");
+    JsonObject api = doc["api"].to<JsonObject>();
     api["url"] = _api.url;
     api["api_key"] = _api.apiKey;
     api["upload_interval_ms"] = _api.uploadInterval;
@@ -252,13 +251,13 @@ bool ConfigManager::saveToFile() {
     api["max_retries"] = _api.maxRetries;
 
     // Device section
-    JsonObject device = doc.createNestedObject("device");
+    JsonObject device = doc["device"].to<JsonObject>();
     device["device_guid"] = _device.deviceGUID;
     device["partner_id"] = _device.partnerID;
     device["firmware_version"] = _device.firmwareVersion;
 
     // Pump section
-    JsonObject pump = doc.createNestedObject("pump");
+    JsonObject pump = doc["pump"].to<JsonObject>();
     pump["enabled"] = _pump.enabled;
     pump["relay_pin"] = _pump.relayPin;
     pump["cycle_interval_ms"] = _pump.cycleIntervalMs;
@@ -281,16 +280,16 @@ bool ConfigManager::saveToFile() {
     pump["ec_variance_threshold"] = _pump.ecVarianceThreshold;
 
     // Sampling section
-    JsonObject sampling = doc.createNestedObject("sampling");
+    JsonObject sampling = doc["sampling"].to<JsonObject>();
     sampling["sensor_interval_ms"] = _sampling.sensorIntervalMs;
 
     // GPS section
-    JsonObject gps = doc.createNestedObject("gps");
+    JsonObject gps = doc["gps"].to<JsonObject>();
     gps["use_nmea2000"] = _gps.useNMEA2000;
     gps["fallback_to_onboard"] = _gps.fallbackToOnboard;
 
     // Deployment metadata
-    JsonObject dep = doc.createNestedObject("deployment");
+    JsonObject dep = doc["deployment"].to<JsonObject>();
     dep["deploy_date"] = _deployment.deployDate;
     dep["purchase_date"] = _deployment.purchaseDate;
     dep["depth_cm"] = _deployment.depthCm;

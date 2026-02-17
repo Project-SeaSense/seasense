@@ -1080,7 +1080,7 @@ void SeaSenseWebServer::handleApiCalibrate() {
     }
 
     // Parse request body
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, _server->arg("plain"));
 
     if (error) {
@@ -1132,7 +1132,7 @@ void SeaSenseWebServer::handleApiCalibrateStatus() {
 
     CalibrationState state = _calibration->getState();
 
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
 
     // Map status enum to string
     switch (state.status) {
@@ -1169,7 +1169,7 @@ void SeaSenseWebServer::handleApiCalibrateStatus() {
 void SeaSenseWebServer::handleApiDataList() {
     StorageStats stats = _storage->getStats();
 
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
     doc["totalRecords"] = stats.totalRecords;
     doc["usedBytes"] = stats.usedBytes;
     doc["totalBytes"] = stats.totalBytes;
@@ -1202,18 +1202,18 @@ void SeaSenseWebServer::handleApiConfig() {
         return;
     }
 
-    StaticJsonDocument<2048> doc;
+    JsonDocument doc;
 
     // WiFi config
     ConfigManager::WiFiConfig wifi = _configManager->getWiFiConfig();
-    JsonObject wifiObj = doc.createNestedObject("wifi");
+    JsonObject wifiObj = doc["wifi"].to<JsonObject>();
     wifiObj["station_ssid"] = wifi.stationSSID;
     wifiObj["station_password"] = wifi.stationPassword;
     wifiObj["ap_password"] = wifi.apPassword;
 
     // API config
     ConfigManager::APIConfig api = _configManager->getAPIConfig();
-    JsonObject apiObj = doc.createNestedObject("api");
+    JsonObject apiObj = doc["api"].to<JsonObject>();
     apiObj["url"] = api.url;
     apiObj["api_key"] = api.apiKey;
     apiObj["upload_interval_ms"] = api.uploadInterval;
@@ -1222,18 +1222,18 @@ void SeaSenseWebServer::handleApiConfig() {
 
     // Sampling config
     ConfigManager::SamplingConfig sampling = _configManager->getSamplingConfig();
-    JsonObject samplingObj = doc.createNestedObject("sampling");
+    JsonObject samplingObj = doc["sampling"].to<JsonObject>();
     samplingObj["sensor_interval_ms"] = sampling.sensorIntervalMs;
 
     // GPS config
     ConfigManager::GPSConfig gpsConfig = _configManager->getGPSConfig();
-    JsonObject gpsObj = doc.createNestedObject("gps");
+    JsonObject gpsObj = doc["gps"].to<JsonObject>();
     gpsObj["use_nmea2000"] = gpsConfig.useNMEA2000;
     gpsObj["fallback_to_onboard"] = gpsConfig.fallbackToOnboard;
 
     // Device config
     ConfigManager::DeviceConfig device = _configManager->getDeviceConfig();
-    JsonObject deviceObj = doc.createNestedObject("device");
+    JsonObject deviceObj = doc["device"].to<JsonObject>();
     deviceObj["device_guid"] = device.deviceGUID;
     deviceObj["partner_id"] = device.partnerID;
     deviceObj["firmware_version"] = device.firmwareVersion;
@@ -1255,7 +1255,7 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
     }
 
     // Parse request body
-    StaticJsonDocument<2048> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, _server->arg("plain"));
 
     if (error) {
@@ -1264,7 +1264,7 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
     }
 
     // Update WiFi config
-    if (doc.containsKey("wifi")) {
+    if (doc["wifi"].is<JsonObject>()) {
         ConfigManager::WiFiConfig wifi;
         wifi.stationSSID = doc["wifi"]["station_ssid"] | "";
         wifi.stationPassword = doc["wifi"]["station_password"] | "";
@@ -1273,7 +1273,7 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
     }
 
     // Update API config
-    if (doc.containsKey("api")) {
+    if (doc["api"].is<JsonObject>()) {
         ConfigManager::APIConfig api;
         api.url = doc["api"]["url"] | "";
         api.apiKey = doc["api"]["api_key"] | "";
@@ -1284,7 +1284,7 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
     }
 
     // Update sampling config
-    if (doc.containsKey("sampling")) {
+    if (doc["sampling"].is<JsonObject>()) {
         ConfigManager::SamplingConfig sampling;
         sampling.sensorIntervalMs = doc["sampling"]["sensor_interval_ms"] | 900000;
         _configManager->setSamplingConfig(sampling);
@@ -1297,7 +1297,7 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
     }
 
     // Update GPS config
-    if (doc.containsKey("gps")) {
+    if (doc["gps"].is<JsonObject>()) {
         ConfigManager::GPSConfig gps;
         gps.useNMEA2000 = doc["gps"]["use_nmea2000"] | false;
         gps.fallbackToOnboard = doc["gps"]["fallback_to_onboard"] | true;
@@ -1308,7 +1308,7 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
     }
 
     // Update device config
-    if (doc.containsKey("device")) {
+    if (doc["device"].is<JsonObject>()) {
         ConfigManager::DeviceConfig device;
         device.deviceGUID = doc["device"]["device_guid"] | "";
         device.partnerID = doc["device"]["partner_id"] | "";
@@ -1317,12 +1317,12 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
     }
 
     // Update deployment metadata (purchase_date, depth_cm — deploy_date is auto-set)
-    if (doc.containsKey("deployment")) {
+    if (doc["deployment"].is<JsonObject>()) {
         ConfigManager::DeploymentConfig dep = _configManager->getDeploymentConfig();
-        if (doc["deployment"].containsKey("purchase_date")) {
+        if (doc["deployment"]["purchase_date"].is<const char*>()) {
             dep.purchaseDate = doc["deployment"]["purchase_date"].as<String>();
         }
-        if (doc["deployment"].containsKey("depth_cm")) {
+        if (!doc["deployment"]["depth_cm"].isNull()) {
             dep.depthCm = doc["deployment"]["depth_cm"] | 0.0f;
         }
         // deploy_date is NOT settable via API — it's auto-stamped on first boot
@@ -1340,7 +1340,7 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
 void SeaSenseWebServer::handleApiStatus() {
     extern SystemHealth systemHealth;
 
-    StaticJsonDocument<1536> doc;
+    JsonDocument doc;
 
     doc["uptime_ms"] = millis();
 
@@ -1411,7 +1411,7 @@ void SeaSenseWebServer::handleApiPumpStatus() {
         return;
     }
 
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
     doc["enabled"] = _pumpController->isEnabled();
 
     // Map PumpState enum to string
@@ -1457,7 +1457,7 @@ void SeaSenseWebServer::handleApiPumpControl() {
         return;
     }
 
-    StaticJsonDocument<128> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, _server->arg("plain"));
 
     if (error) {
@@ -1499,7 +1499,7 @@ void SeaSenseWebServer::handleApiPumpConfig() {
 
     PumpConfig config = _configManager->getPumpConfig();
 
-    StaticJsonDocument<512> doc;
+    JsonDocument doc;
     doc["enabled"] = config.enabled;
     doc["relay_pin"] = config.relayPin;
     doc["cycle_interval_ms"] = config.cycleIntervalMs;
@@ -1536,7 +1536,7 @@ void SeaSenseWebServer::handleApiPumpConfigUpdate() {
         return;
     }
 
-    StaticJsonDocument<512> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, _server->arg("plain"));
 
     if (error) {
@@ -1586,7 +1586,7 @@ void SeaSenseWebServer::sendJSON(const String& json, int statusCode) {
 }
 
 void SeaSenseWebServer::sendError(const String& message, int statusCode) {
-    StaticJsonDocument<128> doc;
+    JsonDocument doc;
     doc["error"] = message;
 
     String json;
@@ -1609,7 +1609,7 @@ String SeaSenseWebServer::sensorToJSON(ISensor* sensor) {
         return "{}";
     }
 
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
     SensorData data = sensor->getData();
 
     doc["type"] = data.sensorType;
@@ -1627,12 +1627,12 @@ String SeaSenseWebServer::sensorToJSON(ISensor* sensor) {
 }
 
 String SeaSenseWebServer::allSensorsToJSON() {
-    StaticJsonDocument<512> doc;
-    JsonArray sensors = doc.createNestedArray("sensors");
+    JsonDocument doc;
+    JsonArray sensors = doc["sensors"].to<JsonArray>();
 
     if (_tempSensor) {
         SensorData data = _tempSensor->getData();
-        JsonObject sensor = sensors.createNestedObject();
+        JsonObject sensor = sensors.add<JsonObject>();
         sensor["type"] = data.sensorType;
         sensor["model"] = data.sensorModel;
         sensor["value"] = data.value;
@@ -1642,7 +1642,7 @@ String SeaSenseWebServer::allSensorsToJSON() {
 
     if (_ecSensor) {
         SensorData data = _ecSensor->getData();
-        JsonObject sensor = sensors.createNestedObject();
+        JsonObject sensor = sensors.add<JsonObject>();
         sensor["type"] = data.sensorType;
         sensor["model"] = data.sensorModel;
         sensor["value"] = data.value;
@@ -1651,7 +1651,7 @@ String SeaSenseWebServer::allSensorsToJSON() {
 
         // Add salinity
         float salinity = _ecSensor->getSalinity();
-        JsonObject salinityObj = sensors.createNestedObject();
+        JsonObject salinityObj = sensors.add<JsonObject>();
         salinityObj["type"] = "Salinity";
         salinityObj["model"] = "Calculated";
         salinityObj["value"] = salinity;

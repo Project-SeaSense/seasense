@@ -85,6 +85,7 @@ private:
     // Metadata
     struct Metadata {
         unsigned long lastUploadedMillis;
+        uint32_t recordsAtLastUpload;
     } _metadata;
 
     // ========================================================================

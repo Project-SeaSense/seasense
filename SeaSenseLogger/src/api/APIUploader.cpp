@@ -245,22 +245,22 @@ String APIUploader::millisToUTC(unsigned long millisTimestamp) const {
 }
 
 String APIUploader::buildPayload(const std::vector<DataRecord>& records) const {
-    DynamicJsonDocument doc(16384);  // Large buffer for batch uploads (env fields add ~300 bytes/record)
+    JsonDocument doc;
 
     // Metadata
-    JsonObject metadata = doc.createNestedObject("metadata");
+    JsonObject metadata = doc["metadata"].to<JsonObject>();
     metadata["schema_version"] = "1.0";
     metadata["partner_id"] = _config.partnerID;
     metadata["device_guid"] = _config.deviceGUID;
 
-    JsonObject collector = metadata.createNestedObject("collector");
+    JsonObject collector = metadata["collector"].to<JsonObject>();
     collector["device"] = "SeaSense ESP32 Logger";
     collector["firmware_version"] = "1.0.0";
     collector["export_generated_at_utc"] = millisToUTC(millis());
 
     // Device health telemetry (piggybacks on every upload)
     extern SystemHealth systemHealth;
-    JsonObject health = metadata.createNestedObject("device_health");
+    JsonObject health = metadata["device_health"].to<JsonObject>();
     health["uptime_ms"] = millis();
     health["free_heap"] = ESP.getFreeHeap();
     health["reset_reason"] = systemHealth.getResetReasonString();
@@ -286,10 +286,10 @@ String APIUploader::buildPayload(const std::vector<DataRecord>& records) const {
     }
 
     // Datapoints
-    JsonArray datapoints = doc.createNestedArray("datapoints");
+    JsonArray datapoints = doc["datapoints"].to<JsonArray>();
 
     for (const DataRecord& record : records) {
-        JsonObject dp = datapoints.createNestedObject();
+        JsonObject dp = datapoints.add<JsonObject>();
 
         // Timestamp (from GPS or NTP)
         String utcTime = record.timestampUTC.length() > 0 ? record.timestampUTC : millisToUTC(record.millis);
@@ -314,6 +314,10 @@ String APIUploader::buildPayload(const std::vector<DataRecord>& records) const {
             dp["water_temperature_c"] = record.value;
         } else if (record.sensorType == "Conductivity") {
             dp["water_conductivity_us_cm"] = record.value;
+        } else if (record.sensorType == "pH") {
+            dp["water_ph"] = record.value;
+        } else if (record.sensorType == "Dissolved Oxygen") {
+            dp["water_dissolved_oxygen_mg_l"] = record.value;
         }
 
         // Metadata fields (forward compatibility)

@@ -21,6 +21,7 @@ SPIFFSStorage::SPIFFSStorage(uint16_t maxRecords)
 {
     _metadata.lastUploadedMillis = 0;
     _metadata.totalRecordsWritten = 0;
+    _metadata.recordsAtLastUpload = 0;
 }
 
 SPIFFSStorage::~SPIFFSStorage() {
@@ -166,7 +167,9 @@ StorageStats SPIFFSStorage::getStats() const {
         stats.usedBytes = SPIFFS.usedBytes();
         stats.freeBytes = stats.totalBytes - stats.usedBytes;
         stats.totalRecords = countRecords();
-        stats.recordsSinceUpload = 0;  // TODO: Calculate based on lastUploadedMillis
+        stats.recordsSinceUpload = (stats.totalRecords > _metadata.recordsAtLastUpload)
+            ? (stats.totalRecords - _metadata.recordsAtLastUpload)
+            : stats.totalRecords;
         stats.status = StorageStatus::OK;
     } else {
         stats.totalBytes = 0;
@@ -208,6 +211,7 @@ bool SPIFFSStorage::clear() {
     // Reset metadata
     _metadata.lastUploadedMillis = 0;
     _metadata.totalRecordsWritten = 0;
+    _metadata.recordsAtLastUpload = 0;
     saveMetadata();
 
     // Recreate data file with header
@@ -306,6 +310,7 @@ unsigned long SPIFFSStorage::getLastUploadedMillis() const {
 
 bool SPIFFSStorage::setLastUploadedMillis(unsigned long millis) {
     _metadata.lastUploadedMillis = millis;
+    _metadata.recordsAtLastUpload = countRecords();
     return saveMetadata();
 }
 
@@ -323,7 +328,7 @@ bool SPIFFSStorage::loadMetadata() {
         return false;
     }
 
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, file);
     file.close();
 
@@ -335,6 +340,7 @@ bool SPIFFSStorage::loadMetadata() {
 
     _metadata.lastUploadedMillis = doc["lastUploadedMillis"] | 0UL;
     _metadata.totalRecordsWritten = doc["totalRecordsWritten"] | 0U;
+    _metadata.recordsAtLastUpload = doc["recordsAtLastUpload"] | 0U;
 
     DEBUG_STORAGE_PRINTLN("Metadata loaded");
     return true;
@@ -347,9 +353,10 @@ bool SPIFFSStorage::saveMetadata() {
         return false;
     }
 
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
     doc["lastUploadedMillis"] = _metadata.lastUploadedMillis;
     doc["totalRecordsWritten"] = _metadata.totalRecordsWritten;
+    doc["recordsAtLastUpload"] = _metadata.recordsAtLastUpload;
 
     serializeJson(doc, file);
     file.flush();

@@ -97,7 +97,7 @@ SerialCommands serialCommands(&tempSensor, &ecSensor, &gps, &storage, &apiUpload
 SystemHealth systemHealth;
 
 // Device configuration
-StaticJsonDocument<4096> deviceConfigDoc;
+JsonDocument deviceConfigDoc;
 bool configLoaded = false;
 
 // Runtime sampling interval (from ConfigManager)
@@ -127,16 +127,16 @@ bool parseDeviceConfig() {
     if (SPIFFS.exists("/device_config.json")) {
         File f = SPIFFS.open("/device_config.json", "r");
         if (f) {
-            StaticJsonDocument<4096> overlay;
+            JsonDocument overlay;
             if (deserializeJson(overlay, f) == DeserializationError::Ok) {
                 // Merge calibration arrays from overlay into deviceConfigDoc
-                if (overlay.containsKey("sensors") && deviceConfigDoc.containsKey("sensors")) {
+                if (overlay["sensors"].is<JsonArray>() && deviceConfigDoc["sensors"].is<JsonArray>()) {
                     JsonArray overlaySensors = overlay["sensors"].as<JsonArray>();
                     JsonArray docSensors = deviceConfigDoc["sensors"].as<JsonArray>();
                     for (JsonObject ov : overlaySensors) {
                         String ovType = ov["type"].as<String>();
                         for (JsonObject ds : docSensors) {
-                            if (ds["type"].as<String>() == ovType && ov.containsKey("calibration")) {
+                            if (ds["type"].as<String>() == ovType && ov["calibration"].is<JsonArray>()) {
                                 ds["calibration"] = ov["calibration"];
                             }
                         }
@@ -160,10 +160,10 @@ bool saveDeviceConfig() {
         return false;
     }
     // Save only the sensors array (calibration data we need to persist)
-    StaticJsonDocument<2048> out;
-    JsonArray outSensors = out.createNestedArray("sensors");
+    JsonDocument out;
+    JsonArray outSensors = out["sensors"].to<JsonArray>();
     for (JsonObject s : deviceConfigDoc["sensors"].as<JsonArray>()) {
-        JsonObject os = outSensors.createNestedObject();
+        JsonObject os = outSensors.add<JsonObject>();
         os["type"] = s["type"];
         os["calibration"] = s["calibration"];
     }
@@ -197,7 +197,7 @@ bool updateSensorCalibration(
     for (JsonObject sensor : sensors) {
         if (sensor["type"].as<String>() == sensorType) {
             JsonArray cal = sensor["calibration"].as<JsonArray>();
-            JsonObject entry = cal.createNestedObject();
+            JsonObject entry = cal.add<JsonObject>();
             entry["date"] = timestamp.length() > 0 ? timestamp : "unknown";
             entry["type"] = calibrationType;
             if (calibrationValue != 0) entry["value"] = calibrationValue;

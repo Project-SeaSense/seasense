@@ -19,6 +19,7 @@ SDStorage::SDStorage(uint8_t csPin)
       _mounted(false)
 {
     _metadata.lastUploadedMillis = 0;
+    _metadata.recordsAtLastUpload = 0;
 }
 
 SDStorage::~SDStorage() {
@@ -150,7 +151,9 @@ StorageStats SDStorage::getStats() const {
         stats.usedBytes = SD.usedBytes();
         stats.freeBytes = stats.totalBytes - stats.usedBytes;
         stats.totalRecords = countRecords();
-        stats.recordsSinceUpload = 0;  // TODO: Calculate based on lastUploadedMillis
+        stats.recordsSinceUpload = (stats.totalRecords > _metadata.recordsAtLastUpload)
+            ? (stats.totalRecords - _metadata.recordsAtLastUpload)
+            : stats.totalRecords;
         stats.status = getStatus();
     } else {
         stats.totalBytes = 0;
@@ -198,6 +201,7 @@ bool SDStorage::clear() {
 
     // Reset metadata
     _metadata.lastUploadedMillis = 0;
+    _metadata.recordsAtLastUpload = 0;
     saveMetadata();
 
     // Recreate data file with header
@@ -287,6 +291,7 @@ unsigned long SDStorage::getLastUploadedMillis() const {
 
 bool SDStorage::setLastUploadedMillis(unsigned long millis) {
     _metadata.lastUploadedMillis = millis;
+    _metadata.recordsAtLastUpload = countRecords();
     return saveMetadata();
 }
 
@@ -349,7 +354,7 @@ bool SDStorage::loadMetadata() {
         return false;
     }
 
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, file);
     file.close();
 
@@ -360,6 +365,7 @@ bool SDStorage::loadMetadata() {
     }
 
     _metadata.lastUploadedMillis = doc["lastUploadedMillis"] | 0UL;
+    _metadata.recordsAtLastUpload = doc["recordsAtLastUpload"] | 0U;
 
     DEBUG_STORAGE_PRINTLN("Metadata loaded from SD card");
     return true;
@@ -376,8 +382,9 @@ bool SDStorage::saveMetadata() {
         return false;
     }
 
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
     doc["lastUploadedMillis"] = _metadata.lastUploadedMillis;
+    doc["recordsAtLastUpload"] = _metadata.recordsAtLastUpload;
 
     serializeJson(doc, file);
     file.flush();

@@ -110,6 +110,7 @@ private:
     struct Metadata {
         unsigned long lastUploadedMillis;
         uint32_t totalRecordsWritten;
+        uint32_t recordsAtLastUpload;
     } _metadata;
 };
 

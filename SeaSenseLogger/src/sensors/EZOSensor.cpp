@@ -405,25 +405,25 @@ bool EZOSensor::loadMetadata() {
     }
 
     // Load metadata fields
-    if (metadata.containsKey("serial_number")) {
+    if (metadata["serial_number"].is<const char*>()) {
         _serialNumber = metadata["serial_number"].as<String>();
     }
 
-    if (metadata.containsKey("instance")) {
+    if (metadata["instance"].is<uint8_t>()) {
         _instance = metadata["instance"].as<uint8_t>();
     }
 
-    if (metadata.containsKey("enabled")) {
+    if (metadata["enabled"].is<bool>()) {
         _enabled = metadata["enabled"].as<bool>();
     }
 
     // Get last calibration date
-    if (metadata.containsKey("calibration")) {
+    if (metadata["calibration"].is<JsonArray>()) {
         JsonArray calibrations = metadata["calibration"].as<JsonArray>();
         if (calibrations.size() > 0) {
             // Get the last calibration entry
             JsonObject lastCal = calibrations[calibrations.size() - 1];
-            if (lastCal.containsKey("date")) {
+            if (!lastCal["date"].isNull()) {
                 _calibrationDate = lastCal["date"].as<String>();
             }
         }
