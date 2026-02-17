@@ -30,8 +30,9 @@ ESP32-based water quality logger for Atlas Scientific EZO sensors. Logs temperat
 3. **Install Required Libraries**
    - Open Sketch → Include Library → Manage Libraries
    - Install the following:
-     - **ArduinoJson** (v6.x) by Benoit Blanchon
+     - **ArduinoJson** (v7.x) by Benoit Blanchon
      - **TinyGPSPlus** by Mikal Hart
+     - **ESP32-targz** (v1.3.1+) by tobozo — for gzip payload compression
 
 4. **Select Board**
    - Tools → Board → ESP32 Arduino → ESP32 Dev Module
@@ -106,7 +107,7 @@ To enable it:
 
 ## Current Status
 
-### ✅ Implemented
+### Implemented
 - Configuration system with JSON metadata
 - Abstract sensor and storage interfaces
 - EZO sensor base class with I2C ASCII protocol
@@ -116,13 +117,13 @@ To enable it:
 - Quality assessment framework
 - Dual storage (SPIFFS + SD card) with power-loss protection
 - GPS module integration (NEO-6M) for self-reliant time and location
-- Web UI for configuration and calibration
-- API upload with bandwidth management
+- Web UI for configuration, calibration, and live NMEA2000 environment dashboard
+- API upload with bandwidth management and gzip payload compression
+- NMEA2000 environment data capture (wind, depth, heading, attitude, atmosphere)
+- pH and Dissolved Oxygen sensor type support in API payloads
+- Upload progress tracking (records since last upload)
 - Serial command interface (DUMP, CLEAR, STATUS, TEST)
-
-### 🚧 In Progress
-- NMEA2000 PGN generation
-- Final integration and testing
+- Safe mode boot-loop detection and system health monitoring
 
 ## Features
 
@@ -141,12 +142,13 @@ To enable it:
 - CSV format with complete metadata (lat/lon, GPS quality)
 - Bandwidth-conscious cloud upload
 
-### Web Interface (Coming Soon)
-- Real-time sensor monitoring
+### Web Interface
+- Real-time sensor monitoring dashboard
+- Live NMEA2000 environment data (wind, depth, heading, atmosphere, attitude)
 - Guided calibration workflow
 - Sensor metadata editing
 - Data viewing and download
-- Upload configuration
+- Upload and system configuration
 
 ## Serial Output
 
@@ -214,7 +216,7 @@ Usually factory calibrated - no field calibration needed.
 - Ensure sensors are powered (3.3V or 5V depending on model)
 
 ### Compilation errors
-- Verify ArduinoJson library is installed (v6.x)
+- Verify ArduinoJson library is installed (v7.x)
 - Check ESP32 board support is installed
 - Ensure all files are in correct folder structure
 
@@ -229,17 +231,37 @@ Usually factory calibrated - no field calibration needed.
 SeaSenseLogger/
 ├── SeaSenseLogger.ino          # Main entry point
 ├── config/
-│   ├── hardware_config.h       # Pin definitions, I2C addresses
+│   ├── hardware_config.h       # Pin definitions, I2C, feature flags
 │   ├── device_config.h         # JSON device metadata
 │   └── secrets.h               # WiFi, API keys (git-ignored)
-└── src/
-    ├── sensors/
-    │   ├── SensorInterface.h   # Abstract sensor interface
-    │   ├── EZOSensor.h/.cpp    # Base class for EZO sensors
-    │   ├── EZO_RTD.h/.cpp      # Temperature sensor
-    │   └── EZO_EC.h/.cpp       # Conductivity sensor
-    └── storage/
-        └── StorageInterface.h  # Abstract storage interface
+├── src/
+│   ├── sensors/
+│   │   ├── SensorInterface.h   # Abstract sensor interface
+│   │   ├── EZOSensor.h/.cpp    # Base class for EZO sensors
+│   │   ├── EZO_RTD.h/.cpp      # Temperature sensor
+│   │   ├── EZO_EC.h/.cpp       # Conductivity sensor
+│   │   └── NMEA2000Environment.h/.cpp  # NMEA2000 data capture
+│   ├── storage/
+│   │   ├── StorageInterface.h  # Abstract storage interface
+│   │   ├── SPIFFSStorage.h/.cpp
+│   │   ├── SDStorage.h/.cpp
+│   │   └── StorageManager.h/.cpp
+│   ├── api/
+│   │   └── APIUploader.h/.cpp  # Cloud upload with gzip compression
+│   ├── calibration/
+│   │   └── CalibrationManager.h/.cpp
+│   ├── config/
+│   │   └── ConfigManager.h/.cpp
+│   ├── system/
+│   │   └── SystemHealth.h/.cpp # Boot-loop detection, safe mode
+│   └── webui/
+│       └── WebServer.h/.cpp    # Web UI + REST API
+└── test/
+    ├── Makefile                # Native test runner (make test)
+    ├── test_config_clamp.cpp
+    ├── test_csv_roundtrip.cpp
+    ├── test_millis_to_utc.cpp
+    └── test_system_health.cpp
 ```
 
 ## Contributing

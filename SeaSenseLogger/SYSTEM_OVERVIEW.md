@@ -31,21 +31,35 @@
 - **Calibration Manager** - Guided workflows with automatic stability detection
 - **Calibration Types** - Dry, single-point (±2%), two-point (±1%)
 
-### 🚧 Pending Components
+#### Phase 5: NMEA2000 Environment Capture
+- **NMEA2000Environment** - Caches live data from NMEA2000 bus via snapshot pattern
+- Wind (true/apparent speed and angle), water depth, speed through water
+- Air temperature, barometric pressure, humidity
+- COG, SOG, heading, pitch, roll
+- Web dashboard shows live environment values with 3-second polling
+- Compile-time feature flag (`FEATURE_NMEA2000`) — disabled by default
 
-#### Phase 6: NMEA2000 (Priority 3)
-- PGN 130316 - Temperature (standard)
-- PGN 130816 - Water quality (custom: EC, salinity, quality)
-- PGN 130817/130818 - Sensor metadata
-- Serial console output (current)
-- CAN bus transmission (future with hardware)
-
-#### Phase 7: API Upload (Priority 3)
-- WiFi station mode for internet access
-- Bandwidth-conscious upload to SeaSense API
+#### Phase 6: API Upload with Compression
+- **APIUploader** - Bandwidth-conscious upload to SeaSense API
 - Configurable interval and batch size
-- Progress tracking and resume capability
+- Progress tracking with `recordsSinceUpload` counter (persisted in metadata)
 - Gentle retry with exponential backoff
+- **Gzip payload compression** using ESP32-targz (uzlib-based, lightweight)
+  - Adds `Content-Encoding: gzip` header when compression saves bandwidth
+  - Falls back to uncompressed if compression fails or produces larger output
+  - Typical 5-10x compression on JSON payloads
+- pH and Dissolved Oxygen sensor types included in API payloads
+
+#### Phase 7: System Health & Safe Mode
+- **SystemHealth** - Boot-loop detection with NVS persistence
+- Automatic safe mode after consecutive crash boots
+- Watchdog feeding, error counters, diagnostics
+- Clear safe mode via web API or serial command
+
+### Pending
+- NMEA2000 PGN generation (transmit sensor data to bus)
+- CAN bus transmission (with hardware)
+- BLE configuration interface
 
 ---
 
@@ -67,8 +81,9 @@ Storage Manager
     └─→ SD Card (permanent archive)
     ↓
 ├─→ Web UI (real-time display)
-├─→ NMEA2000 PGNs (future)
-└─→ API Upload (future)
+├─→ NMEA2000 PGNs (serial/CAN)
+├─→ API Upload (gzip compressed)
+└─→ Web Dashboard (environment data)
 ```
 
 ### CSV Data Format
@@ -176,11 +191,39 @@ GET  /api/data/download        - Download CSV
 POST /api/data/clear           - Clear all data
 ```
 
+#### Environment (NMEA2000)
+```
+GET  /api/environment          - Live NMEA2000 environment data
+```
+
+Response (fields omitted when no data available):
+```json
+{
+  "has_any": true,
+  "wind": { "speed_true": 12.5, "angle_true": 45.0, "speed_app": 14.2, "angle_app": 32.0 },
+  "water": { "depth": 8.5, "stw": 3.2, "temp_ext": 18.3 },
+  "atmosphere": { "air_temp": 22.1, "pressure_hpa": 1013.2, "humidity": 65.0 },
+  "navigation": { "cog": 185.0, "sog": 5.4, "heading": 183.0 },
+  "attitude": { "pitch": -1.2, "roll": 3.5 }
+}
+```
+
+#### Pump Control
+```
+GET  /api/pump/status          - Pump status
+POST /api/pump/control         - Start/stop pump
+GET  /api/pump/config          - Pump configuration
+POST /api/pump/config/update   - Update pump config
+```
+
 #### System
 ```
 GET  /api/status               - System status
 GET  /api/config               - Device configuration
 POST /api/config/update        - Update configuration
+POST /api/system/restart       - Restart device
+POST /api/config/reset         - Factory reset configuration
+POST /api/system/clear-safe-mode - Clear safe mode flag
 ```
 
 ---
@@ -381,36 +424,24 @@ WiFi credentials and API keys (git-ignored):
 
 ### Ready to Implement
 
-1. **NMEA2000 Output**
-   - Serial console PGN output
-   - CAN bus transmission (with hardware)
-   - Metadata broadcast
+1. **NMEA2000 PGN Transmission**
+   - Transmit sensor readings as standard/custom PGNs
+   - CAN bus hardware integration
 
-2. **API Upload**
-   - Bandwidth-conscious upload
-   - Progress tracking
-   - Resume capability
+2. **BLE Configuration**
+   - Bluetooth Low Energy interface for mobile app setup
+   - Sensor configuration without WiFi
 
-3. **Serial Commands**
-   - DUMP, CLEAR, STATUS, TEST
-   - Interactive diagnostics
+3. **Additional Sensors**
+   - EZO-DO (Dissolved Oxygen) — API field mapping ready
+   - EZO-pH (pH) — API field mapping ready
+   - Easy to add with existing EZOSensor base class
 
 ### Future Enhancements
 
-1. **Additional Sensors**
-   - EZO-DO (Dissolved Oxygen)
-   - EZO-pH (pH)
-   - Easy to add with existing architecture
-
-2. **GPS Integration**
-   - Pull time and location from NMEA2000 GPS
-   - Add lat/lon to CSV format
-   - Absolute timestamps
-
-3. **Advanced Features**
-   - Data export formats (JSON, NetCDF)
-   - Cloud sync with retry logic
-   - Remote configuration
+1. **Data export formats** (JSON, NetCDF)
+2. **Remote configuration** via cloud API
+3. **OTA firmware updates**
 
 ---
 
@@ -455,24 +486,42 @@ SeaSenseLogger/
 │   ├── secrets.h               # WiFi, API keys (git-ignored)
 │   └── secrets.h.template
 │
-└── src/
-    ├── sensors/
-    │   ├── SensorInterface.h
-    │   ├── EZOSensor.h/.cpp
-    │   ├── EZO_RTD.h/.cpp
-    │   └── EZO_EC.h/.cpp
-    │
-    ├── storage/
-    │   ├── StorageInterface.h
-    │   ├── SPIFFSStorage.h/.cpp
-    │   ├── SDStorage.h/.cpp
-    │   └── StorageManager.h/.cpp
-    │
-    ├── calibration/
-    │   └── CalibrationManager.h/.cpp
-    │
-    └── webui/
-        └── WebServer.h/.cpp
+├── src/
+│   ├── sensors/
+│   │   ├── SensorInterface.h
+│   │   ├── EZOSensor.h/.cpp
+│   │   ├── EZO_RTD.h/.cpp
+│   │   ├── EZO_EC.h/.cpp
+│   │   └── NMEA2000Environment.h/.cpp
+│   │
+│   ├── storage/
+│   │   ├── StorageInterface.h
+│   │   ├── SPIFFSStorage.h/.cpp
+│   │   ├── SDStorage.h/.cpp
+│   │   └── StorageManager.h/.cpp
+│   │
+│   ├── api/
+│   │   └── APIUploader.h/.cpp
+│   │
+│   ├── calibration/
+│   │   └── CalibrationManager.h/.cpp
+│   │
+│   ├── config/
+│   │   └── ConfigManager.h/.cpp
+│   │
+│   ├── system/
+│   │   └── SystemHealth.h/.cpp
+│   │
+│   └── webui/
+│       └── WebServer.h/.cpp
+│
+└── test/
+    ├── Makefile
+    ├── mocks/                  # Arduino mock headers for native tests
+    ├── test_config_clamp.cpp
+    ├── test_csv_roundtrip.cpp
+    ├── test_millis_to_utc.cpp
+    └── test_system_health.cpp
 ```
 
 ---

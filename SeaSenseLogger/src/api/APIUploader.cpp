@@ -8,6 +8,7 @@
 #include "../../config/hardware_config.h"
 #include "../../config/secrets.h"
 #include <ArduinoJson.h>
+#include <ESP32-targz.h>
 
 // Retry backoff intervals (milliseconds)
 const unsigned long RETRY_INTERVALS[] = {
@@ -359,12 +360,33 @@ bool APIUploader::uploadPayload(const String& payload) {
     http.setConnectTimeout(API_CONNECT_TIMEOUT_MS);  // Fast DNS/connect failure
     http.setTimeout(10000);  // 10 second response timeout
 
-    DEBUG_API_PRINT("Payload size: ");
-    DEBUG_API_PRINT(payload.length());
-    DEBUG_API_PRINTLN(" bytes");
+    Serial.print("[API] Payload size: ");
+    Serial.print(payload.length());
+    Serial.println(" bytes");
 
-    // Send POST request
-    int httpCode = http.POST(payload);
+    // Attempt gzip compression
+    int httpCode;
+    uint8_t* gzBuf = nullptr;
+    size_t gzLen = LZPacker::compress(
+        (uint8_t*)payload.c_str(), payload.length(), &gzBuf
+    );
+
+    if (gzLen > 0 && gzBuf && gzLen < payload.length()) {
+        // Compressed is smaller - send gzipped
+        http.addHeader("Content-Encoding", "gzip");
+        Serial.print("[API] Compressed: ");
+        Serial.print(gzLen);
+        Serial.print(" bytes (");
+        Serial.print(100 - (gzLen * 100 / payload.length()));
+        Serial.println("% reduction)");
+        httpCode = http.POST(gzBuf, gzLen);
+        free(gzBuf);
+    } else {
+        // Compression failed or no savings - send raw
+        if (gzBuf) free(gzBuf);
+        DEBUG_API_PRINTLN("Sending uncompressed");
+        httpCode = http.POST(payload);
+    }
 
     DEBUG_API_PRINT("HTTP response: ");
     DEBUG_API_PRINTLN(httpCode);
