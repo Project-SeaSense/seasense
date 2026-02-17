@@ -21,10 +21,17 @@
 #define NMEA2000_GPS_H
 
 #include <Arduino.h>
+#include <time.h>
+#include "../../config/hardware_config.h"
+#include "GPSModule.h"  // reuse GPSData struct
+
+#if FEATURE_NMEA2000
 #include <NMEA2000.h>
 #include <N2kMessages.h>
-#include <time.h>
-#include "GPSModule.h"  // reuse GPSData struct
+#else
+class tNMEA2000;
+struct tN2kMsg;
+#endif
 
 // Staleness threshold - mark data invalid if no update for this long
 #define N2K_GPS_STALE_MS 5000

@@ -44,8 +44,12 @@
 #define GPS_UPDATE_RATE_HZ 1  // 1Hz update rate
 
 // ============================================================================
-// CAN Bus Configuration (future - NMEA2000)
+// CAN Bus Configuration (NMEA2000)
 // ============================================================================
+
+// Set to 1 to enable NMEA2000 support (requires NMEA2000 + N2kMessages libs)
+// Keep 0 for builds without NMEA2000 dependencies.
+#define FEATURE_NMEA2000 0
 
 #define CAN_TX_PIN 4
 #define CAN_RX_PIN 27  // Moved from GPIO2 to avoid conflict with onboard LED

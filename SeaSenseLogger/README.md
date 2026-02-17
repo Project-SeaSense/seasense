@@ -65,6 +65,45 @@ Copy `config/secrets.h.template` to `config/secrets.h` and configure:
 3. Upload: Click the → arrow icon
 4. Open Serial Monitor (115200 baud) to see output
 
+### Arduino CLI (recommended for reproducible builds)
+
+Use one of these targets:
+
+- **ESP32-S3 (4MB) with larger app partition**
+  ```bash
+  arduino-cli compile \
+    --fqbn "esp32:esp32:esp32s3:PartitionScheme=huge_app,FlashSize=4M" \
+    SeaSenseLogger
+  ```
+
+- **ESP32-S3 Octal / 16MB layout**
+  ```bash
+  arduino-cli compile \
+    --fqbn "esp32:esp32:esp32s3-octal" \
+    SeaSenseLogger
+  ```
+
+Or use the helper script:
+
+```bash
+cd SeaSenseLogger
+./scripts/build.sh s3
+./scripts/build.sh s3-octal
+```
+
+### Enabling NMEA2000
+
+By default NMEA2000 is disabled (`FEATURE_NMEA2000=0`) so builds work without extra libraries.
+
+To enable it:
+
+1. Install required libraries:
+   - `NMEA2000`
+   - `N2kMessages`
+2. Set compile-time flag:
+   - either in `config/hardware_config.h`: `#define FEATURE_NMEA2000 1`
+   - or via CLI/script: `ENABLE_N2K=1 ./scripts/build.sh s3-octal`
+
 ## Current Status
 
 ### ✅ Implemented

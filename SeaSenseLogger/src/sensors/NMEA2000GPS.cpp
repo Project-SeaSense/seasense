@@ -7,6 +7,8 @@
 
 #include "NMEA2000GPS.h"
 #include "../../config/hardware_config.h"
+
+#if FEATURE_NMEA2000
 #include "driver/twai.h"
 
 // ============================================================================
@@ -316,3 +318,17 @@ void NMEA2000GPS::handlePGN129025(const tN2kMsg& msg) {
         _lastUpdateMs = millis();
     }
 }
+
+#else
+
+NMEA2000GPS::NMEA2000GPS() {}
+NMEA2000GPS::~NMEA2000GPS() {}
+bool NMEA2000GPS::begin() { return false; }
+void NMEA2000GPS::update() {}
+bool NMEA2000GPS::hasValidFix() const { return false; }
+GPSData NMEA2000GPS::getData() const { GPSData d; return d; }
+String NMEA2000GPS::getTimeUTC() const { return ""; }
+String NMEA2000GPS::getStatusString() { return "NMEA2000 disabled"; }
+unsigned long NMEA2000GPS::getAgeMs() const { return ULONG_MAX; }
+
+#endif

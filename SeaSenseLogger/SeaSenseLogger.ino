@@ -35,8 +35,10 @@
 #include "src/sensors/EZO_pH.h"
 #include "src/sensors/EZO_DO.h"
 #include "src/sensors/GPSModule.h"
+#if FEATURE_NMEA2000
 #include "src/sensors/NMEA2000GPS.h"
 #include "src/sensors/NMEA2000Environment.h"
+#endif
 
 // Storage
 #include "src/storage/StorageInterface.h"
@@ -72,8 +74,10 @@ EZO_EC ecSensor;
 EZO_pH phSensor;
 EZO_DO doSensor;
 GPSModule gps(GPS_RX_PIN, GPS_TX_PIN);
+#if FEATURE_NMEA2000
 NMEA2000GPS n2kGPS;
 NMEA2000Environment n2kEnv;
+#endif
 
 // Storage
 StorageManager storage(SPIFFS_CIRCULAR_BUFFER_SIZE, SD_CS_PIN);
@@ -288,30 +292,42 @@ bool isSensorEnabled(const String& sensorType) {
 
 bool activeGPSHasValidFix() {
     ConfigManager::GPSConfig gpsCfg = configManager.getGPSConfig();
+#if FEATURE_NMEA2000
     if (gpsCfg.useNMEA2000) {
         if (n2kGPS.hasValidFix()) return true;
         if (gpsCfg.fallbackToOnboard) return gps.hasValidFix();
         return false;
     }
+#else
+    (void)gpsCfg;
+#endif
     return gps.hasValidFix();
 }
 
 GPSData activeGPSGetData() {
     ConfigManager::GPSConfig gpsCfg = configManager.getGPSConfig();
+#if FEATURE_NMEA2000
     if (gpsCfg.useNMEA2000) {
         if (n2kGPS.hasValidFix()) return n2kGPS.getData();
         if (gpsCfg.fallbackToOnboard) return gps.getData();
     }
+#else
+    (void)gpsCfg;
+#endif
     return gps.getData();
 }
 
 String activeGPSGetTimeUTC() {
     ConfigManager::GPSConfig gpsCfg = configManager.getGPSConfig();
+#if FEATURE_NMEA2000
     if (gpsCfg.useNMEA2000) {
         if (n2kGPS.hasValidFix()) return n2kGPS.getTimeUTC();
         if (gpsCfg.fallbackToOnboard) return gps.getTimeUTC();
         return "";
     }
+#else
+    (void)gpsCfg;
+#endif
     return gps.getTimeUTC();
 }
 
@@ -319,9 +335,11 @@ String activeGPSGetTimeUTC() {
 // NMEA2000 message forward callback (bridges GPS handler → Environment handler)
 // ============================================================================
 
+#if FEATURE_NMEA2000
 void n2kMsgForward(const tN2kMsg& msg) {
     n2kEnv.handleMsg(msg);
 }
+#endif
 
 // ============================================================================
 // Setup
@@ -490,6 +508,7 @@ void setup() {
         Serial.println("[WARNING] API uploader initialization failed");
     }
 
+#if FEATURE_NMEA2000
     // Initialize NMEA2000 GPS listener
     Serial.println("\n[N2K] Initializing NMEA2000 GPS listener...");
     if (n2kGPS.begin()) {
@@ -508,6 +527,10 @@ void setup() {
 
     // Load GPS source preference
     useNMEA2000GPS = configManager.getGPSConfig().useNMEA2000;
+#else
+    useNMEA2000GPS = false;
+    Serial.println("\n[N2K] FEATURE_NMEA2000=0 (disabled at compile time)");
+#endif
     Serial.print("[GPS] GPS source: ");
     Serial.println(useNMEA2000GPS ? "NMEA2000 Network" : "Onboard GPS");
 
@@ -523,6 +546,7 @@ void setup() {
 // ============================================================================
 
 // Stamp NMEA2000 environmental context onto a DataRecord
+#if FEATURE_NMEA2000
 void stampEnvironmentData(DataRecord& record, const N2kEnvironmentData& env) {
     record.windSpeedTrue     = env.windSpeedTrue;
     record.windAngleTrue     = env.windAngleTrue;
@@ -540,6 +564,7 @@ void stampEnvironmentData(DataRecord& record, const N2kEnvironmentData& env) {
     record.pitch             = env.pitch;
     record.roll              = env.roll;
 }
+#endif
 
 // I2C bus reset: toggles SCL to release stuck slaves
 void resetI2CBus() {
@@ -571,7 +596,9 @@ void loop() {
 
     // Update GPS sources (must be called frequently)
     gps.update();
+#if FEATURE_NMEA2000
     n2kGPS.update();
+#endif
 
     // Keep system epoch current for calibration age checks
     if (activeGPSHasValidFix()) {
@@ -599,9 +626,10 @@ void loop() {
 
         // Get GPS data from active source (onboard or NMEA2000)
         GPSData gpsData = activeGPSGetData();
+        const bool gpsFromN2K = (FEATURE_NMEA2000 && useNMEA2000GPS);
         if (activeGPSHasValidFix()) {
             Serial.print("GPS [");
-            Serial.print(useNMEA2000GPS ? "N2K" : "NEO");
+            Serial.print(gpsFromN2K ? "N2K" : "NEO");
             Serial.print("]: ");
             Serial.print(gpsData.latitude, 6);
             Serial.print("° N, ");
@@ -616,17 +644,23 @@ void loop() {
             Serial.println(activeGPSGetTimeUTC());
         } else {
             Serial.print("GPS [");
-            Serial.print(useNMEA2000GPS ? "N2K" : "NEO");
+            Serial.print(gpsFromN2K ? "N2K" : "NEO");
             Serial.print("]: ");
-            Serial.println(useNMEA2000GPS ? n2kGPS.getStatusString() : gps.getStatusString());
+#if FEATURE_NMEA2000
+            Serial.println(gpsFromN2K ? n2kGPS.getStatusString() : gps.getStatusString());
+#else
+            Serial.println(gps.getStatusString());
+#endif
         }
 
+#if FEATURE_NMEA2000
         // Snapshot NMEA2000 environmental data from boat instruments
         N2kEnvironmentData envData = n2kEnv.getSnapshot();
         if (n2kEnv.hasAnyData()) {
             Serial.print("N2K Env: ");
             Serial.println(n2kEnv.getStatusString());
         }
+#endif
 
         // Track consecutive sensor failures for I2C bus reset
         static uint8_t consecutiveSensorFails = 0;
@@ -661,7 +695,9 @@ void loop() {
                 record.gps_satellites = gpsData.satellites;
                 record.gps_hdop = gpsData.hdop;
             }
+#if FEATURE_NMEA2000
             stampEnvironmentData(record, envData);
+#endif
 
             // Log to storage
             if (!storage.writeRecord(record)) {
@@ -703,7 +739,9 @@ void loop() {
                 ecRecord.gps_satellites = gpsData.satellites;
                 ecRecord.gps_hdop = gpsData.hdop;
             }
+#if FEATURE_NMEA2000
             stampEnvironmentData(ecRecord, envData);
+#endif
 
             // Log to storage
             if (!storage.writeRecord(ecRecord)) {
@@ -739,7 +777,9 @@ void loop() {
                 phRecord.gps_satellites = gpsData.satellites;
                 phRecord.gps_hdop = gpsData.hdop;
             }
+#if FEATURE_NMEA2000
             stampEnvironmentData(phRecord, envData);
+#endif
 
             // Log to storage
             if (!storage.writeRecord(phRecord)) {
@@ -779,7 +819,9 @@ void loop() {
                 doRecord.gps_satellites = gpsData.satellites;
                 doRecord.gps_hdop = gpsData.hdop;
             }
+#if FEATURE_NMEA2000
             stampEnvironmentData(doRecord, envData);
+#endif
 
             // Log to storage
             if (!storage.writeRecord(doRecord)) {

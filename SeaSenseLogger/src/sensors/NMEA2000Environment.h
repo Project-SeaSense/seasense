@@ -28,8 +28,14 @@
 #define NMEA2000_ENVIRONMENT_H
 
 #include <Arduino.h>
+#include "../../config/hardware_config.h"
+#if FEATURE_NMEA2000
 #include <NMEA2000.h>
 #include <N2kMessages.h>
+#else
+class tNMEA2000;
+struct tN2kMsg;
+#endif
 
 // Staleness threshold - mark individual fields invalid if no update for this long
 #define N2K_ENV_STALE_MS 10000
