@@ -36,4 +36,4 @@ else
 fi
 
 echo "FQBN: $FQBN"
-arduino-cli compile --fqbn "$FQBN" "${BUILD_FLAGS[@]}" "$SKETCH_DIR"
+arduino-cli compile --fqbn "$FQBN" ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} "$SKETCH_DIR"

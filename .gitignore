@@ -4,3 +4,6 @@
 # SeaSense sensitive/local config
 /SeaSenseLogger/config/secrets.h
 /SeaSenseLogger/config/device_config.h
+
+# Build artifacts
+/SeaSenseLogger/build/
