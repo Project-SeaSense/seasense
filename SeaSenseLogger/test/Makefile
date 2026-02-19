@@ -22,6 +22,7 @@ TESTS = $(BUILDDIR)/test_config_clamp \
         $(BUILDDIR)/test_millis_rollover \
         $(BUILDDIR)/test_upload_timing \
         $(BUILDDIR)/test_metadata_batching \
+        $(BUILDDIR)/test_upload_tracking \
         $(BUILDDIR)/test_gps_nan_guard
 
 .PHONY: all test clean
@@ -72,6 +73,10 @@ $(BUILDDIR)/test_upload_timing: test_upload_timing.cpp | $(BUILDDIR)
 
 # SPIFFSStorage metadata batching tests
 $(BUILDDIR)/test_metadata_batching: test_metadata_batching.cpp $(SRCDIR)/src/storage/SPIFFSStorage.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
+
+# Upload tracking tests (SPIFFSStorage record-count based upload progress)
+$(BUILDDIR)/test_upload_tracking: test_upload_tracking.cpp $(SRCDIR)/src/storage/SPIFFSStorage.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
 
 # GPS NaN guard tests (standalone — extracted filtering predicate)

@@ -26,6 +26,7 @@ SPIFFSStorage::SPIFFSStorage(uint16_t maxRecords)
     _metadata.lastUploadedMillis = 0;
     _metadata.totalRecordsWritten = 0;
     _metadata.recordsAtLastUpload = 0;
+    _metadata.totalBytesUploaded = 0;
 }
 
 SPIFFSStorage::~SPIFFSStorage() {
@@ -354,6 +355,11 @@ bool SPIFFSStorage::setLastUploadedMillis(unsigned long millis) {
     return saveMetadata();
 }
 
+void SPIFFSStorage::addBytesUploaded(size_t bytes) {
+    _metadata.totalBytesUploaded += bytes;
+    saveMetadata();
+}
+
 // ============================================================================
 // Private Helper Methods
 // ============================================================================
@@ -381,6 +387,7 @@ bool SPIFFSStorage::loadMetadata() {
     _metadata.lastUploadedMillis = doc["lastUploadedMillis"] | 0UL;
     _metadata.totalRecordsWritten = doc["totalRecordsWritten"] | 0U;
     _metadata.recordsAtLastUpload = doc["recordsAtLastUpload"] | 0U;
+    _metadata.totalBytesUploaded = doc["totalBytesUploaded"] | (uint64_t)0;
 
     DEBUG_STORAGE_PRINTLN("Metadata loaded");
     return true;
@@ -397,6 +404,7 @@ bool SPIFFSStorage::saveMetadata() {
     doc["lastUploadedMillis"] = _metadata.lastUploadedMillis;
     doc["totalRecordsWritten"] = _metadata.totalRecordsWritten;
     doc["recordsAtLastUpload"] = _metadata.recordsAtLastUpload;
+    doc["totalBytesUploaded"] = _metadata.totalBytesUploaded;
 
     serializeJson(doc, file);
     file.flush();

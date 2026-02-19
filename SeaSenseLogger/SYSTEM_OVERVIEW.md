@@ -37,18 +37,17 @@
 - Air temperature, barometric pressure, humidity
 - COG, SOG, heading, pitch, roll
 - Web dashboard shows live environment values with 3-second polling
-- Compile-time feature flag (`FEATURE_NMEA2000`) — disabled by default
+- Always built (no compile-time feature flag)
 
-#### Phase 6: API Upload with Compression
+#### Phase 6: API Upload
 - **APIUploader** - Bandwidth-conscious upload to SeaSense API
 - Configurable interval and batch size
-- Progress tracking with `recordsSinceUpload` counter (persisted in metadata)
+- Upload progress tracked by record count (persisted in SPIFFS metadata, survives reboots)
 - Gentle retry with exponential backoff
-- **Gzip payload compression** using ESP32-targz (uzlib-based, lightweight)
-  - Adds `Content-Encoding: gzip` header when compression saves bandwidth
-  - Falls back to uncompressed if compression fails or produces larger output
-  - Typical 5-10x compression on JSON payloads
+- Verbose error diagnostics: auth failure, DNS/connection errors, rate limiting, server errors
+- Error detail shown in web UI and serial output
 - pH and Dissolved Oxygen sensor types included in API payloads
+- GPS source auto-detected: NMEA2000 preferred, onboard NEO-6M fallback
 
 #### Phase 7: System Health & Safe Mode
 - **SystemHealth** - Boot-loop detection with NVS persistence
@@ -58,8 +57,8 @@
 
 ### Pending
 - NMEA2000 PGN generation (transmit sensor data to bus)
-- CAN bus transmission (with hardware)
 - BLE configuration interface
+- OTA firmware updates
 
 ---
 
@@ -82,7 +81,7 @@ Storage Manager
     ↓
 ├─→ Web UI (real-time display)
 ├─→ NMEA2000 PGNs (serial/CAN)
-├─→ API Upload (gzip compressed)
+├─→ API Upload (uncompressed JSON)
 └─→ Web Dashboard (environment data)
 ```
 
@@ -118,8 +117,8 @@ millis,timestamp_utc,sensor_type,sensor_model,sensor_serial,sensor_instance,cali
 
 ```
 ESP32          Component
-GPIO 21    ←→  I2C SDA (EZO sensors)
-GPIO 22    ←→  I2C SCL (EZO sensors)
+GPIO 8     ←→  I2C SDA (EZO sensors)
+GPIO 9     ←→  I2C SCL (EZO sensors)
 GPIO 23    ←→  SD Card MOSI
 GPIO 19    ←→  SD Card MISO
 GPIO 18    ←→  SD Card SCK
@@ -131,8 +130,8 @@ GPIO 2     ←→  Status LED
 
 - **0x66** - EZO-RTD (Temperature)
 - **0x64** - EZO-EC (Conductivity)
-- **0x61** - EZO-DO (Dissolved Oxygen - future)
-- **0x63** - EZO-pH (pH - future)
+- **0x61** - EZO-DO (Dissolved Oxygen)
+- **0x63** - EZO-pH (pH)
 
 ### Power Requirements
 
@@ -158,10 +157,10 @@ GPIO 2     ←→  Status LED
 
 ### Pages
 
-- **`/dashboard`** - Real-time sensor readings
-- **`/calibrate`** - Guided calibration interface
-- **`/data`** - View and download CSV files
-- **`/settings`** - System configuration
+- **`/dashboard`** - Real-time sensor readings, pump status, upload countdown
+- **`/data`** - Records with UTC timestamps, upload history, storage stats
+- **`/calibrate`** - Guided calibration with read-pulse animation feedback
+- **`/settings`** - WiFi, API (Live/Test dropdown), sampling, device config
 
 ### API Endpoints
 
@@ -432,16 +431,14 @@ WiFi credentials and API keys (git-ignored):
    - Bluetooth Low Energy interface for mobile app setup
    - Sensor configuration without WiFi
 
-3. **Additional Sensors**
-   - EZO-DO (Dissolved Oxygen) — API field mapping ready
-   - EZO-pH (pH) — API field mapping ready
-   - Easy to add with existing EZOSensor base class
+3. **OTA Firmware Updates**
+   - Over-the-air updates via web UI or cloud API
 
 ### Future Enhancements
 
-1. **Data export formats** (JSON, NetCDF)
-2. **Remote configuration** via cloud API
-3. **OTA firmware updates**
+1. **Gzip payload compression** (ESP32-targz removed due to ESP32-S3 incompatibility; evaluate alternatives)
+2. **Data export formats** (JSON, NetCDF)
+3. **Remote configuration** via cloud API
 
 ---
 
@@ -492,6 +489,10 @@ SeaSenseLogger/
 │   │   ├── EZOSensor.h/.cpp
 │   │   ├── EZO_RTD.h/.cpp
 │   │   ├── EZO_EC.h/.cpp
+│   │   ├── EZO_pH.h/.cpp
+│   │   ├── EZO_DO.h/.cpp
+│   │   ├── GPSModule.h/.cpp
+│   │   ├── NMEA2000GPS.h/.cpp
 │   │   └── NMEA2000Environment.h/.cpp
 │   │
 │   ├── storage/
@@ -501,7 +502,7 @@ SeaSenseLogger/
 │   │   └── StorageManager.h/.cpp
 │   │
 │   ├── api/
-│   │   └── APIUploader.h/.cpp
+│   │   └── APIUploader.h/.cpp  # Upload with verbose error diagnostics
 │   │
 │   ├── calibration/
 │   │   └── CalibrationManager.h/.cpp
@@ -515,12 +516,23 @@ SeaSenseLogger/
 │   └── webui/
 │       └── WebServer.h/.cpp
 │
+│   ├── pump/
+│   │   └── PumpController.h/.cpp  # 3-state pump cycle controller
+│   │
+│   ├── commands/
+│   │   └── SerialCommands.h/.cpp  # Serial command interface
+│   │
 └── test/
-    ├── Makefile
+    ├── Makefile                # Native test runner (make test)
     ├── mocks/                  # Arduino mock headers for native tests
     ├── test_config_clamp.cpp
     ├── test_csv_roundtrip.cpp
+    ├── test_gps_nan_guard.cpp
+    ├── test_metadata_batching.cpp
     ├── test_millis_to_utc.cpp
+    ├── test_millis_rollover.cpp
+    ├── test_upload_timing.cpp
+    ├── test_upload_tracking.cpp
     └── test_system_health.cpp
 ```
 

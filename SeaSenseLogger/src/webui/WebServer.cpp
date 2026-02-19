@@ -448,6 +448,13 @@ void SeaSenseWebServer::handleDashboard() {
             return Math.floor(s / 3600) + 'h ago';
         }
 
+        function fmtBytes(b) {
+            if (b < 1024) return b + ' B';
+            if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+            if (b < 1073741824) return (b/1048576).toFixed(2) + ' MB';
+            return (b/1073741824).toFixed(2) + ' GB';
+        }
+
         let _upNextMs = 0, _upFetchedAt = 0;
         let _upLastHtml = '';
         function updateUploadStatus() {
@@ -474,6 +481,11 @@ void SeaSenseWebServer::handleDashboard() {
                     if (u.retry_count > 0) {
                         _upLastHtml += '<span class="up-sep">&middot;</span>'
                             + '<span style="color:#f87171">Retry #' + u.retry_count + '</span>';
+                    }
+                    const totalUp = u.total_bytes_uploaded || 0;
+                    if (totalUp > 0) {
+                        _upLastHtml += '<span class="up-sep">&middot;</span>'
+                            + '<span>Total: ' + fmtBytes(totalUp) + '</span>';
                     }
                     renderUploadBar();
                 })
@@ -1201,6 +1213,7 @@ void SeaSenseWebServer::handleData() {
                 <div class="stat"><div class="stat-label">Last Upload</div><div class="stat-value" style="font-size:14px;padding-top:4px;color:var(--tx);" id="upLast">--</div></div>
                 <div class="stat"><div class="stat-label">Next Upload</div><div class="stat-value" style="font-size:14px;padding-top:4px;color:var(--tx);" id="upNext">--</div></div>
                 <div class="stat"><div class="stat-label">Session Bandwidth</div><div class="stat-value" id="upBandwidth">--</div><div class="stat-sub">this session</div></div>
+                <div class="stat"><div class="stat-label">Total Uploaded</div><div class="stat-value" id="upTotal">--</div><div class="stat-sub">all time</div></div>
             </div>
             <button class="btn btn-primary" id="forceBtn" onclick="forceUpload()">Force Upload Now</button>
         </div>
@@ -1262,7 +1275,8 @@ void SeaSenseWebServer::handleData() {
         function fmtBytes(b) {
             if (b < 1024) return b + ' B';
             if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
-            return (b/1048576).toFixed(2) + ' MB';
+            if (b < 1073741824) return (b/1048576).toFixed(2) + ' MB';
+            return (b/1073741824).toFixed(2) + ' GB';
         }
         function fmtAgo(elapsedMs) {
             const s = Math.floor(elapsedMs / 1000);
@@ -1355,6 +1369,8 @@ void SeaSenseWebServer::handleData() {
                 .then(d => {
                     const bandwidth = d.total_bytes_sent || 0;
                     document.getElementById('upBandwidth').textContent = fmtBytes(bandwidth);
+                    const totalUp = d.total_bytes_uploaded || 0;
+                    document.getElementById('upTotal').textContent = fmtBytes(totalUp);
                     const tbody = document.getElementById('historyBody');
                     if (!d.history || d.history.length === 0) {
                         tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No uploads yet this session</td></tr>';
@@ -2134,6 +2150,7 @@ void SeaSenseWebServer::handleApiUploadHistory() {
 
     JsonDocument doc;
     doc["total_bytes_sent"] = apiUploader.getTotalBytesSent();
+    doc["total_bytes_uploaded"] = _storage->getTotalBytesUploaded();
     JsonArray arr = doc["history"].to<JsonArray>();
 
     // Iterate most-recent-first: head-1, head-2, ... wrapping around
@@ -2363,6 +2380,7 @@ void SeaSenseWebServer::handleApiStatus() {
     doc["upload"]["last_success_ms"] = apiUploader.getLastUploadTime();
     doc["upload"]["retry_count"] = apiUploader.getRetryCount();
     doc["upload"]["next_upload_ms"] = apiUploader.getTimeUntilNext();
+    doc["upload"]["total_bytes_uploaded"] = _storage->getTotalBytesUploaded();
     if (apiUploader.getLastError().length() > 0) {
         doc["upload"]["last_error"] = apiUploader.getLastError();
     }

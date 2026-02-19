@@ -115,6 +115,18 @@ public:
     StorageStats getSDStats() const;
 
     /**
+     * Add bytes to persistent lifetime upload counter
+     * @param bytes Number of bytes uploaded
+     */
+    void addBytesUploaded(size_t bytes);
+
+    /**
+     * Get persistent lifetime total bytes uploaded
+     * @return Total bytes uploaded across all sessions
+     */
+    uint64_t getTotalBytesUploaded() const;
+
+    /**
      * Get human-readable status string
      * @return Status description
      */

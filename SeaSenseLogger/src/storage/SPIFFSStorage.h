@@ -48,6 +48,12 @@ public:
     virtual unsigned long getLastUploadedMillis() const override;
     virtual bool setLastUploadedMillis(unsigned long millis) override;
 
+    /** Add bytes to the persistent lifetime upload counter */
+    void addBytesUploaded(size_t bytes);
+
+    /** Get the persistent lifetime total bytes uploaded */
+    uint64_t getTotalBytesUploaded() const { return _metadata.totalBytesUploaded; }
+
 private:
     // ========================================================================
     // Configuration
@@ -111,6 +117,7 @@ private:
         unsigned long lastUploadedMillis;
         uint32_t totalRecordsWritten;
         uint32_t recordsAtLastUpload;
+        uint64_t totalBytesUploaded;    // Lifetime bytes sent to API (persisted)
     } _metadata;
 
     // In-memory record count — avoids O(n) file scan on every write/status call.

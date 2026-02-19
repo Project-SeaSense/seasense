@@ -36,12 +36,12 @@ ESP32-based water quality logger for Atlas Scientific EZO sensors. Logs temperat
    - Install the following:
      - **ArduinoJson** (v7.x) by Benoit Blanchon
      - **TinyGPSPlus** by Mikal Hart
-     - **ESP32-targz** (v1.3.1+) by tobozo — for gzip payload compression
      - **NMEA2000** by Timo Lappalainen — for NMEA2000 bus communication
      - **N2kMessages** — NMEA2000 message definitions
 
 4. **Select Board**
-   - Tools → Board → ESP32 Arduino → ESP32 Dev Module
+   - Tools → Board → ESP32 Arduino → **ESP32S3 Dev Module**
+   - Tools → Partition Scheme → **Huge APP (3MB No OTA/1MB SPIFFS)**
    - Tools → Port → [Select your ESP32's COM port]
 
 ## Configuration
@@ -74,29 +74,14 @@ Copy `config/secrets.h.template` to `config/secrets.h` and configure:
 
 ### Arduino CLI (recommended for reproducible builds)
 
-Use one of these targets:
-
-- **ESP32-S3 (4MB) with larger app partition**
-  ```bash
-  arduino-cli compile \
-    --fqbn "esp32:esp32:esp32s3:PartitionScheme=huge_app,FlashSize=4M" \
-    SeaSenseLogger
-  ```
-
-- **ESP32-S3 Octal / 16MB layout**
-  ```bash
-  arduino-cli compile \
-    --fqbn "esp32:esp32:esp32s3-octal" \
-    SeaSenseLogger
-  ```
-
-Or use the helper script:
-
 ```bash
-cd SeaSenseLogger
-./scripts/build.sh s3
-./scripts/build.sh s3-octal
+arduino-cli compile \
+  --fqbn "esp32:esp32:esp32s3:PartitionScheme=huge_app" \
+  --build-property "build.extra_flags=-DFIRMWARE_VERSION='\"$(git rev-parse --short HEAD)\"'" \
+  SeaSenseLogger
 ```
+
+The `huge_app` partition scheme is required — the firmware is ~1.5MB which exceeds the default 1.2MB partition. The `FIRMWARE_VERSION` flag stamps the git short hash into the build; without it, a fallback hash from `hardware_config.h` is used.
 
 ## Current Status
 
@@ -112,8 +97,10 @@ cd SeaSenseLogger
 - GPS module integration (NEO-6M) for self-reliant time and location
 - NMEA2000 GPS and environment data capture (wind, depth, heading, attitude, atmosphere)
 - Web UI for real-time monitoring, calibration, configuration, and data management
-- API upload with bandwidth management, gzip compression, and retry with exponential backoff
-- Upload progress tracking (records since last upload)
+- API upload with bandwidth management and retry with exponential backoff
+- Verbose API error diagnostics (auth, DNS, timeout, rate limit, server errors)
+- Upload progress tracking persisted across reboots (record-count based)
+- GPS source auto-detection (NMEA2000 preferred, onboard NEO-6M fallback)
 - Serial command interface (DUMP, CLEAR, STATUS, TEST)
 - Safe mode boot-loop detection and system health monitoring
 - All sensors degrade gracefully when not present (auto-detected at startup)
@@ -145,8 +132,10 @@ All sensors are optional — the system auto-detects connected hardware at start
 - Live NMEA2000 environment data (wind, depth, heading, atmosphere, attitude)
 - Guided calibration workflow for all four sensor types
 - Pump controller status and configuration
-- Data viewing, download, and upload history
-- Device and network configuration
+- Data viewing with UTC timestamps, upload history, and storage stats
+- Device configuration (read-only fields, GUID regeneration)
+- API URL selection (Live/Test), sampling interval, skip-if-stationary option
+- Navigation: Dashboard → Data → Calibration → Settings
 
 ## Serial Output
 
@@ -282,7 +271,7 @@ SeaSenseLogger/
 │   │   ├── SDStorage.h/.cpp
 │   │   └── StorageManager.h/.cpp
 │   ├── api/
-│   │   └── APIUploader.h/.cpp  # Cloud upload with gzip compression
+│   │   └── APIUploader.h/.cpp  # Cloud upload with verbose error diagnostics
 │   ├── calibration/
 │   │   └── CalibrationManager.h/.cpp  # Guided calibration for all sensors
 │   ├── config/
@@ -304,6 +293,7 @@ SeaSenseLogger/
     ├── test_millis_to_utc.cpp
     ├── test_millis_rollover.cpp
     ├── test_upload_timing.cpp
+    ├── test_upload_tracking.cpp
     └── test_system_health.cpp
 ```
 

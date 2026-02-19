@@ -173,6 +173,9 @@ void APIUploader::process() {
         // Mark these records as uploaded (persists count to SPIFFS metadata)
         _storage->setLastUploadedMillis(records[records.size() - 1].millis);
 
+        // Update persistent lifetime upload counter
+        _storage->addBytesUploaded(_lastPayloadBytes);
+
         Serial.print("[API] Upload successful! ");
         Serial.print(records.size());
         Serial.println(" records uploaded");

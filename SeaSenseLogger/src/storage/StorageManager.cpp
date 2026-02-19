@@ -269,6 +269,19 @@ StorageStats StorageManager::getSDStats() const {
     return stats;
 }
 
+void StorageManager::addBytesUploaded(size_t bytes) {
+    if (_spiffsAvailable) {
+        _spiffs->addBytesUploaded(bytes);
+    }
+}
+
+uint64_t StorageManager::getTotalBytesUploaded() const {
+    if (_spiffsAvailable) {
+        return _spiffs->getTotalBytesUploaded();
+    }
+    return 0;
+}
+
 String StorageManager::getStatusString() const {
     String status = "";
 
