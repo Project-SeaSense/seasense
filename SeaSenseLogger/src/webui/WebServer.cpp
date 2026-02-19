@@ -13,9 +13,7 @@
 #include "../system/SystemHealth.h"
 #include "../sensors/GPSModule.h"
 #include "../api/APIUploader.h"
-#if FEATURE_NMEA2000
 #include "../sensors/NMEA2000Environment.h"
-#endif
 #include <ArduinoJson.h>
 #include <SPIFFS.h>
 
@@ -2421,7 +2419,6 @@ void SeaSenseWebServer::handleApiStatus() {
 }
 
 void SeaSenseWebServer::handleApiEnvironment() {
-#if FEATURE_NMEA2000
     extern NMEA2000Environment n2kEnv;
 
     N2kEnvironmentData env = n2kEnv.getSnapshot();
@@ -2471,9 +2468,6 @@ void SeaSenseWebServer::handleApiEnvironment() {
     String json;
     serializeJson(doc, json);
     sendJSON(json);
-#else
-    sendJSON("{\"has_any\":false}");
-#endif
 }
 
 void SeaSenseWebServer::handleApiPumpStatus() {

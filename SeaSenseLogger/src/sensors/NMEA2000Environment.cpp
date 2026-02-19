@@ -8,8 +8,6 @@
 #include "NMEA2000Environment.h"
 #include "../../config/hardware_config.h"
 
-#if FEATURE_NMEA2000
-
 // ============================================================================
 // Constructor
 // ============================================================================
@@ -363,13 +361,3 @@ void NMEA2000Environment::handlePGN127257(const tN2kMsg& msg) {
     DEBUG_NMEA2000_PRINTLN("[N2K-ENV] PGN 127257 Attitude received");
 }
 
-#else
-
-NMEA2000Environment::NMEA2000Environment() : _initialized(false) {}
-void NMEA2000Environment::begin(tNMEA2000* n2k) { (void)n2k; }
-void NMEA2000Environment::handleMsg(const tN2kMsg& msg) { (void)msg; }
-N2kEnvironmentData NMEA2000Environment::getSnapshot() const { N2kEnvironmentData d{}; return d; }
-bool NMEA2000Environment::hasAnyData() const { return false; }
-String NMEA2000Environment::getStatusString() const { return "N2K env disabled"; }
-
-#endif
