@@ -98,6 +98,7 @@ void APIUploader::process() {
     // Check WiFi connection
     if (!isWiFiConnected()) {
         _status = UploadStatus::ERROR_NO_WIFI;
+        _lastError = "No WiFi connection";
         DEBUG_API_PRINTLN("No WiFi connection, skipping upload");
         scheduleRetry();
         return;
@@ -108,6 +109,7 @@ void APIUploader::process() {
         _status = UploadStatus::SYNCING_TIME;
         if (!syncNTP()) {
             _status = UploadStatus::ERROR_NO_TIME;
+            _lastError = "NTP time sync failed";
             Serial.println("[API] NTP sync failed, cannot upload without timestamps");
             scheduleRetry();
             return;
@@ -155,6 +157,7 @@ void APIUploader::process() {
 
     if (ok) {
         _status = UploadStatus::SUCCESS;
+        _lastError = "";
         _lastUploadTime = now;
 
         // Update last uploaded timestamp
@@ -171,7 +174,9 @@ void APIUploader::process() {
         _currentIntervalMs = _config.intervalMs;
     } else {
         _status = UploadStatus::ERROR_API;
-        Serial.println("[API] Upload failed");
+        // _lastError already set by uploadPayload()
+        Serial.print("[API] Upload failed: ");
+        Serial.println(_lastError);
         extern SystemHealth systemHealth;
         systemHealth.recordError(ErrorType::API);
         scheduleRetry();
@@ -408,13 +413,35 @@ bool APIUploader::uploadPayload(const String& payload) {
         DEBUG_API_PRINT("Response: ");
         DEBUG_API_PRINTLN(response);
         success = true;
+    } else if (httpCode == 401 || httpCode == 403) {
+        _lastError = "Authentication failed (HTTP " + String(httpCode) + ") - check API key";
+        Serial.print("[API] Auth error: ");
+        Serial.println(http.getString());
+    } else if (httpCode == 400) {
+        String body = http.getString();
+        _lastError = "Bad request (400): " + body.substring(0, 80);
+        Serial.print("[API] Bad request: ");
+        Serial.println(body);
+    } else if (httpCode == 404) {
+        _lastError = "Endpoint not found (404) - check API URL";
+        Serial.println("[API] 404 - endpoint not found");
+    } else if (httpCode == 429) {
+        _lastError = "Rate limited (429) - too many requests";
+        Serial.println("[API] Rate limited");
+    } else if (httpCode >= 500) {
+        _lastError = "Server error (HTTP " + String(httpCode) + ")";
+        Serial.print("[API] Server error: ");
+        Serial.println(http.getString());
     } else if (httpCode > 0) {
-        String response = http.getString();
-        Serial.print("[API] Error response: ");
-        Serial.println(response);
+        _lastError = "Unexpected response (HTTP " + String(httpCode) + ")";
+        Serial.print("[API] HTTP " + String(httpCode) + ": ");
+        Serial.println(http.getString());
     } else {
-        Serial.print("[API] HTTP error: ");
-        Serial.println(http.errorToString(httpCode));
+        // Negative codes are HTTPClient errors (connection failures)
+        String errStr = http.errorToString(httpCode);
+        _lastError = errStr;
+        Serial.print("[API] Connection error: ");
+        Serial.println(errStr);
     }
 
     http.end();

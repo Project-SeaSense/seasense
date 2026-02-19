@@ -1300,7 +1300,11 @@ void SeaSenseWebServer::handleData() {
 
                     const status = u.status || '--';
                     const cls = status.startsWith('ERROR') ? 'badge-err' : (status === 'Success' || status === 'Idle' || status === 'No data') ? 'badge-ok' : 'badge-busy';
-                    document.getElementById('upStatus').innerHTML = '<span class="badge ' + cls + '">' + status + '</span>';
+                    let statusHtml = '<span class="badge ' + cls + '">' + status + '</span>';
+                    if (u.last_error) {
+                        statusHtml += '<div style="font-size:11px;color:#f87171;margin-top:4px;">' + u.last_error + '</div>';
+                    }
+                    document.getElementById('upStatus').innerHTML = statusHtml;
                     document.getElementById('upPending').textContent = u.pending_records != null ? u.pending_records : '--';
 
                     const lastMs = u.last_success_ms || 0;
@@ -2340,6 +2344,9 @@ void SeaSenseWebServer::handleApiStatus() {
     doc["upload"]["last_success_ms"] = apiUploader.getLastUploadTime();
     doc["upload"]["retry_count"] = apiUploader.getRetryCount();
     doc["upload"]["next_upload_ms"] = apiUploader.getTimeUntilNext();
+    if (apiUploader.getLastError().length() > 0) {
+        doc["upload"]["last_error"] = apiUploader.getLastError();
+    }
 
     // Deployment metadata
     if (_configManager) {

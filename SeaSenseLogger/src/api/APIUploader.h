@@ -122,6 +122,12 @@ public:
     uint8_t getRetryCount() const { return _retryCount; }
 
     /**
+     * Get last error detail string
+     * @return Descriptive error message (empty if no error)
+     */
+    const String& getLastError() const { return _lastError; }
+
+    /**
      * Force immediate upload attempt
      * Ignores interval timing
      */
@@ -162,6 +168,7 @@ private:
     uint8_t _retryCount;
     bool _timeSynced;
     time_t _bootTimeEpoch;  // Epoch time when ESP32 booted
+    String _lastError;      // Descriptive last error message
 
     // Upload history
     UploadRecord _uploadHistory[UPLOAD_HISTORY_SIZE];
