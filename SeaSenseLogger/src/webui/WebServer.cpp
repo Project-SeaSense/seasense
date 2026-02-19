@@ -1923,6 +1923,9 @@ void SeaSenseWebServer::handleApiDeviceRegenerateGuid() {
     if (_server->method() != HTTP_POST) { sendError("POST required", 405); return; }
     if (!_configManager) { sendError("Configuration manager not available", 503); return; }
     String newGUID = _configManager->regenerateDeviceGUID();
+    // Update the live APIUploader config so the next upload uses the new GUID
+    extern APIUploader apiUploader;
+    apiUploader.setDeviceGUID(newGUID);
     sendJSON("{\"device_guid\":\"" + newGUID + "\"}");
 }
 

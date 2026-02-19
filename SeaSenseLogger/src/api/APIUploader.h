@@ -128,6 +128,12 @@ public:
     void forceUpload();
 
     /**
+     * Update device GUID for subsequent uploads
+     * Called after GUID regeneration so next upload uses the new value
+     */
+    void setDeviceGUID(const String& guid) { _config.deviceGUID = guid; }
+
+    /**
      * Get upload history (most-recent-first order)
      * @param count Set to number of valid entries returned
      * @return Pointer to history array (oldest→newest internally; caller iterates count-1 down to 0 for newest-first)
