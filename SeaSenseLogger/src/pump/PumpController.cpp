@@ -17,26 +17,17 @@ PumpController::PumpController(EZO_RTD* tempSensor, EZO_EC* ecSensor)
       _stateStartTime(0),
       _lastCycleTime(0),
       _pumpStartTime(0),
-      _nextMeasurementTime(0),
       _errorTime(0),
-      _measurementCount(0),
       _measurementTaken(false),
       _errorMessage("")
 {
     // Default configuration
-    _config.pumpStartupDelayMs = PUMP_STARTUP_DELAY_MS;
-    _config.stabilityWaitMs = PUMP_STABILITY_WAIT_MS;
-    _config.measurementCount = PUMP_MEASUREMENT_COUNT;
-    _config.measurementIntervalMs = PUMP_MEASUREMENT_INTERVAL_MS;
-    _config.pumpStopDelayMs = PUMP_STOP_DELAY_MS;
-    _config.cooldownMs = PUMP_COOLDOWN_MS;
+    _config.flushDurationMs = PUMP_FLUSH_DURATION_MS;
+    _config.measureDurationMs = PUMP_MEASURE_DURATION_MS;
     _config.cycleIntervalMs = PUMP_CYCLE_INTERVAL_MS;
     _config.maxPumpOnTimeMs = PUMP_MAX_ON_TIME_MS;
     _config.relayPin = PUMP_RELAY_PIN;
     _config.enabled = true;
-    _config.method = StabilityMethod::FIXED_DELAY;
-    _config.tempVarianceThreshold = 0.1;
-    _config.ecVarianceThreshold = 50.0;
 }
 
 // ============================================================================
@@ -55,8 +46,12 @@ bool PumpController::begin() {
     Serial.print("[PUMP] Cycle interval: ");
     Serial.print(_config.cycleIntervalMs / 1000);
     Serial.println(" seconds");
-    Serial.print("[PUMP] Stability method: ");
-    Serial.println(_config.method == StabilityMethod::FIXED_DELAY ? "FIXED_DELAY" : "VARIANCE");
+    Serial.print("[PUMP] Flush duration: ");
+    Serial.print(_config.flushDurationMs);
+    Serial.println("ms");
+    Serial.print("[PUMP] Measure duration: ");
+    Serial.print(_config.measureDurationMs);
+    Serial.println("ms");
 
     if (_config.enabled) {
         Serial.println("[PUMP] Pump controller enabled");
@@ -78,8 +73,8 @@ void PumpController::update() {
     unsigned long now = millis();
     unsigned long elapsed = now - _stateStartTime;
 
-    // Safety check: maximum pump on time
-    if (_state == PumpState::PUMP_STARTING || _state == PumpState::STABILIZING || _state == PumpState::MEASURING) {
+    // Safety check: maximum pump on time (across FLUSHING + MEASURING)
+    if (_state == PumpState::FLUSHING || _state == PumpState::MEASURING) {
         unsigned long pumpOnTime = now - _pumpStartTime;
         if (pumpOnTime > _config.maxPumpOnTimeMs) {
             handleError("Pump exceeded maximum on time");
@@ -92,57 +87,28 @@ void PumpController::update() {
         case PumpState::IDLE:
             // Check if cycle interval elapsed
             if (now - _lastCycleTime >= _config.cycleIntervalMs) {
-                transitionToState(PumpState::PUMP_STARTING);
+                transitionToState(PumpState::FLUSHING);
             }
             break;
 
-        case PumpState::PUMP_STARTING:
-            // Wait for startup delay
-            if (elapsed >= _config.pumpStartupDelayMs) {
-                transitionToState(PumpState::STABILIZING);
-            }
-            break;
-
-        case PumpState::STABILIZING:
-            // Check stability
-            if (checkStability()) {
+        case PumpState::FLUSHING:
+            // Wait for flush duration
+            if (elapsed >= _config.flushDurationMs) {
                 transitionToState(PumpState::MEASURING);
             }
             break;
 
         case PumpState::MEASURING:
-            // Check if measurement was taken
-            if (_measurementTaken) {
-                // Check if more measurements needed
-                if (_measurementCount >= _config.measurementCount) {
-                    transitionToState(PumpState::PUMP_STOPPING);
-                } else {
-                    // Wait for next measurement
-                    if (now >= _nextMeasurementTime) {
-                        _measurementTaken = false;  // Ready for next measurement
-                    }
-                }
-            }
-            break;
-
-        case PumpState::PUMP_STOPPING:
-            // Wait for flush delay
-            if (elapsed >= _config.pumpStopDelayMs) {
-                transitionToState(PumpState::COOLDOWN);
-            }
-            break;
-
-        case PumpState::COOLDOWN:
-            // Wait for cooldown period
-            if (elapsed >= _config.cooldownMs) {
+            // Time-based transition after measure duration
+            if (elapsed >= _config.measureDurationMs) {
                 transitionToState(PumpState::IDLE);
                 _lastCycleTime = now;
             }
             break;
 
         case PumpState::ERROR:
-            // Turn off pump and wait for cooldown before retry
-            if (now - _errorTime >= _config.cooldownMs) {
+            // Turn off pump and wait for cycle interval before retry
+            if (now - _errorTime >= _config.cycleIntervalMs) {
                 Serial.println("[PUMP] Recovering from error, returning to IDLE");
                 _errorMessage = "";
                 transitionToState(PumpState::IDLE);
@@ -163,18 +129,7 @@ bool PumpController::shouldReadSensors() const {
 void PumpController::notifyMeasurementComplete() {
     if (_state == PumpState::MEASURING && !_measurementTaken) {
         _measurementTaken = true;
-        _measurementCount++;
-
-        // Schedule next measurement if needed
-        if (_measurementCount < _config.measurementCount) {
-            _nextMeasurementTime = millis() + _config.measurementIntervalMs;
-        }
-
-        Serial.print("[PUMP] Measurement ");
-        Serial.print(_measurementCount);
-        Serial.print(" of ");
-        Serial.print(_config.measurementCount);
-        Serial.println(" complete");
+        Serial.println("[PUMP] Measurement complete");
     }
 }
 
@@ -215,10 +170,8 @@ unsigned long PumpController::getPhaseRemainingMs() const {
     unsigned long elapsed = millis() - _stateStartTime;
     unsigned long duration = 0;
     switch (_state) {
-        case PumpState::PUMP_STARTING: duration = _config.pumpStartupDelayMs; break;
-        case PumpState::STABILIZING:   duration = _config.stabilityWaitMs;    break;
-        case PumpState::PUMP_STOPPING: duration = _config.pumpStopDelayMs;    break;
-        case PumpState::COOLDOWN:      duration = _config.cooldownMs;         break;
+        case PumpState::FLUSHING:  duration = _config.flushDurationMs;   break;
+        case PumpState::MEASURING: duration = _config.measureDurationMs;  break;
         default: return 0;
     }
     return (elapsed < duration) ? (duration - elapsed) : 0;
@@ -231,16 +184,22 @@ unsigned long PumpController::getTimeUntilNextMeasurementMs() const {
     if (_state == PumpState::IDLE) {
         unsigned long elapsed = millis() - _lastCycleTime;
         long remaining = (long)_config.cycleIntervalMs - (long)elapsed;
+        unsigned long idleRemaining = (unsigned long)(remaining > 0 ? remaining : 0);
+        return idleRemaining + _config.flushDurationMs;
+    }
+    if (_state == PumpState::FLUSHING) {
+        unsigned long elapsed = millis() - _stateStartTime;
+        long remaining = (long)_config.flushDurationMs - (long)elapsed;
         return (unsigned long)(remaining > 0 ? remaining : 0);
     }
-    // In any active pump phase, measurement is imminent or in progress
+    // MEASURING or other: measurement is in progress
     return 0;
 }
 
 void PumpController::startPump() {
     if (_state == PumpState::IDLE) {
         Serial.println("[PUMP] Manual pump start");
-        transitionToState(PumpState::PUMP_STARTING);
+        transitionToState(PumpState::FLUSHING);
     } else {
         Serial.println("[PUMP] Cannot start - pump not in IDLE state");
     }
@@ -274,24 +233,7 @@ String PumpController::getStatusString() const {
 // ============================================================================
 
 void PumpController::transitionToState(PumpState newState) {
-    // Exit actions for current state
-    switch (_state) {
-        case PumpState::PUMP_STARTING:
-        case PumpState::STABILIZING:
-        case PumpState::MEASURING:
-            // Pump states - relay handled by new state
-            break;
-
-        case PumpState::PUMP_STOPPING:
-            setRelay(false);
-            break;
-
-        default:
-            break;
-    }
-
     // Update state
-    PumpState oldState = _state;
     _state = newState;
     _stateStartTime = millis();
 
@@ -302,32 +244,16 @@ void PumpController::transitionToState(PumpState newState) {
             setRelay(false);
             break;
 
-        case PumpState::PUMP_STARTING:
-            Serial.println("[PUMP] State: PUMP_STARTING");
+        case PumpState::FLUSHING:
+            Serial.println("[PUMP] State: FLUSHING");
             setRelay(true);
             _pumpStartTime = millis();
-            _measurementCount = 0;
-            break;
-
-        case PumpState::STABILIZING:
-            Serial.println("[PUMP] State: STABILIZING");
-            // Relay already on
             break;
 
         case PumpState::MEASURING:
             Serial.println("[PUMP] State: MEASURING");
             _measurementTaken = false;
-            _nextMeasurementTime = 0;
-            break;
-
-        case PumpState::PUMP_STOPPING:
-            Serial.println("[PUMP] State: PUMP_STOPPING");
-            setRelay(false);
-            break;
-
-        case PumpState::COOLDOWN:
-            Serial.println("[PUMP] State: COOLDOWN");
-            // Relay already off
+            // Relay stays on
             break;
 
         case PumpState::ERROR:
@@ -339,28 +265,6 @@ void PumpController::transitionToState(PumpState newState) {
             Serial.println("[PUMP] State: PAUSED");
             setRelay(false);
             break;
-    }
-}
-
-bool PumpController::checkStability() {
-    unsigned long elapsed = millis() - _stateStartTime;
-
-    switch (_config.method) {
-        case StabilityMethod::FIXED_DELAY:
-            return (elapsed >= _config.stabilityWaitMs);
-
-        case StabilityMethod::VARIANCE_CHECK:
-            // TODO: Implement variance-based stability detection
-            // For now, fall back to fixed delay
-            return (elapsed >= _config.stabilityWaitMs);
-
-        case StabilityMethod::HYBRID:
-            // TODO: Implement hybrid stability detection
-            // For now, fall back to fixed delay
-            return (elapsed >= _config.stabilityWaitMs);
-
-        default:
-            return (elapsed >= _config.stabilityWaitMs);
     }
 }
 
@@ -390,14 +294,11 @@ void PumpController::setRelay(bool on) {
 
 String pumpStateToString(PumpState state) {
     switch (state) {
-        case PumpState::IDLE:           return "IDLE";
-        case PumpState::PUMP_STARTING:  return "PUMP_STARTING";
-        case PumpState::STABILIZING:    return "STABILIZING";
-        case PumpState::MEASURING:      return "MEASURING";
-        case PumpState::PUMP_STOPPING:  return "PUMP_STOPPING";
-        case PumpState::COOLDOWN:       return "COOLDOWN";
-        case PumpState::ERROR:          return "ERROR";
-        case PumpState::PAUSED:         return "PAUSED";
-        default:                        return "UNKNOWN";
+        case PumpState::IDLE:       return "IDLE";
+        case PumpState::FLUSHING:   return "FLUSHING";
+        case PumpState::MEASURING:  return "MEASURING";
+        case PumpState::ERROR:      return "ERROR";
+        case PumpState::PAUSED:     return "PAUSED";
+        default:                    return "UNKNOWN";
     }
 }

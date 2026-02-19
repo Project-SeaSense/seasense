@@ -199,24 +199,16 @@ bool ConfigManager::loadFromFile() {
         _pump.enabled = pump["enabled"] | true;
         _pump.relayPin = pump["relay_pin"] | PUMP_RELAY_PIN;
         _pump.cycleIntervalMs = pump["cycle_interval_ms"] | PUMP_CYCLE_INTERVAL_MS;
-        _pump.pumpStartupDelayMs = pump["startup_delay_ms"] | PUMP_STARTUP_DELAY_MS;
-        _pump.stabilityWaitMs = pump["stability_wait_ms"] | PUMP_STABILITY_WAIT_MS;
-        _pump.measurementCount = pump["measurement_count"] | PUMP_MEASUREMENT_COUNT;
-        _pump.measurementIntervalMs = pump["measurement_interval_ms"] | PUMP_MEASUREMENT_INTERVAL_MS;
-        _pump.pumpStopDelayMs = pump["stop_delay_ms"] | PUMP_STOP_DELAY_MS;
-        _pump.cooldownMs = pump["cooldown_ms"] | PUMP_COOLDOWN_MS;
         _pump.maxPumpOnTimeMs = pump["max_on_time_ms"] | PUMP_MAX_ON_TIME_MS;
 
-        // Parse stability method
-        String method = pump["method"] | "FIXED_DELAY";
-        if (method == "VARIANCE_CHECK") {
-            _pump.method = StabilityMethod::VARIANCE_CHECK;
-        } else {
-            _pump.method = StabilityMethod::FIXED_DELAY;
-        }
+        // New fields — with backwards compat for old settings.json
+        _pump.flushDurationMs = pump["flush_duration_ms"] |
+            (uint16_t)((pump["startup_delay_ms"] | (uint16_t)0) + (pump["stability_wait_ms"] | (uint16_t)0));
+        if (_pump.flushDurationMs == 0) _pump.flushDurationMs = PUMP_FLUSH_DURATION_MS;
 
-        _pump.tempVarianceThreshold = pump["temp_variance_threshold"] | 0.1;
-        _pump.ecVarianceThreshold = pump["ec_variance_threshold"] | 50.0;
+        _pump.measureDurationMs = pump["measure_duration_ms"] |
+            (uint16_t)(pump["measurement_interval_ms"] | (uint16_t)0);
+        if (_pump.measureDurationMs == 0) _pump.measureDurationMs = PUMP_MEASURE_DURATION_MS;
     }
 
     // Load sampling config
@@ -273,24 +265,10 @@ bool ConfigManager::saveToFile() {
     JsonObject pump = doc["pump"].to<JsonObject>();
     pump["enabled"] = _pump.enabled;
     pump["relay_pin"] = _pump.relayPin;
+    pump["flush_duration_ms"] = _pump.flushDurationMs;
+    pump["measure_duration_ms"] = _pump.measureDurationMs;
     pump["cycle_interval_ms"] = _pump.cycleIntervalMs;
-    pump["startup_delay_ms"] = _pump.pumpStartupDelayMs;
-    pump["stability_wait_ms"] = _pump.stabilityWaitMs;
-    pump["measurement_count"] = _pump.measurementCount;
-    pump["measurement_interval_ms"] = _pump.measurementIntervalMs;
-    pump["stop_delay_ms"] = _pump.pumpStopDelayMs;
-    pump["cooldown_ms"] = _pump.cooldownMs;
     pump["max_on_time_ms"] = _pump.maxPumpOnTimeMs;
-
-    // Stability method as string
-    if (_pump.method == StabilityMethod::VARIANCE_CHECK) {
-        pump["method"] = "VARIANCE_CHECK";
-    } else {
-        pump["method"] = "FIXED_DELAY";
-    }
-
-    pump["temp_variance_threshold"] = _pump.tempVarianceThreshold;
-    pump["ec_variance_threshold"] = _pump.ecVarianceThreshold;
 
     // Sampling section
     JsonObject sampling = doc["sampling"].to<JsonObject>();
@@ -370,19 +348,12 @@ void ConfigManager::setDefaults() {
     _device.firmwareVersion = "2.0.0";
 
     // Pump defaults from hardware_config.h
-    _pump.enabled = true;
-    _pump.relayPin = PUMP_RELAY_PIN;
+    _pump.flushDurationMs = PUMP_FLUSH_DURATION_MS;
+    _pump.measureDurationMs = PUMP_MEASURE_DURATION_MS;
     _pump.cycleIntervalMs = PUMP_CYCLE_INTERVAL_MS;
-    _pump.pumpStartupDelayMs = PUMP_STARTUP_DELAY_MS;
-    _pump.stabilityWaitMs = PUMP_STABILITY_WAIT_MS;
-    _pump.measurementCount = PUMP_MEASUREMENT_COUNT;
-    _pump.measurementIntervalMs = PUMP_MEASUREMENT_INTERVAL_MS;
-    _pump.pumpStopDelayMs = PUMP_STOP_DELAY_MS;
-    _pump.cooldownMs = PUMP_COOLDOWN_MS;
     _pump.maxPumpOnTimeMs = PUMP_MAX_ON_TIME_MS;
-    _pump.method = StabilityMethod::FIXED_DELAY;
-    _pump.tempVarianceThreshold = 0.1;
-    _pump.ecVarianceThreshold = 50.0;
+    _pump.relayPin = PUMP_RELAY_PIN;
+    _pump.enabled = true;
 
     // Sampling defaults
     _sampling.sensorIntervalMs = 900000;  // 15 minutes
@@ -451,6 +422,8 @@ void ConfigManager::clampConfig() {
     _api.maxRetries = constrain(_api.maxRetries, (uint8_t)1, (uint8_t)20);
 
     // Pump bounds
+    _pump.flushDurationMs = constrain(_pump.flushDurationMs, (uint16_t)1000, (uint16_t)30000);
+    _pump.measureDurationMs = constrain(_pump.measureDurationMs, (uint16_t)1000, (uint16_t)30000);
     _pump.cycleIntervalMs = constrain(_pump.cycleIntervalMs, (uint32_t)10000, (uint32_t)3600000);
     _pump.maxPumpOnTimeMs = constrain(_pump.maxPumpOnTimeMs, (uint32_t)5000, (uint32_t)120000);
 }

@@ -68,13 +68,9 @@
 #define PUMP_RELAY_PIN 25  // GPIO 25 for relay control
 
 // Pump timing defaults (milliseconds)
-#define PUMP_STARTUP_DELAY_MS 2000        // Pump startup time
-#define PUMP_STABILITY_WAIT_MS 3000       // Wait for stable readings
-#define PUMP_MEASUREMENT_COUNT 1          // Readings per cycle
-#define PUMP_MEASUREMENT_INTERVAL_MS 2000 // Between measurements
-#define PUMP_STOP_DELAY_MS 500            // Flush time
-#define PUMP_COOLDOWN_MS 55000            // Wait before next cycle (55s)
-#define PUMP_CYCLE_INTERVAL_MS 60000      // Total cycle time (1 minute)
+#define PUMP_FLUSH_DURATION_MS 20000      // Flush stale water before measuring
+#define PUMP_MEASURE_DURATION_MS 2000     // Pump on during sensor read
+#define PUMP_CYCLE_INTERVAL_MS 60000      // Time between cycles (1 minute)
 #define PUMP_MAX_ON_TIME_MS 30000         // Safety cutoff (30 seconds max)
 
 // LED blink patterns (milliseconds)

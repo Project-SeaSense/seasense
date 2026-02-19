@@ -26,6 +26,8 @@ void test_zero_values_clamped_to_minimum() {
     cm.setAPIConfig(api);
 
     PumpConfig pump = {};
+    pump.flushDurationMs = 0;
+    pump.measureDurationMs = 0;
     pump.cycleIntervalMs = 0;
     pump.maxPumpOnTimeMs = 0;
     cm.setPumpConfig(pump);
@@ -35,6 +37,8 @@ void test_zero_values_clamped_to_minimum() {
     ASSERT_EQ((uint32_t)60000, cm._api.uploadInterval);
     ASSERT_EQ((uint8_t)1, cm._api.batchSize);
     ASSERT_EQ((uint8_t)1, cm._api.maxRetries);
+    ASSERT_EQ((uint16_t)1000, cm._pump.flushDurationMs);
+    ASSERT_EQ((uint16_t)1000, cm._pump.measureDurationMs);
     ASSERT_EQ((uint32_t)10000, (uint32_t)cm._pump.cycleIntervalMs);
     ASSERT_EQ((uint32_t)5000, (uint32_t)cm._pump.maxPumpOnTimeMs);
 
@@ -58,8 +62,10 @@ void test_overflow_values_clamped_to_maximum() {
     cm.setAPIConfig(api);
 
     PumpConfig pump = {};
+    pump.flushDurationMs = 65535;   // uint16_t max — above clamp upper bound of 30000
+    pump.measureDurationMs = 65535; // uint16_t max — above clamp upper bound of 30000
     pump.cycleIntervalMs = 99999999;
-    pump.maxPumpOnTimeMs = 65535;  // uint16_t max — within clamp range so unchanged
+    pump.maxPumpOnTimeMs = 65535;  // within clamp range so unchanged
     cm.setPumpConfig(pump);
 
     // Verify clamped to maximums
@@ -67,9 +73,10 @@ void test_overflow_values_clamped_to_maximum() {
     ASSERT_EQ((uint32_t)86400000, cm._api.uploadInterval);
     ASSERT_EQ((uint8_t)255, cm._api.batchSize);  // max allowed
     ASSERT_EQ((uint8_t)20, cm._api.maxRetries);
+    ASSERT_EQ((uint16_t)30000, cm._pump.flushDurationMs);
+    ASSERT_EQ((uint16_t)30000, cm._pump.measureDurationMs);
     ASSERT_EQ((uint32_t)3600000, (uint32_t)cm._pump.cycleIntervalMs);
-    // maxPumpOnTimeMs is uint16_t (max 65535) — clamp upper bound is 120000
-    // so 65535 is within [5000, 120000] and passes through unchanged
+    // maxPumpOnTimeMs is uint32_t — 65535 is within [5000, 120000] and passes through unchanged
     ASSERT_EQ((uint32_t)65535, (uint32_t)cm._pump.maxPumpOnTimeMs);
 
     TEST_PASS();
@@ -92,6 +99,8 @@ void test_valid_values_unchanged() {
     cm.setAPIConfig(api);
 
     PumpConfig pump = {};
+    pump.flushDurationMs = 20000;   // 20 seconds
+    pump.measureDurationMs = 2000;  // 2 seconds
     pump.cycleIntervalMs = 60000;   // 1 minute
     pump.maxPumpOnTimeMs = 30000;   // 30 seconds
     cm.setPumpConfig(pump);
@@ -101,6 +110,8 @@ void test_valid_values_unchanged() {
     ASSERT_EQ((uint32_t)300000, cm._api.uploadInterval);
     ASSERT_EQ((uint8_t)100, cm._api.batchSize);
     ASSERT_EQ((uint8_t)5, cm._api.maxRetries);
+    ASSERT_EQ((uint16_t)20000, cm._pump.flushDurationMs);
+    ASSERT_EQ((uint16_t)2000, cm._pump.measureDurationMs);
     ASSERT_EQ((uint32_t)60000, (uint32_t)cm._pump.cycleIntervalMs);
     ASSERT_EQ((uint32_t)30000, (uint32_t)cm._pump.maxPumpOnTimeMs);
 
@@ -119,6 +130,15 @@ void test_boundary_values_accepted() {
     sampling.sensorIntervalMs = 86400000;  // exact maximum
     cm.setSamplingConfig(sampling);
     ASSERT_EQ((uint32_t)86400000, cm._sampling.sensorIntervalMs);
+
+    PumpConfig pump = {};
+    pump.flushDurationMs = 1000;    // exact minimum
+    pump.measureDurationMs = 30000; // exact maximum
+    pump.cycleIntervalMs = 60000;
+    pump.maxPumpOnTimeMs = 30000;
+    cm.setPumpConfig(pump);
+    ASSERT_EQ((uint16_t)1000, cm._pump.flushDurationMs);
+    ASSERT_EQ((uint16_t)30000, cm._pump.measureDurationMs);
 
     TEST_PASS();
 }

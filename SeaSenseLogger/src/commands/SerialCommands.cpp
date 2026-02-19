@@ -456,16 +456,10 @@ void SerialCommands::cmdPump(const String& args) {
         PumpState state = _pumpController->getState();
         if (state == PumpState::IDLE) {
             Serial.println("IDLE");
-        } else if (state == PumpState::PUMP_STARTING) {
-            Serial.println("PUMP_STARTING");
-        } else if (state == PumpState::STABILIZING) {
-            Serial.println("STABILIZING");
+        } else if (state == PumpState::FLUSHING) {
+            Serial.println("FLUSHING");
         } else if (state == PumpState::MEASURING) {
             Serial.println("MEASURING");
-        } else if (state == PumpState::PUMP_STOPPING) {
-            Serial.println("PUMP_STOPPING");
-        } else if (state == PumpState::COOLDOWN) {
-            Serial.println("COOLDOWN");
         } else if (state == PumpState::ERROR) {
             Serial.println("ERROR");
         } else if (state == PumpState::PAUSED) {
@@ -523,22 +517,11 @@ void SerialCommands::cmdPump(const String& args) {
         Serial.println("Use Web UI to modify pump configuration");
         Serial.println();
         Serial.println("Timing defaults (from hardware_config.h):");
-        Serial.print("  Startup delay: ");
-        Serial.print(PUMP_STARTUP_DELAY_MS);
+        Serial.print("  Flush duration: ");
+        Serial.print(PUMP_FLUSH_DURATION_MS);
         Serial.println(" ms");
-        Serial.print("  Stability wait: ");
-        Serial.print(PUMP_STABILITY_WAIT_MS);
-        Serial.println(" ms");
-        Serial.print("  Measurement count: ");
-        Serial.println(PUMP_MEASUREMENT_COUNT);
-        Serial.print("  Measurement interval: ");
-        Serial.print(PUMP_MEASUREMENT_INTERVAL_MS);
-        Serial.println(" ms");
-        Serial.print("  Stop delay: ");
-        Serial.print(PUMP_STOP_DELAY_MS);
-        Serial.println(" ms");
-        Serial.print("  Cooldown: ");
-        Serial.print(PUMP_COOLDOWN_MS);
+        Serial.print("  Measure duration: ");
+        Serial.print(PUMP_MEASURE_DURATION_MS);
         Serial.println(" ms");
         Serial.print("  Cycle interval: ");
         Serial.print(PUMP_CYCLE_INTERVAL_MS / 1000);

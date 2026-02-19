@@ -1928,11 +1928,7 @@ void SeaSenseWebServer::handleApiConfig() {
     // Minimum sampling interval = full pump cycle duration (calculated from current pump config)
     {
         PumpConfig pc = _configManager->getPumpConfig();
-        unsigned long minMs = (unsigned long)pc.pumpStartupDelayMs
-            + pc.stabilityWaitMs
-            + ((unsigned long)pc.measurementCount * pc.measurementIntervalMs)
-            + pc.pumpStopDelayMs
-            + pc.cooldownMs;
+        unsigned long minMs = (unsigned long)pc.flushDurationMs + pc.measureDurationMs;
         samplingObj["min_sampling_ms"] = max(minMs, 5000UL);
     }
 
@@ -1998,11 +1994,7 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
     if (doc["sampling"].is<JsonObject>()) {
         // Calculate minimum from current pump config
         PumpConfig pc = _configManager->getPumpConfig();
-        unsigned long minSamplingMs = (unsigned long)pc.pumpStartupDelayMs
-            + pc.stabilityWaitMs
-            + ((unsigned long)pc.measurementCount * pc.measurementIntervalMs)
-            + pc.pumpStopDelayMs
-            + pc.cooldownMs;
+        unsigned long minSamplingMs = (unsigned long)pc.flushDurationMs + pc.measureDurationMs;
         minSamplingMs = max(minSamplingMs, 5000UL);
 
         ConfigManager::SamplingConfig sampling;
@@ -2198,16 +2190,10 @@ void SeaSenseWebServer::handleApiPumpStatus() {
     PumpState state = _pumpController->getState();
     if (state == PumpState::IDLE) {
         doc["state"] = "IDLE";
-    } else if (state == PumpState::PUMP_STARTING) {
-        doc["state"] = "PUMP_STARTING";
-    } else if (state == PumpState::STABILIZING) {
-        doc["state"] = "STABILIZING";
+    } else if (state == PumpState::FLUSHING) {
+        doc["state"] = "FLUSHING";
     } else if (state == PumpState::MEASURING) {
         doc["state"] = "MEASURING";
-    } else if (state == PumpState::PUMP_STOPPING) {
-        doc["state"] = "PUMP_STOPPING";
-    } else if (state == PumpState::COOLDOWN) {
-        doc["state"] = "COOLDOWN";
     } else if (state == PumpState::ERROR) {
         doc["state"] = "ERROR";
     } else if (state == PumpState::PAUSED) {
@@ -2296,23 +2282,10 @@ void SeaSenseWebServer::handleApiPumpConfig() {
     JsonDocument doc;
     doc["enabled"] = config.enabled;
     doc["relay_pin"] = config.relayPin;
+    doc["flush_duration_ms"] = config.flushDurationMs;
+    doc["measure_duration_ms"] = config.measureDurationMs;
     doc["cycle_interval_ms"] = config.cycleIntervalMs;
-    doc["startup_delay_ms"] = config.pumpStartupDelayMs;
-    doc["stability_wait_ms"] = config.stabilityWaitMs;
-    doc["measurement_count"] = config.measurementCount;
-    doc["measurement_interval_ms"] = config.measurementIntervalMs;
-    doc["stop_delay_ms"] = config.pumpStopDelayMs;
-    doc["cooldown_ms"] = config.cooldownMs;
     doc["max_on_time_ms"] = config.maxPumpOnTimeMs;
-
-    if (config.method == StabilityMethod::VARIANCE_CHECK) {
-        doc["method"] = "VARIANCE_CHECK";
-    } else {
-        doc["method"] = "FIXED_DELAY";
-    }
-
-    doc["temp_variance_threshold"] = config.tempVarianceThreshold;
-    doc["ec_variance_threshold"] = config.ecVarianceThreshold;
 
     String json;
     serializeJson(doc, json);
@@ -2342,24 +2315,10 @@ void SeaSenseWebServer::handleApiPumpConfigUpdate() {
     PumpConfig config;
     config.enabled = doc["enabled"] | true;
     config.relayPin = doc["relay_pin"] | PUMP_RELAY_PIN;
+    config.flushDurationMs = doc["flush_duration_ms"] | PUMP_FLUSH_DURATION_MS;
+    config.measureDurationMs = doc["measure_duration_ms"] | PUMP_MEASURE_DURATION_MS;
     config.cycleIntervalMs = doc["cycle_interval_ms"] | PUMP_CYCLE_INTERVAL_MS;
-    config.pumpStartupDelayMs = doc["startup_delay_ms"] | PUMP_STARTUP_DELAY_MS;
-    config.stabilityWaitMs = doc["stability_wait_ms"] | PUMP_STABILITY_WAIT_MS;
-    config.measurementCount = doc["measurement_count"] | PUMP_MEASUREMENT_COUNT;
-    config.measurementIntervalMs = doc["measurement_interval_ms"] | PUMP_MEASUREMENT_INTERVAL_MS;
-    config.pumpStopDelayMs = doc["stop_delay_ms"] | PUMP_STOP_DELAY_MS;
-    config.cooldownMs = doc["cooldown_ms"] | PUMP_COOLDOWN_MS;
     config.maxPumpOnTimeMs = doc["max_on_time_ms"] | PUMP_MAX_ON_TIME_MS;
-
-    String method = doc["method"] | "FIXED_DELAY";
-    if (method == "VARIANCE_CHECK") {
-        config.method = StabilityMethod::VARIANCE_CHECK;
-    } else {
-        config.method = StabilityMethod::FIXED_DELAY;
-    }
-
-    config.tempVarianceThreshold = doc["temp_variance_threshold"] | 0.1;
-    config.ecVarianceThreshold = doc["ec_variance_threshold"] | 50.0;
 
     _configManager->setPumpConfig(config);
 
@@ -2434,11 +2393,8 @@ void SeaSenseWebServer::handleApiMeasurement() {
         PumpState ps = _pumpController->getState();
         const char* phaseName = nullptr;
         switch (ps) {
-            case PumpState::PUMP_STARTING: phaseName = "Pump started";  break;
-            case PumpState::STABILIZING:   phaseName = "Flushing pipe"; break;
-            case PumpState::MEASURING:     phaseName = "Measuring";     break;
-            case PumpState::PUMP_STOPPING: phaseName = "Pump stopping"; break;
-            case PumpState::COOLDOWN:      phaseName = "Cooling down";  break;
+            case PumpState::FLUSHING:  phaseName = "Flushing pipe"; break;
+            case PumpState::MEASURING: phaseName = "Measuring";     break;
             default: break;
         }
         if (phaseName) {

@@ -2,7 +2,7 @@
  * SeaSense Logger - Pump Controller
  *
  * State machine controller for relay-controlled water circulation pump
- * Manages pump cycles: start → stabilize → measure → stop → cooldown
+ * Manages pump cycles: flush → measure → idle
  */
 
 #ifndef PUMP_CONTROLLER_H
@@ -17,43 +17,22 @@
  */
 enum class PumpState {
     IDLE,              // Waiting for next cycle
-    PUMP_STARTING,     // Relay ON, initial pump startup
-    STABILIZING,       // Waiting for stable readings
-    MEASURING,         // Sensor reading window
-    PUMP_STOPPING,     // Relay OFF, flush delay
-    COOLDOWN,          // Wait before next cycle
+    FLUSHING,          // Relay ON, flushing stale water before measuring
+    MEASURING,         // Relay ON, sensor reading window
     ERROR,             // Error state
     PAUSED             // Manual pause
-};
-
-/**
- * Stability detection method
- */
-enum class StabilityMethod {
-    FIXED_DELAY,        // Simple time-based (recommended)
-    VARIANCE_CHECK,     // Reading consistency (future)
-    HYBRID              // Fixed minimum + variance (future)
 };
 
 /**
  * Pump configuration structure
  */
 struct PumpConfig {
-    uint16_t pumpStartupDelayMs;      // 2000ms default
-    uint16_t stabilityWaitMs;         // 3000ms default
-    uint8_t measurementCount;         // 1 default
-    uint16_t measurementIntervalMs;   // 2000ms default
-    uint16_t pumpStopDelayMs;         // 500ms default
-    uint32_t cooldownMs;              // 55000ms default
-    unsigned long cycleIntervalMs;    // 60000ms (1 minute) default
-    uint32_t maxPumpOnTimeMs;         // 30000ms safety
+    uint16_t flushDurationMs;         // 20000ms — flush stale water before measuring
+    uint16_t measureDurationMs;       // 2000ms — pump on during sensor read
+    unsigned long cycleIntervalMs;    // 60000ms — time between cycles
+    uint32_t maxPumpOnTimeMs;         // 30000ms — safety cutoff
     uint8_t relayPin;                 // GPIO 25
-    bool enabled;                     // true default
-
-    // Stability detection
-    StabilityMethod method;           // FIXED_DELAY (recommended)
-    float tempVarianceThreshold;      // 0.1°C (for future use)
-    float ecVarianceThreshold;        // 50 µS/cm (for future use)
+    bool enabled;                     // true
 };
 
 class PumpController {
@@ -151,7 +130,7 @@ public:
 
     /**
      * Get milliseconds remaining in the current pump phase.
-     * Returns 0 for phases with no fixed end time (MEASURING, IDLE, ERROR, PAUSED).
+     * Returns 0 for IDLE, ERROR, PAUSED.
      */
     unsigned long getPhaseRemainingMs() const;
 
@@ -198,11 +177,9 @@ private:
     unsigned long _stateStartTime;
     unsigned long _lastCycleTime;
     unsigned long _pumpStartTime;
-    unsigned long _nextMeasurementTime;
     unsigned long _errorTime;
 
     // Measurement tracking
-    uint8_t _measurementCount;
     bool _measurementTaken;
 
     // Error tracking
@@ -213,12 +190,6 @@ private:
      * @param newState Target state
      */
     void transitionToState(PumpState newState);
-
-    /**
-     * Check if readings are stable
-     * @return true if stable
-     */
-    bool checkStability();
 
     /**
      * Handle error condition
