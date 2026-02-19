@@ -109,17 +109,8 @@ bool configLoaded = false;
 // Runtime sampling interval (from ConfigManager)
 unsigned long sensorSamplingIntervalMs = 900000;  // Default 15 minutes
 
-// Continuous measurement mode (toggled via web UI; pump never runs in this mode)
-bool continuousMeasurementMode = false;
-
-// Timestamp of last continuous-mode read (elapsed-time pattern, rollover-safe)
+// Timestamp of last sensor read (elapsed-time pattern, rollover-safe)
 unsigned long lastSensorReadAt = 0;
-
-// Saved normal-mode anchor — restored when exiting continuous mode
-unsigned long savedLastSensorReadAt = 0;
-
-// When continuous mode was entered (for auto-timeout)
-unsigned long continuousModeStartedAt = 0;
 
 // Spinlock for shared timing globals accessed from both cores
 portMUX_TYPE g_timerMux = portMUX_INITIALIZER_UNLOCKED;
@@ -639,41 +630,17 @@ void loop() {
         }
     }
 
-    // Advance pump state machine (skipped during continuous mode)
-    if (!continuousMeasurementMode) {
-        pumpController.update();
-    }
-
-    // Auto-revert continuous mode after timeout (safety net)
-    if (continuousMeasurementMode && (now - continuousModeStartedAt >= CONTINUOUS_MODE_TIMEOUT_MS)) {
-        Serial.println("[MODE] Continuous mode auto-timeout, reverting to normal");
-        continuousMeasurementMode = false;
-        portENTER_CRITICAL(&g_timerMux);
-        lastSensorReadAt = now;
-        portEXIT_CRITICAL(&g_timerMux);
-        pumpController.resume();
-    }
+    // Advance pump state machine
+    pumpController.update();
 
     // Determine whether to read sensors and whether to persist the results.
-    // Three modes:
-    //   1. Continuous (display-only): 2s timer, no storage writes
-    //   2. Pump-driven (default): reads gated on pump MEASURING state, always saved
-    //   3. Pump disabled (fallback): configured interval timer, always saved
+    // Two modes:
+    //   1. Pump-driven (default): reads gated on pump MEASURING state, always saved
+    //   2. Pump disabled (fallback): configured interval timer, always saved
     bool doSensorRead = false;
     bool saveToStorage = false;
 
-    if (continuousMeasurementMode) {
-        unsigned long lastRead;
-        portENTER_CRITICAL(&g_timerMux);
-        lastRead = lastSensorReadAt;
-        portEXIT_CRITICAL(&g_timerMux);
-        if (now - lastRead >= 2000UL) {
-            portENTER_CRITICAL(&g_timerMux);
-            lastSensorReadAt = now;
-            portEXIT_CRITICAL(&g_timerMux);
-            doSensorRead = true;
-        }
-    } else if (pumpController.isEnabled()) {
+    if (pumpController.isEnabled()) {
         if (pumpController.shouldReadSensors()) {
             doSensorRead = true;
             saveToStorage = true;

@@ -287,7 +287,7 @@ void SeaSenseWebServer::handleDashboard() {
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Project SeaSense</title>
+    <title>Dashboard - Project SeaSense</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         :root { --bg:#060a13; --sf:#0c1221; --cd:#111a2e; --bd:#1a2744; --b2:#243352; --ac:#22d3ee; --a2:#2dd4bf; --ag:rgba(34,211,238,0.12); --tx:#e2e8f0; --t2:#94a3b8; --t3:#475569; --ok:#34d399; --wn:#fbbf24; --er:#f87171 }
@@ -313,7 +313,7 @@ void SeaSenseWebServer::handleDashboard() {
         .sensor-card:hover { border-color:var(--b2) }
         .sensor-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--ac) }
         .sensor-name { font-size:11px; font-weight:600; color:var(--t2); text-transform:uppercase; letter-spacing:1.5px; margin-bottom:8px }
-        .sensor-value { font-size:36px; font-weight:700; color:var(--tx); font-family:'SF Mono',ui-monospace,'Cascadia Code',Consolas,monospace; font-variant-numeric:tabular-nums; line-height:1.2; text-shadow:0 0 30px rgba(34,211,238,0.12) }
+        .sensor-value { font-size:28px; font-weight:700; color:var(--tx); font-family:'SF Mono',ui-monospace,'Cascadia Code',Consolas,monospace; font-variant-numeric:tabular-nums; line-height:1.2; text-shadow:0 0 30px rgba(34,211,238,0.12) }
         .sensor-unit { font-size:14px; font-weight:400; color:var(--t2); margin-left:4px }
         .sensor-meta { margin-top:8px; font-size:11px; color:var(--t3) }
         .sensor-card.offline { opacity:0.4 }
@@ -336,16 +336,12 @@ void SeaSenseWebServer::handleDashboard() {
         .status-msg { text-align:center; padding:30px; color:var(--t3); font-size:13px }
         .measure-bar { display:flex; align-items:center; justify-content:space-between; background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:10px 16px; margin:10px 0 }
         .countdown { font-size:13px; color:var(--ac); font-weight:600; font-variant-numeric:tabular-nums; font-family:'SF Mono',ui-monospace,Consolas,monospace }
-        .toggle-btn { padding:6px 14px; border:1px solid var(--b2); border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; background:var(--bg); color:var(--t2); transition:all 0.25s }
-        .toggle-btn:hover { border-color:var(--ac); color:var(--ac) }
-        .toggle-btn.active { background:rgba(34,211,238,0.15); border-color:var(--ac); color:var(--ac); box-shadow:0 0 12px rgba(34,211,238,0.2) }
         .upload-bar { background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:8px 16px; margin:0 0 16px; font-size:12px; color:var(--t2); display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:34px }
         .up-state { font-weight:700; font-family:ui-monospace,Consolas,monospace; font-size:11px; letter-spacing:0.5px }
         .up-state.ok { color:var(--ok) }
         .up-state.err { color:var(--er) }
         .up-state.busy { color:var(--wn) }
         .up-sep { color:var(--t3) }
-        .up-nostore { color:var(--wn); font-weight:600; font-style:italic }
     </style>
 </head>
 <body>
@@ -355,9 +351,9 @@ void SeaSenseWebServer::handleDashboard() {
         <div class="sidebar-header">Project SeaSense Data Logger</div>
         <ul class="sidebar-nav">
             <li><a href="/dashboard" class="active">Dashboard</a></li>
-            <li><a href="/settings">Settings</a></li>
-            <li><a href="/calibrate">Calibration</a></li>
             <li><a href="/data">Data</a></li>
+            <li><a href="/calibrate">Calibration</a></li>
+            <li><a href="/settings">Settings</a></li>
         </ul>
     </div>
 
@@ -368,8 +364,7 @@ void SeaSenseWebServer::handleDashboard() {
 
     <div class="container">
         <div class="measure-bar">
-            <span class="countdown" id="countdownLabel">Next pump &amp; measurement starts in --:--</span>
-            <button class="toggle-btn" id="toggleBtn" onclick="toggleContinuous()">Continuous: OFF</button>
+            <span class="countdown" id="countdownLabel">Next measurement in --:--</span>
         </div>
         <div class="upload-bar" id="uploadBar">
             <span id="uploadStateSpan" class="up-state">--</span>
@@ -395,7 +390,6 @@ void SeaSenseWebServer::handleDashboard() {
 
     <script>
         let autoUpdate = true;
-        let continuousMode = false;
         let countdownMs = null;
         let pumpPhaseLabel = '';
 
@@ -422,48 +416,21 @@ void SeaSenseWebServer::handleDashboard() {
             const label = document.getElementById('countdownLabel');
             if (!label) return;
             if (pumpPhaseLabel) { label.textContent = pumpPhaseLabel; return; }
-            if (continuousMode) { label.textContent = 'Measuring every 2s'; return; }
             if (countdownMs === null) return;
             countdownMs = Math.max(0, countdownMs - 100);
             const s = Math.floor(countdownMs / 1000);
             const m = Math.floor(s / 60);
-            label.textContent = 'Next pump & measurement starts in ' + m + ':' + String(s % 60).padStart(2, '0');
+            label.textContent = 'Next measurement in ' + m + ':' + String(s % 60).padStart(2, '0');
         }, 100);
-
-        let _pollTimer = null;
-        function _startPolling(intervalMs) {
-            if (_pollTimer) clearInterval(_pollTimer);
-            _pollTimer = setInterval(() => { if (autoUpdate) { update(); updateEnv(); updateMeasurement(); } }, intervalMs);
-        }
 
         function updateMeasurement() {
             fetch('/api/measurement')
                 .then(r => r.json())
                 .then(d => {
-                    const wasContinuous = continuousMode;
-                    continuousMode = d.mode === 'continuous';
                     countdownMs = d.next_read_in_ms;
                     pumpPhaseLabel = d.pump_phase_label || '';
-                    const btn = document.getElementById('toggleBtn');
-                    if (btn) {
-                        btn.textContent = continuousMode ? 'Continuous: ON' : 'Continuous: OFF';
-                        btn.className = continuousMode ? 'toggle-btn active' : 'toggle-btn';
-                    }
-                    // Adjust polling rate when mode changes
-                    if (wasContinuous !== continuousMode) {
-                        _startPolling(continuousMode ? 1000 : 3000);
-                        updateUploadStatus();  // Immediately refresh bar on mode change
-                    }
                 })
                 .catch(() => {});
-        }
-
-        function toggleContinuous() {
-            fetch('/api/measurement', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({mode: continuousMode ? 'normal' : 'continuous'})
-            }).then(() => updateMeasurement()).catch(() => {});
         }
 
         function fmtMs(ms) {
@@ -483,10 +450,6 @@ void SeaSenseWebServer::handleDashboard() {
         function updateUploadStatus() {
             const bar = document.getElementById('uploadBar');
             if (!bar) return;
-            if (continuousMode) {
-                bar.innerHTML = '<span class="up-nostore">&#9888; Continuous mode &mdash; data not saved</span>';
-                return;
-            }
             fetch('/api/status')
                 .then(r => r.json())
                 .then(d => {
@@ -614,7 +577,7 @@ void SeaSenseWebServer::handleDashboard() {
         updateEnv();
         updateMeasurement();
         updateUploadStatus();
-        _startPolling(3000);
+        setInterval(() => { if (autoUpdate) { update(); updateEnv(); updateMeasurement(); } }, 3000);
         setInterval(updateUploadStatus, 10000);
     </script>
 </body>
@@ -672,17 +635,18 @@ void SeaSenseWebServer::handleCalibrate() {
         .btn-danger { background:var(--er); color:white; flex:none }
         .btn-danger:hover { background:#ef4444 }
         .btn-sm { padding:6px 12px; font-size:12px; flex:none }
-        .alert { padding:12px; border-radius:8px; margin:15px 0; font-size:13px; border:1px solid }
-        .alert-success { background:rgba(52,211,153,0.1); color:var(--ok); border-color:rgba(52,211,153,0.3) }
-        .alert-error { background:rgba(248,113,113,0.1); color:var(--er); border-color:rgba(248,113,113,0.3) }
-        .alert-info { background:rgba(34,211,238,0.1); color:var(--ac); border-color:rgba(34,211,238,0.3) }
-        .hidden { display:none }
+        .toast { position:fixed; top:60px; right:20px; padding:12px 20px; border-radius:8px; display:none; z-index:1000; box-shadow:0 8px 24px rgba(0,0,0,0.4); font-size:13px; max-width:350px; border:1px solid; backdrop-filter:blur(12px) }
+        .toast-success { background:rgba(52,211,153,0.15); color:var(--ok); border-color:rgba(52,211,153,0.3) }
+        .toast-error { background:rgba(248,113,113,0.15); color:var(--er); border-color:rgba(248,113,113,0.3) }
+        .toast-info { background:rgba(34,211,238,0.15); color:var(--ac); border-color:rgba(34,211,238,0.3) }
         .status-current { display:inline-block; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600; margin-left:10px; letter-spacing:0.5px }
         .status-calibrated { background:rgba(52,211,153,0.15); color:var(--ok); border:1px solid rgba(52,211,153,0.3) }
         .status-not-calibrated { background:rgba(248,113,113,0.15); color:var(--er); border:1px solid rgba(248,113,113,0.3) }
         .status-offline { background:rgba(71,85,105,0.2); color:var(--t3); border:1px solid rgba(71,85,105,0.3) }
         .cal-card.offline { opacity:0.4; pointer-events:none }
         .cal-card.offline::before { background:var(--t3) }
+        @keyframes readPulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        .reading-pulse { animation:readPulse 0.4s ease-in-out 2 }
     </style>
 </head>
 <body>
@@ -692,9 +656,9 @@ void SeaSenseWebServer::handleCalibrate() {
         <div class="sidebar-header">Project SeaSense Data Logger</div>
         <ul class="sidebar-nav">
             <li><a href="/dashboard">Dashboard</a></li>
-            <li><a href="/settings">Settings</a></li>
-            <li><a href="/calibrate" class="active">Calibration</a></li>
             <li><a href="/data">Data</a></li>
+            <li><a href="/calibrate" class="active">Calibration</a></li>
+            <li><a href="/settings">Settings</a></li>
         </ul>
     </div>
 
@@ -703,9 +667,9 @@ void SeaSenseWebServer::handleCalibrate() {
         <div class="title">Project SeaSense Data Logger</div>
     </div>
 
-    <div class="container">
-        <div id="alertBox" class="alert hidden"></div>
+    <div id="toast" class="toast"></div>
 
+    <div class="container">
         <!-- Temperature Calibration -->
         <div class="cal-card">
             <div class="cal-header">Temperature Sensor <span class="status-current status-calibrated" id="tempStatus">Calibrated</span></div>
@@ -724,7 +688,6 @@ void SeaSenseWebServer::handleCalibrate() {
             <div class="form-group">
                 <label>Calibration Type</label>
                 <select id="tempCalType">
-                    <option value="clear">Clear Calibration</option>
                     <option value="single">Single Point</option>
                 </select>
             </div>
@@ -759,7 +722,6 @@ void SeaSenseWebServer::handleCalibrate() {
             <div class="form-group">
                 <label>Calibration Type</label>
                 <select id="ecCalType">
-                    <option value="clear">Clear Calibration</option>
                     <option value="dry">Dry Calibration</option>
                     <option value="single">Single Point</option>
                     <option value="low">Two-Point (Low)</option>
@@ -869,11 +831,12 @@ void SeaSenseWebServer::handleCalibrate() {
             }
         });
 
-        function showAlert(message, type) {
-            const alert = document.getElementById('alertBox');
-            alert.className = 'alert alert-' + type;
-            alert.textContent = message;
-            setTimeout(() => alert.classList.add('hidden'), 5000);
+        function showToast(message, type) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast toast-' + type;
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 5000);
         }
 
         function updateReadings() {
@@ -924,40 +887,57 @@ void SeaSenseWebServer::handleCalibrate() {
                 .catch(() => {});
         }
 
+        function pulseEl(el) {
+            el.classList.add('reading-pulse');
+            setTimeout(() => el.classList.remove('reading-pulse'), 800);
+        }
+
         function readTemp() {
+            const el = document.getElementById('tempReading');
+            el.classList.add('reading-pulse');
             fetch('/api/sensor/reading?type=temperature')
                 .then(r => r.json())
                 .then(data => {
-                    document.getElementById('tempReading').textContent = data.value.toFixed(3);
+                    el.textContent = data.value.toFixed(3);
+                    setTimeout(() => el.classList.remove('reading-pulse'), 800);
                 })
-                .catch(err => showAlert('Error reading temperature sensor', 'error'));
+                .catch(err => { el.classList.remove('reading-pulse'); showToast('Error reading temperature sensor', 'error'); });
         }
 
         function readEC() {
+            const el = document.getElementById('ecReading');
+            el.classList.add('reading-pulse');
             fetch('/api/sensor/reading?type=conductivity')
                 .then(r => r.json())
                 .then(data => {
-                    document.getElementById('ecReading').textContent = data.value.toFixed(0);
+                    el.textContent = data.value.toFixed(0);
+                    setTimeout(() => el.classList.remove('reading-pulse'), 800);
                 })
-                .catch(err => showAlert('Error reading conductivity sensor', 'error'));
+                .catch(err => { el.classList.remove('reading-pulse'); showToast('Error reading conductivity sensor', 'error'); });
         }
 
         function readPH() {
+            const el = document.getElementById('phReading');
+            el.classList.add('reading-pulse');
             fetch('/api/sensor/reading?type=ph')
                 .then(r => r.json())
                 .then(data => {
-                    document.getElementById('phReading').textContent = data.value.toFixed(3);
+                    el.textContent = data.value.toFixed(3);
+                    setTimeout(() => el.classList.remove('reading-pulse'), 800);
                 })
-                .catch(err => showAlert('Error reading pH sensor', 'error'));
+                .catch(err => { el.classList.remove('reading-pulse'); showToast('Error reading pH sensor', 'error'); });
         }
 
         function readDO() {
+            const el = document.getElementById('doReading');
+            el.classList.add('reading-pulse');
             fetch('/api/sensor/reading?type=dissolved_oxygen')
                 .then(r => r.json())
                 .then(data => {
-                    document.getElementById('doReading').textContent = data.value.toFixed(2);
+                    el.textContent = data.value.toFixed(2);
+                    setTimeout(() => el.classList.remove('reading-pulse'), 800);
                 })
-                .catch(err => showAlert('Error reading DO sensor', 'error'));
+                .catch(err => { el.classList.remove('reading-pulse'); showToast('Error reading DO sensor', 'error'); });
         }
 
         updateReadings();
@@ -967,8 +947,8 @@ void SeaSenseWebServer::handleCalibrate() {
             const type = document.getElementById('tempCalType').value;
             const value = parseFloat(document.getElementById('tempValue').value);
 
-            if (type !== 'clear' && !value && value !== 0) {
-                showAlert('Please enter a reference temperature value', 'error');
+            if (!value && value !== 0) {
+                showToast('Please enter a reference temperature value', 'error');
                 return;
             }
 
@@ -986,21 +966,21 @@ void SeaSenseWebServer::handleCalibrate() {
             .then(r => r.json())
             .then(result => {
                 if (result.success) {
-                    showAlert('Temperature calibration successful!', 'success');
+                    showToast('Temperature calibration successful!', 'success');
                     setTimeout(readTemp, 1000);
                 } else {
-                    showAlert('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
+                    showToast('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
                 }
             })
-            .catch(err => showAlert('Error during calibration', 'error'));
+            .catch(err => showToast('Error during calibration', 'error'));
         }
 
         function calibrateEC() {
             const type = document.getElementById('ecCalType').value;
             const value = parseFloat(document.getElementById('ecValue').value);
 
-            if (type !== 'clear' && type !== 'dry' && !value && value !== 0) {
-                showAlert('Please enter a reference conductivity value', 'error');
+            if (type !== 'dry' && !value && value !== 0) {
+                showToast('Please enter a reference conductivity value', 'error');
                 return;
             }
 
@@ -1018,13 +998,13 @@ void SeaSenseWebServer::handleCalibrate() {
             .then(r => r.json())
             .then(result => {
                 if (result.success) {
-                    showAlert('Conductivity calibration successful!', 'success');
+                    showToast('Conductivity calibration successful!', 'success');
                     setTimeout(readEC, 1000);
                 } else {
-                    showAlert('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
+                    showToast('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
                 }
             })
-            .catch(err => showAlert('Error during calibration', 'error'));
+            .catch(err => showToast('Error during calibration', 'error'));
         }
 
         function calibratePH() {
@@ -1032,7 +1012,7 @@ void SeaSenseWebServer::handleCalibrate() {
             const value = parseFloat(document.getElementById('phValue').value);
 
             if (!value && value !== 0) {
-                showAlert('Please enter a reference pH value', 'error');
+                showToast('Please enter a reference pH value', 'error');
                 return;
             }
 
@@ -1044,13 +1024,13 @@ void SeaSenseWebServer::handleCalibrate() {
             .then(r => r.json())
             .then(result => {
                 if (result.success) {
-                    showAlert('pH calibration (' + type + ') successful!', 'success');
+                    showToast('pH calibration (' + type + ') successful!', 'success');
                     setTimeout(readPH, 1000);
                 } else {
-                    showAlert('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
+                    showToast('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
                 }
             })
-            .catch(err => showAlert('Error during pH calibration', 'error'));
+            .catch(err => showToast('Error during pH calibration', 'error'));
         }
 
         function calibrateDO() {
@@ -1064,22 +1044,18 @@ void SeaSenseWebServer::handleCalibrate() {
             .then(r => r.json())
             .then(result => {
                 if (result.success) {
-                    showAlert('DO calibration (' + type + ') successful!', 'success');
+                    showToast('DO calibration (' + type + ') successful!', 'success');
                     setTimeout(readDO, 1000);
                 } else {
-                    showAlert('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
+                    showToast('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
                 }
             })
-            .catch(err => showAlert('Error during DO calibration', 'error'));
+            .catch(err => showToast('Error during DO calibration', 'error'));
         }
 
         // Toggle value input visibility based on calibration type
-        document.getElementById('tempCalType').addEventListener('change', function() {
-            document.getElementById('tempValueGroup').style.display = this.value === 'clear' ? 'none' : 'block';
-        });
-
         document.getElementById('ecCalType').addEventListener('change', function() {
-            document.getElementById('ecValueGroup').style.display = (this.value === 'clear' || this.value === 'dry') ? 'none' : 'block';
+            document.getElementById('ecValueGroup').style.display = this.value === 'dry' ? 'none' : 'block';
         });
 
         // Pre-fill pH reference value based on selected calibration type
@@ -1166,10 +1142,9 @@ void SeaSenseWebServer::handleData() {
         .confirm-box { display:none; background:rgba(248,113,113,0.08); border:1px solid rgba(248,113,113,0.3); border-radius:8px; padding:12px; margin-top:10px; font-size:13px; color:var(--er) }
         .confirm-box.show { display:block }
         .confirm-actions { display:flex; gap:8px; margin-top:10px }
-        .alert { padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:10px; display:none; border:1px solid }
-        .alert.show { display:block }
-        .alert-success { background:rgba(52,211,153,0.1); color:var(--ok); border-color:rgba(52,211,153,0.3) }
-        .alert-error { background:rgba(248,113,113,0.1); color:var(--er); border-color:rgba(248,113,113,0.3) }
+        .toast { position:fixed; top:60px; right:20px; padding:12px 20px; border-radius:8px; display:none; z-index:1000; box-shadow:0 8px 24px rgba(0,0,0,0.4); font-size:13px; max-width:350px; border:1px solid; backdrop-filter:blur(12px) }
+        .toast-success { background:rgba(52,211,153,0.15); color:var(--ok); border-color:rgba(52,211,153,0.3) }
+        .toast-error { background:rgba(248,113,113,0.15); color:var(--er); border-color:rgba(248,113,113,0.3) }
         .type-temp { color:#f97316 }
         .type-ec { color:var(--ac) }
         .type-ph { color:var(--ok) }
@@ -1182,9 +1157,9 @@ void SeaSenseWebServer::handleData() {
         <div class="sidebar-header">Project SeaSense Data Logger</div>
         <ul class="sidebar-nav">
             <li><a href="/dashboard">Dashboard</a></li>
-            <li><a href="/settings">Settings</a></li>
-            <li><a href="/calibrate">Calibration</a></li>
             <li><a href="/data" class="active">Data</a></li>
+            <li><a href="/calibrate">Calibration</a></li>
+            <li><a href="/settings">Settings</a></li>
         </ul>
     </div>
     <div class="header">
@@ -1192,9 +1167,9 @@ void SeaSenseWebServer::handleData() {
         <div class="title">Project SeaSense Data Logger</div>
     </div>
 
-    <div class="container">
-        <div id="globalAlert" class="alert"></div>
+    <div id="toast" class="toast"></div>
 
+    <div class="container">
         <!-- Storage Stats -->
         <div class="card">
             <div class="card-title">Storage <button class="btn btn-sm btn-outline" onclick="loadStats()">Refresh</button></div>
@@ -1298,11 +1273,12 @@ void SeaSenseWebServer::handleData() {
             if (t.includes('salin')) return v.toFixed(2);
             return v.toFixed(0);
         }
-        function showAlert(msg, type) {
-            const el = document.getElementById('globalAlert');
-            el.className = 'alert alert-' + type + ' show';
-            el.textContent = msg;
-            setTimeout(() => el.className = 'alert', 4000);
+        function showToast(msg, type) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.className = 'toast toast-' + type;
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 5000);
         }
 
         function loadStats() {
@@ -1417,12 +1393,12 @@ void SeaSenseWebServer::handleData() {
             fetch('/api/upload/force', { method: 'POST' })
                 .then(r => r.json())
                 .then(d => {
-                    showAlert('Upload scheduled — check history in a moment', 'success');
+                    showToast('Upload scheduled — check history in a moment', 'success');
                     btn.textContent = 'Force Upload Now';
                     btn.disabled = false;
                     setTimeout(() => { loadStats(); loadHistory(); }, 3000);
                 })
-                .catch(() => { btn.textContent = 'Force Upload Now'; btn.disabled = false; showAlert('Request failed', 'error'); });
+                .catch(() => { btn.textContent = 'Force Upload Now'; btn.disabled = false; showToast('Request failed', 'error'); });
         }
 
         function showFlushConfirm() {
@@ -1435,11 +1411,11 @@ void SeaSenseWebServer::handleData() {
                 .then(r => r.json())
                 .then(d => {
                     hideFlushConfirm();
-                    showAlert('All data flushed successfully', 'success');
+                    showToast('All data flushed successfully', 'success');
                     currentPage = 0;
                     setTimeout(() => { loadStats(); loadRecords(); }, 500);
                 })
-                .catch(() => { showAlert('Flush failed', 'error'); });
+                .catch(() => { showToast('Flush failed', 'error'); });
         }
 
         loadStats();
@@ -1491,22 +1467,20 @@ void SeaSenseWebServer::handleSettings() {
         .form-group input:focus, .form-group select:focus { outline:none; border-color:var(--ac); box-shadow:0 0 0 3px var(--ag) }
         .form-group input[type="checkbox"] { width:auto }
         .form-group small { color:var(--t3); font-size:12px; display:block; margin-top:5px }
-        .button { background:var(--ac); color:var(--bg); padding:10px 20px; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; margin:5px; transition:all 0.2s }
-        .button:hover { background:#06b6d4; box-shadow:0 0 16px rgba(34,211,238,0.3) }
-        .button-danger { background:var(--er); color:white }
-        .button-danger:hover { background:#ef4444; box-shadow:0 0 16px rgba(248,113,113,0.3) }
-        .button-warning { background:var(--wn); color:var(--bg) }
-        .button-warning:hover { background:#f59e0b; box-shadow:0 0 16px rgba(251,191,36,0.3) }
+        .btn { padding:10px 20px; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; margin:5px; transition:all 0.2s }
+        .btn-primary { background:var(--ac); color:var(--bg) }
+        .btn-primary:hover { background:#06b6d4; box-shadow:0 0 16px rgba(34,211,238,0.3) }
+        .btn-danger { background:var(--er); color:white }
+        .btn-danger:hover { background:#ef4444; box-shadow:0 0 16px rgba(248,113,113,0.3) }
+        .btn-warning { background:var(--wn); color:var(--bg) }
+        .btn-warning:hover { background:#f59e0b; box-shadow:0 0 16px rgba(251,191,36,0.3) }
         .toast { position:fixed; top:60px; right:20px; padding:12px 20px; border-radius:8px; display:none; z-index:1000; box-shadow:0 8px 24px rgba(0,0,0,0.4); font-size:13px; max-width:350px; border:1px solid; backdrop-filter:blur(12px) }
         .toast-success { background:rgba(52,211,153,0.15); color:var(--ok); border-color:rgba(52,211,153,0.3) }
         .toast-error { background:rgba(248,113,113,0.15); color:var(--er); border-color:rgba(248,113,113,0.3) }
         .toast-info { background:rgba(34,211,238,0.15); color:var(--ac); border-color:rgba(34,211,238,0.3) }
         .actions { text-align:center; margin-top:20px }
-        .btn { padding:6px 12px; border:none; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; transition:all 0.2s }
-        .btn-sm { padding:5px 10px; font-size:11px; background:var(--b2); color:var(--tx); border:none; border-radius:6px }
+        .btn-sm { padding:5px 10px; font-size:11px; background:var(--b2); color:var(--tx); border-radius:6px; margin:0 }
         .btn-sm:hover { background:var(--bd) }
-        .btn-danger { background:rgba(248,113,113,0.2); color:var(--er) }
-        .btn-danger:hover { background:rgba(248,113,113,0.3) }
     </style>
 </head>
 <body>
@@ -1516,9 +1490,9 @@ void SeaSenseWebServer::handleSettings() {
         <div class="sidebar-header">Project SeaSense Data Logger</div>
         <ul class="sidebar-nav">
             <li><a href="/dashboard">Dashboard</a></li>
-            <li><a href="/settings" class="active">Settings</a></li>
-            <li><a href="/calibrate">Calibration</a></li>
             <li><a href="/data">Data</a></li>
+            <li><a href="/calibrate">Calibration</a></li>
+            <li><a href="/settings" class="active">Settings</a></li>
         </ul>
     </div>
 
@@ -1575,8 +1549,11 @@ void SeaSenseWebServer::handleSettings() {
                 <label>Max Retries</label>
                 <input type="number" id="api-retries" name="api-retries" min="1" max="10">
             </div>
+        </div>
 
-            <h3>Sampling Configuration</h3>
+        <!-- Sampling Configuration -->
+        <div class="section">
+            <h2>Sampling</h2>
             <div class="form-group">
                 <label>Sensor Reading Interval</label>
                 <div style="display:flex;gap:10px;align-items:center;">
@@ -1591,8 +1568,11 @@ void SeaSenseWebServer::handleSettings() {
                 </div>
                 <small id="interval-hint">How often to pump and read sensors. Default: 15 min.</small>
             </div>
+        </div>
 
-            <h3>GPS Source</h3>
+        <!-- GPS Source -->
+        <div class="section">
+            <h2>GPS Source</h2>
             <div class="form-group">
                 <label>Position &amp; Time Source</label>
                 <select id="gps-source" name="gps-source">
@@ -1638,9 +1618,9 @@ void SeaSenseWebServer::handleSettings() {
 
         <!-- Actions -->
         <div class="actions">
-            <button type="submit" class="button">Save Configuration</button>
-            <button type="button" class="button button-warning" onclick="resetConfig()">Reset to Defaults</button>
-            <button type="button" class="button button-danger" onclick="restartDevice()">Restart Device</button>
+            <button type="submit" class="btn btn-primary">Save Configuration</button>
+            <button type="button" class="btn btn-warning" onclick="resetConfig()">Reset to Defaults</button>
+            <button type="button" class="btn btn-danger" onclick="restartDevice()">Restart Device</button>
         </div>
         </form>
     </div>
@@ -1650,8 +1630,8 @@ void SeaSenseWebServer::handleSettings() {
             <div style="font-size:15px;font-weight:600;color:var(--ac);margin-bottom:12px;">Restart Required</div>
             <p style="font-size:13px;color:var(--t2);margin-bottom:20px;">WiFi settings were changed. A restart is needed to apply them.</p>
             <div style="display:flex;gap:10px;justify-content:center;">
-                <button class="button button-danger" onclick="restartDevice()">Restart Now</button>
-                <button class="button" onclick="closeRestartModal()" style="background:var(--b2);color:var(--tx);">Later</button>
+                <button class="btn btn-danger" onclick="restartDevice()">Restart Now</button>
+                <button class="btn" onclick="closeRestartModal()" style="background:var(--b2);color:var(--tx);">Later</button>
             </div>
         </div>
     </div>
@@ -2617,59 +2597,27 @@ void SeaSenseWebServer::handleApiPumpConfigUpdate() {
 }
 
 void SeaSenseWebServer::handleApiMeasurement() {
-    extern bool continuousMeasurementMode;
     extern unsigned long lastSensorReadAt;
-    extern unsigned long savedLastSensorReadAt;
     extern unsigned long sensorSamplingIntervalMs;
-    extern unsigned long continuousModeStartedAt;
     extern portMUX_TYPE g_timerMux;
-
-    if (_server->method() == HTTP_POST) {
-        JsonDocument req;
-        if (deserializeJson(req, _server->arg("plain")) == DeserializationError::Ok) {
-            String mode = req["mode"] | "";
-            if (mode == "continuous" && !continuousMeasurementMode) {
-                portENTER_CRITICAL(&g_timerMux);
-                savedLastSensorReadAt = lastSensorReadAt;
-                continuousMeasurementMode = true;
-                lastSensorReadAt = 0;  // fire first continuous read immediately
-                continuousModeStartedAt = millis();
-                portEXIT_CRITICAL(&g_timerMux);
-                // Pause pump so relay doesn't fire during display-only mode
-                if (_pumpController) _pumpController->pause();
-            } else if (mode == "normal" && continuousMeasurementMode) {
-                portENTER_CRITICAL(&g_timerMux);
-                continuousMeasurementMode = false;
-                // Reschedule timer for pump-disabled fallback (avoid immediate write on exit)
-                lastSensorReadAt = millis();
-                portEXIT_CRITICAL(&g_timerMux);
-                // Resume pump — it will wait for cycleIntervalMs before next cycle
-                if (_pumpController) _pumpController->resume();
-            }
-        }
-    }
 
     unsigned long now = millis();
     unsigned long remaining;
-    if (!continuousMeasurementMode && _pumpController && _pumpController->isEnabled()) {
+    if (_pumpController && _pumpController->isEnabled()) {
         remaining = _pumpController->getTimeUntilNextMeasurementMs();
     } else {
         portENTER_CRITICAL(&g_timerMux);
         unsigned long lastRead = lastSensorReadAt;
         portEXIT_CRITICAL(&g_timerMux);
-        unsigned long interval = continuousMeasurementMode ? 2000UL : sensorSamplingIntervalMs;
         unsigned long elapsed = now - lastRead;
-        remaining = (elapsed >= interval) ? 0 : (interval - elapsed);
+        remaining = (elapsed >= sensorSamplingIntervalMs) ? 0 : (sensorSamplingIntervalMs - elapsed);
     }
 
     JsonDocument resp;
-    resp["mode"] = continuousMeasurementMode ? "continuous" : "normal";
     resp["next_read_in_ms"] = remaining;
-    resp["interval_ms"] = continuousMeasurementMode
-        ? 2000UL
-        : (_pumpController && _pumpController->isEnabled()
-            ? _pumpController->getCycleInterval()
-            : sensorSamplingIntervalMs);
+    resp["interval_ms"] = (_pumpController && _pumpController->isEnabled())
+        ? _pumpController->getCycleInterval()
+        : sensorSamplingIntervalMs;
 
     // Include pump cycle phase for dashboard status label (with countdown seconds)
     if (_pumpController) {
