@@ -1186,11 +1186,13 @@ void SeaSenseWebServer::handleData() {
                             let timeStr;
                             if (r.time) {
                                 timeStr = r.time;
-                            } else if (uptimeMs > 0 && r.millis > 0) {
+                            } else if (uptimeMs > 0 && r.millis > 0 && r.millis <= uptimeMs) {
                                 timeStr = fmtAgo(uptimeMs - r.millis);
-                            } else {
+                            } else if (r.millis > 0) {
                                 const s = Math.floor((r.millis || 0) / 1000);
                                 timeStr = 'Boot +' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+                            } else {
+                                timeStr = '--';
                             }
                             return '<tr><td style="font-size:11px;color:#94a3b8;">' + timeStr + '</td>'
                                 + '<td class="' + tc + '">' + r.type + '</td>'
@@ -1246,6 +1248,7 @@ void SeaSenseWebServer::handleData() {
         loadHistory();
         loadRecords();
         setInterval(loadStats, 15000);
+        setInterval(function() { if (currentPage === 0) loadRecords(); }, 30000);
     </script>
 </body>
 </html>
@@ -1885,10 +1888,9 @@ void SeaSenseWebServer::handleApiDataRecords() {
     StorageStats stats = _storage->getStats();
     uint32_t total = stats.totalRecords;
 
-    // Read enough records to cover this page (most-recent-first)
-    uint16_t needed = (page + 1) * limit;
-    if (needed > 500) needed = 500;
-    std::vector<DataRecord> recs = _storage->readRecords(0, needed);
+    // Read the full SPIFFS buffer (capped at 200 to avoid OOM) so we can
+    // serve the most-recent records from the tail, regardless of page number.
+    std::vector<DataRecord> recs = _storage->readRecords(0, 200);
 
     JsonDocument doc;
     doc["total"]  = total;
