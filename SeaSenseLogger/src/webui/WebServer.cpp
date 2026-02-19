@@ -1570,26 +1570,10 @@ void SeaSenseWebServer::handleSettings() {
             <div class="form-group">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" id="skip-if-stationary" name="skip-if-stationary" style="width:auto;margin:0;">
-                    Skip measurement cycle if boat has not moved significantly since previous measurement
+                    Skip measurement cycle if boat has not moved
                 </label>
-                <small>Uses GPS delta vs previous measurement. Significant movement threshold: 100 m.</small>
             </div>
 
-            <h3>GPS Source</h3>
-            <div class="form-group">
-                <label>Position &amp; Time Source</label>
-                <select id="gps-source" name="gps-source">
-                    <option value="onboard">Onboard GPS (NEO-6M)</option>
-                    <option value="nmea2000">NMEA2000 Network</option>
-                </select>
-                <small>Select NMEA2000 if the device is installed in the bilge without sky visibility. Requires a GPS chartplotter on the NMEA2000 bus.</small>
-            </div>
-            <div class="form-group">
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" id="gps-fallback" name="gps-fallback" style="width:auto;margin:0;">
-                    Fall back to onboard GPS if NMEA2000 has no fix
-                </label>
-            </div>
         </div>
 
         <!-- Device Configuration -->
@@ -1701,7 +1685,6 @@ void SeaSenseWebServer::handleSettings() {
                     }
                 }
 
-                // GPS source
                 // Device
                 document.getElementById('device-guid').value = config.device.device_guid || '';
                 document.getElementById('partner-id').value = config.device.partner_id || '';
