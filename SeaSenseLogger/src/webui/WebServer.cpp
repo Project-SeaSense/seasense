@@ -182,6 +182,7 @@ bool SeaSenseWebServer::startStation() {
     DEBUG_WIFI_PRINT("SSID: ");
     DEBUG_WIFI_PRINTLN(ssid);
 
+    WiFi.setHostname(_apSSID.c_str());
     WiFi.begin(WIFI_STATION_SSID, WIFI_STATION_PASSWORD);
 
     unsigned long startTime = millis();
