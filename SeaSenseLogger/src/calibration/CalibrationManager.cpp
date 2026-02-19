@@ -14,9 +14,11 @@ extern bool updateSensorCalibration(const String& sensorType,
 // Constructor
 // ============================================================================
 
-CalibrationManager::CalibrationManager(EZO_RTD* tempSensor, EZO_EC* ecSensor)
+CalibrationManager::CalibrationManager(EZO_RTD* tempSensor, EZO_EC* ecSensor, EZO_pH* phSensor, EZO_DO* doSensor)
     : _tempSensor(tempSensor),
       _ecSensor(ecSensor),
+      _phSensor(phSensor),
+      _doSensor(doSensor),
       _stabilityIndex(0),
       _lastReadingTime(0)
 {
@@ -52,9 +54,19 @@ bool CalibrationManager::startCalibration(
         _state.message = "Remove probe from liquid and ensure it is dry";
     } else if (calibrationType == CalibrationType::TEMPERATURE_SINGLE) {
         _state.message = "Place probe in reference temperature environment";
+    } else if (calibrationType == CalibrationType::PH_MID) {
+        _state.message = "Place probe in pH " + String(referenceValue, 2) + " buffer solution";
+    } else if (calibrationType == CalibrationType::PH_LOW) {
+        _state.message = "Place probe in pH " + String(referenceValue, 2) + " buffer solution";
+    } else if (calibrationType == CalibrationType::PH_HIGH) {
+        _state.message = "Place probe in pH " + String(referenceValue, 2) + " buffer solution";
+    } else if (calibrationType == CalibrationType::DO_ATMOSPHERIC) {
+        _state.message = "Hold probe in air, ensure membrane is dry";
+    } else if (calibrationType == CalibrationType::DO_ZERO) {
+        _state.message = "Place probe in 0 mg/L sodium sulfite solution";
     } else {
         _state.message = "Place probe in calibration solution (" +
-                        String(referenceValue, 0) + " µS/cm)";
+                        String(referenceValue, 0) + " \xC2\xB5S/cm)";
     }
 
     Serial.print("[CALIBRATION] Starting ");
@@ -84,6 +96,16 @@ void CalibrationManager::update() {
     } else if (_state.sensorType == "conductivity" && _ecSensor) {
         if (_ecSensor->read()) {
             currentValue = _ecSensor->getValue();
+            readSuccess = true;
+        }
+    } else if (_state.sensorType == "ph" && _phSensor) {
+        if (_phSensor->read()) {
+            currentValue = _phSensor->getValue();
+            readSuccess = true;
+        }
+    } else if (_state.sensorType == "dissolved_oxygen" && _doSensor) {
+        if (_doSensor->read()) {
+            currentValue = _doSensor->getValue();
             readSuccess = true;
         }
     }
@@ -198,6 +220,10 @@ bool CalibrationManager::isReadingStable(float currentValue) {
     float threshold = 0.1;  // Default for temperature
     if (_state.sensorType == "conductivity") {
         threshold = 50.0;  // Higher threshold for conductivity
+    } else if (_state.sensorType == "ph") {
+        threshold = 0.02;  // pH is very precise (±0.002)
+    } else if (_state.sensorType == "dissolved_oxygen") {
+        threshold = 0.1;   // DO in mg/L (±0.05)
     }
 
     bool stable = (variance < threshold);
@@ -247,6 +273,36 @@ bool CalibrationManager::performCalibration() {
             }
             break;
 
+        case CalibrationType::PH_MID:
+            if (_phSensor) {
+                success = _phSensor->calibrateMidPoint(_state.referenceValue);
+            }
+            break;
+
+        case CalibrationType::PH_LOW:
+            if (_phSensor) {
+                success = _phSensor->calibrateLowPoint(_state.referenceValue);
+            }
+            break;
+
+        case CalibrationType::PH_HIGH:
+            if (_phSensor) {
+                success = _phSensor->calibrateHighPoint(_state.referenceValue);
+            }
+            break;
+
+        case CalibrationType::DO_ATMOSPHERIC:
+            if (_doSensor) {
+                success = _doSensor->calibrateAtmospheric();
+            }
+            break;
+
+        case CalibrationType::DO_ZERO:
+            if (_doSensor) {
+                success = _doSensor->calibrateZero();
+            }
+            break;
+
         default:
             success = false;
             break;
@@ -256,15 +312,25 @@ bool CalibrationManager::performCalibration() {
         // Map CalibrationType to a human-readable string for the log
         String calTypeStr;
         switch (_state.type) {
-            case CalibrationType::TEMPERATURE_SINGLE: calTypeStr = "single";    break;
-            case CalibrationType::EC_DRY:             calTypeStr = "dry";       break;
-            case CalibrationType::EC_SINGLE:          calTypeStr = "single";    break;
-            case CalibrationType::EC_TWO_LOW:         calTypeStr = "two-low";   break;
-            case CalibrationType::EC_TWO_HIGH:        calTypeStr = "two-high";  break;
-            default:                                  calTypeStr = "unknown";   break;
+            case CalibrationType::TEMPERATURE_SINGLE: calTypeStr = "single";       break;
+            case CalibrationType::EC_DRY:             calTypeStr = "dry";          break;
+            case CalibrationType::EC_SINGLE:          calTypeStr = "single";       break;
+            case CalibrationType::EC_TWO_LOW:         calTypeStr = "two-low";      break;
+            case CalibrationType::EC_TWO_HIGH:        calTypeStr = "two-high";     break;
+            case CalibrationType::PH_MID:             calTypeStr = "mid";          break;
+            case CalibrationType::PH_LOW:             calTypeStr = "low";          break;
+            case CalibrationType::PH_HIGH:            calTypeStr = "high";         break;
+            case CalibrationType::DO_ATMOSPHERIC:     calTypeStr = "atmospheric";  break;
+            case CalibrationType::DO_ZERO:            calTypeStr = "zero";         break;
+            default:                                  calTypeStr = "unknown";      break;
         }
         // Sensor type strings must match what getSensorMetadata() expects
-        String sensorType = (_state.sensorType == "temperature") ? "Temperature" : "Conductivity";
+        String sensorType;
+        if (_state.sensorType == "temperature") sensorType = "Temperature";
+        else if (_state.sensorType == "conductivity") sensorType = "Conductivity";
+        else if (_state.sensorType == "ph") sensorType = "pH";
+        else if (_state.sensorType == "dissolved_oxygen") sensorType = "Dissolved Oxygen";
+        else sensorType = _state.sensorType;
         updateSensorCalibration(sensorType, calTypeStr, _state.referenceValue, "");
     }
 

@@ -13,6 +13,8 @@
 #include <Arduino.h>
 #include "../sensors/EZO_RTD.h"
 #include "../sensors/EZO_EC.h"
+#include "../sensors/EZO_pH.h"
+#include "../sensors/EZO_DO.h"
 
 /**
  * Calibration status
@@ -35,7 +37,12 @@ enum class CalibrationType {
     EC_DRY,                 // EZO-EC dry calibration
     EC_SINGLE,              // EZO-EC single point
     EC_TWO_LOW,             // EZO-EC two-point low
-    EC_TWO_HIGH             // EZO-EC two-point high
+    EC_TWO_HIGH,            // EZO-EC two-point high
+    PH_MID,                 // EZO-pH mid point (pH 7.00)
+    PH_LOW,                 // EZO-pH low point (pH 4.00)
+    PH_HIGH,                // EZO-pH high point (pH 10.00)
+    DO_ATMOSPHERIC,         // EZO-DO atmospheric (100% air saturation)
+    DO_ZERO                 // EZO-DO zero (0 mg/L)
 };
 
 /**
@@ -44,7 +51,7 @@ enum class CalibrationType {
 struct CalibrationState {
     CalibrationStatus status;
     CalibrationType type;
-    String sensorType;          // "temperature" or "conductivity"
+    String sensorType;          // "temperature", "conductivity", "ph", or "dissolved_oxygen"
     float referenceValue;       // Expected value for calibration
     float currentReading;       // Current sensor reading
     unsigned long startTime;    // When calibration started
@@ -59,8 +66,10 @@ public:
      * Constructor
      * @param tempSensor Pointer to temperature sensor
      * @param ecSensor Pointer to conductivity sensor
+     * @param phSensor Pointer to pH sensor (nullptr if not present)
+     * @param doSensor Pointer to DO sensor (nullptr if not present)
      */
-    CalibrationManager(EZO_RTD* tempSensor, EZO_EC* ecSensor);
+    CalibrationManager(EZO_RTD* tempSensor, EZO_EC* ecSensor, EZO_pH* phSensor = nullptr, EZO_DO* doSensor = nullptr);
 
     /**
      * Start calibration procedure
@@ -105,6 +114,8 @@ public:
 private:
     EZO_RTD* _tempSensor;
     EZO_EC* _ecSensor;
+    EZO_pH* _phSensor;
+    EZO_DO* _doSensor;
     CalibrationState _state;
 
     // Stability detection

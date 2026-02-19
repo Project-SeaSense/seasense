@@ -5,6 +5,8 @@
 #include "WebServer.h"
 #include "../sensors/EZO_RTD.h"
 #include "../sensors/EZO_EC.h"
+#include "../sensors/EZO_pH.h"
+#include "../sensors/EZO_DO.h"
 #include "../config/ConfigManager.h"
 #include "../../config/hardware_config.h"
 #include "../../config/secrets.h"
@@ -21,9 +23,11 @@
 // Constructor / Destructor
 // ============================================================================
 
-SeaSenseWebServer::SeaSenseWebServer(EZO_RTD* tempSensor, EZO_EC* ecSensor, StorageManager* storage, CalibrationManager* calibration, PumpController* pumpController, ConfigManager* configManager)
+SeaSenseWebServer::SeaSenseWebServer(EZO_RTD* tempSensor, EZO_EC* ecSensor, StorageManager* storage, CalibrationManager* calibration, PumpController* pumpController, ConfigManager* configManager, EZO_pH* phSensor, EZO_DO* doSensor)
     : _tempSensor(tempSensor),
       _ecSensor(ecSensor),
+      _phSensor(phSensor),
+      _doSensor(doSensor),
       _storage(storage),
       _calibration(calibration),
       _pumpController(pumpController),
@@ -295,10 +299,10 @@ void SeaSenseWebServer::handleDashboard() {
         .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
         .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
         .hamburger:hover { color:var(--ac); background:var(--ag) }
-        .title { font-size:14px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:var(--ac) }
+        .title { font-size:14px; font-weight:600; letter-spacing:0.5px; color:var(--ac) }
         .sidebar { position:fixed; left:-260px; top:0; width:260px; height:100%; background:var(--bg); border-right:1px solid var(--bd); transition:left 0.3s ease; z-index:201; pointer-events:auto }
         .sidebar.open { left:0 }
-        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:700; color:var(--ac); font-size:11px; letter-spacing:4px; text-transform:uppercase; background:var(--bg) }
+        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:600; color:var(--ac); font-size:13px; letter-spacing:0.5px; background:var(--bg) }
         .sidebar-nav { list-style:none; padding:8px 0 }
         .sidebar-nav a { display:block; padding:12px 20px; color:var(--t2); text-decoration:none; font-size:14px; font-weight:500; transition:all 0.2s; border-left:2px solid transparent; border-bottom:1px solid rgba(26,39,68,0.5) }
         .sidebar-nav a:hover { color:var(--tx); background:rgba(34,211,238,0.05) }
@@ -314,6 +318,9 @@ void SeaSenseWebServer::handleDashboard() {
         .sensor-value { font-size:36px; font-weight:700; color:var(--tx); font-family:'SF Mono',ui-monospace,'Cascadia Code',Consolas,monospace; font-variant-numeric:tabular-nums; line-height:1.2; text-shadow:0 0 30px rgba(34,211,238,0.12) }
         .sensor-unit { font-size:14px; font-weight:400; color:var(--t2); margin-left:4px }
         .sensor-meta { margin-top:8px; font-size:11px; color:var(--t3) }
+        .sensor-card.offline { opacity:0.4 }
+        .sensor-card.offline::before { background:var(--t3) }
+        .sensor-offline-label { font-size:10px; color:var(--t3); margin-top:4px; font-style:italic }
         .section-title { font-size:11px; font-weight:600; color:var(--t3); text-transform:uppercase; letter-spacing:2px; margin:24px 0 12px; display:flex; align-items:center; gap:12px; padding-bottom:0; border-bottom:none }
         .section-title::after { content:''; flex:1; height:1px; background:var(--bd) }
         .env-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px }
@@ -346,7 +353,7 @@ void SeaSenseWebServer::handleDashboard() {
     <div class="overlay" id="overlay" onclick="closeMenu()"></div>
 
     <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">SEASENSE</div>
+        <div class="sidebar-header">Project SeaSense Data Logger</div>
         <ul class="sidebar-nav">
             <li><a href="/dashboard" class="active">Dashboard</a></li>
             <li><a href="/settings">Settings</a></li>
@@ -357,7 +364,7 @@ void SeaSenseWebServer::handleDashboard() {
 
     <div class="header">
         <button class="hamburger" onclick="toggleMenu()">&#9776;</button>
-        <div class="title">SEASENSE</div>
+        <div class="title">Project SeaSense Data Logger</div>
     </div>
 
     <div class="container">
@@ -519,6 +526,10 @@ void SeaSenseWebServer::handleDashboard() {
                                 valueFormatted = s.value.toFixed(3); // 3 decimals for temperature
                             } else if (s.type.toLowerCase().includes('salinity')) {
                                 valueFormatted = s.value.toFixed(2); // 2 decimals for salinity
+                            } else if (s.type.toLowerCase().includes('ph')) {
+                                valueFormatted = s.value.toFixed(3); // 3 decimals for pH
+                            } else if (s.type.toLowerCase().includes('oxygen')) {
+                                valueFormatted = s.value.toFixed(2); // 2 decimals for DO
                             } else {
                                 valueFormatted = s.value.toFixed(0); // No decimals for conductivity
                             }
@@ -533,6 +544,22 @@ void SeaSenseWebServer::handleDashboard() {
                         });
                     } else {
                         html = '<div class="status-msg">No sensor data available</div>';
+                    }
+                    // Placeholder cards for sensors not yet connected
+                    let types = (data.sensors||[]).map(s => s.type.toLowerCase());
+                    if (!types.some(t => t.includes('ph'))) {
+                        html += `<div class="sensor-card offline">
+                            <div class="sensor-name">pH</div>
+                            <div class="sensor-value">&mdash;<span class="sensor-unit"></span></div>
+                            <div class="sensor-offline-label">Sensor not connected</div>
+                        </div>`;
+                    }
+                    if (!types.some(t => t.includes('oxygen'))) {
+                        html += `<div class="sensor-card offline">
+                            <div class="sensor-name">Dissolved Oxygen</div>
+                            <div class="sensor-value">&mdash;<span class="sensor-unit"></span></div>
+                            <div class="sensor-offline-label">Sensor not connected</div>
+                        </div>`;
                     }
                     document.getElementById('sensors').innerHTML = html;
                 })
@@ -615,10 +642,10 @@ void SeaSenseWebServer::handleCalibrate() {
         .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
         .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
         .hamburger:hover { color:var(--ac); background:var(--ag) }
-        .title { font-size:14px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:var(--ac) }
+        .title { font-size:14px; font-weight:600; letter-spacing:0.5px; color:var(--ac) }
         .sidebar { position:fixed; left:-260px; top:0; width:260px; height:100%; background:var(--bg); border-right:1px solid var(--bd); transition:left 0.3s ease; z-index:201; pointer-events:auto }
         .sidebar.open { left:0 }
-        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:700; color:var(--ac); font-size:11px; letter-spacing:4px; text-transform:uppercase; background:var(--bg) }
+        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:600; color:var(--ac); font-size:13px; letter-spacing:0.5px; background:var(--bg) }
         .sidebar-nav { list-style:none; padding:8px 0 }
         .sidebar-nav a { display:block; padding:12px 20px; color:var(--t2); text-decoration:none; font-size:14px; font-weight:500; transition:all 0.2s; border-left:2px solid transparent; border-bottom:1px solid rgba(26,39,68,0.5) }
         .sidebar-nav a:hover { color:var(--tx); background:rgba(34,211,238,0.05) }
@@ -655,13 +682,16 @@ void SeaSenseWebServer::handleCalibrate() {
         .status-current { display:inline-block; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600; margin-left:10px; letter-spacing:0.5px }
         .status-calibrated { background:rgba(52,211,153,0.15); color:var(--ok); border:1px solid rgba(52,211,153,0.3) }
         .status-not-calibrated { background:rgba(248,113,113,0.15); color:var(--er); border:1px solid rgba(248,113,113,0.3) }
+        .status-offline { background:rgba(71,85,105,0.2); color:var(--t3); border:1px solid rgba(71,85,105,0.3) }
+        .cal-card.offline { opacity:0.4; pointer-events:none }
+        .cal-card.offline::before { background:var(--t3) }
     </style>
 </head>
 <body>
     <div class="overlay" id="overlay" onclick="closeMenu()"></div>
 
     <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">SEASENSE</div>
+        <div class="sidebar-header">Project SeaSense Data Logger</div>
         <ul class="sidebar-nav">
             <li><a href="/dashboard">Dashboard</a></li>
             <li><a href="/settings">Settings</a></li>
@@ -672,7 +702,7 @@ void SeaSenseWebServer::handleCalibrate() {
 
     <div class="header">
         <button class="hamburger" onclick="toggleMenu()">&#9776;</button>
-        <div class="title">SEASENSE</div>
+        <div class="title">Project SeaSense Data Logger</div>
     </div>
 
     <div class="container">
@@ -751,6 +781,73 @@ void SeaSenseWebServer::handleCalibrate() {
                 <button class="btn btn-primary" onclick="calibrateEC()">Calibrate</button>
             </div>
         </div>
+
+        <!-- pH Calibration -->
+        <div class="cal-card" id="phCard">
+            <div class="cal-header">pH Sensor <span class="status-current status-offline" id="phStatus">Not Connected</span></div>
+            <div class="cal-info">
+                <strong>EZO-pH Sensor</strong><br>
+                Up to 3-point calibration per Atlas Scientific specs. Always start with mid-point (pH 7.00). Add low (pH 4.00) and high (pH 10.00) for best accuracy. Rinse probe between solutions.
+            </div>
+
+            <div class="cal-section">
+                <div class="cal-section-title">Current Reading</div>
+                <div style="font-size:24px; font-weight:700; color:var(--ac); margin:10px 0; font-family:'SF Mono',ui-monospace,Consolas,monospace;">
+                    <span id="phReading">--</span> pH
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Calibration Type</label>
+                <select id="phCalType">
+                    <option value="mid">Mid Point (pH 7.00)</option>
+                    <option value="low">Low Point (pH 4.00)</option>
+                    <option value="high">High Point (pH 10.00)</option>
+                </select>
+                <small>Start with mid point. Then add low and/or high for 2 or 3-point calibration.</small>
+            </div>
+
+            <div class="form-group" id="phValueGroup">
+                <label>Reference pH Value</label>
+                <input type="number" id="phValue" step="0.01" placeholder="e.g. 7.00">
+                <small>Enter the exact pH of your buffer solution</small>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-secondary" onclick="readPH()">Read Sensor</button>
+                <button class="btn btn-primary" onclick="calibratePH()">Calibrate</button>
+            </div>
+        </div>
+
+        <!-- Dissolved Oxygen Calibration -->
+        <div class="cal-card" id="doCard">
+            <div class="cal-header">Dissolved Oxygen Sensor <span class="status-current status-offline" id="doStatus">Not Connected</span></div>
+            <div class="cal-info">
+                <strong>EZO-DO Sensor</strong><br>
+                Atmospheric calibration: hold probe in air with dry membrane. Zero calibration (optional): submerge in sodium sulfite (Na&#8322;SO&#8323;) solution for 0 mg/L reference.
+            </div>
+
+            <div class="cal-section">
+                <div class="cal-section-title">Current Reading</div>
+                <div style="font-size:24px; font-weight:700; color:var(--ac); margin:10px 0; font-family:'SF Mono',ui-monospace,Consolas,monospace;">
+                    <span id="doReading">--</span> mg/L
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Calibration Type</label>
+                <select id="doCalType">
+                    <option value="atmospheric">Atmospheric (probe in air)</option>
+                    <option value="zero">Zero (0 mg/L solution)</option>
+                </select>
+                <small>Atmospheric calibration is usually sufficient. Zero calibration improves low-range accuracy.</small>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-secondary" onclick="readDO()">Read Sensor</button>
+                <button class="btn btn-primary" onclick="calibrateDO()">Calibrate</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -786,14 +883,45 @@ void SeaSenseWebServer::handleCalibrate() {
                 .then(r => r.json())
                 .then(data => {
                     if (!data.sensors) return;
+                    let phPresent = false, doPresent = false;
                     data.sensors.forEach(s => {
                         const t = s.type.toLowerCase();
                         if (t.includes('temperature')) {
                             document.getElementById('tempReading').textContent = s.value.toFixed(3);
                         } else if (t.includes('conductivity')) {
                             document.getElementById('ecReading').textContent = s.value.toFixed(0);
+                        } else if (t === 'ph') {
+                            document.getElementById('phReading').textContent = s.value.toFixed(3);
+                            phPresent = true;
+                        } else if (t.includes('oxygen')) {
+                            document.getElementById('doReading').textContent = s.value.toFixed(2);
+                            doPresent = true;
                         }
                     });
+                    // Update pH card status
+                    const phCard = document.getElementById('phCard');
+                    const phStatus = document.getElementById('phStatus');
+                    if (phPresent) {
+                        phCard.classList.remove('offline');
+                        phStatus.textContent = 'Connected';
+                        phStatus.className = 'status-current status-calibrated';
+                    } else {
+                        phCard.classList.add('offline');
+                        phStatus.textContent = 'Not Connected';
+                        phStatus.className = 'status-current status-offline';
+                    }
+                    // Update DO card status
+                    const doCard = document.getElementById('doCard');
+                    const doSt = document.getElementById('doStatus');
+                    if (doPresent) {
+                        doCard.classList.remove('offline');
+                        doSt.textContent = 'Connected';
+                        doSt.className = 'status-current status-calibrated';
+                    } else {
+                        doCard.classList.add('offline');
+                        doSt.textContent = 'Not Connected';
+                        doSt.className = 'status-current status-offline';
+                    }
                 })
                 .catch(() => {});
         }
@@ -814,6 +942,24 @@ void SeaSenseWebServer::handleCalibrate() {
                     document.getElementById('ecReading').textContent = data.value.toFixed(0);
                 })
                 .catch(err => showAlert('Error reading conductivity sensor', 'error'));
+        }
+
+        function readPH() {
+            fetch('/api/sensor/reading?type=ph')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('phReading').textContent = data.value.toFixed(3);
+                })
+                .catch(err => showAlert('Error reading pH sensor', 'error'));
+        }
+
+        function readDO() {
+            fetch('/api/sensor/reading?type=dissolved_oxygen')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('doReading').textContent = data.value.toFixed(2);
+                })
+                .catch(err => showAlert('Error reading DO sensor', 'error'));
         }
 
         updateReadings();
@@ -883,6 +1029,52 @@ void SeaSenseWebServer::handleCalibrate() {
             .catch(err => showAlert('Error during calibration', 'error'));
         }
 
+        function calibratePH() {
+            const type = document.getElementById('phCalType').value;
+            const value = parseFloat(document.getElementById('phValue').value);
+
+            if (!value && value !== 0) {
+                showAlert('Please enter a reference pH value', 'error');
+                return;
+            }
+
+            fetch('/api/calibrate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ sensor: 'ph', type: type, value: value })
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (result.success) {
+                    showAlert('pH calibration (' + type + ') successful!', 'success');
+                    setTimeout(readPH, 1000);
+                } else {
+                    showAlert('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
+                }
+            })
+            .catch(err => showAlert('Error during pH calibration', 'error'));
+        }
+
+        function calibrateDO() {
+            const type = document.getElementById('doCalType').value;
+
+            fetch('/api/calibrate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ sensor: 'dissolved_oxygen', type: type, value: 0 })
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (result.success) {
+                    showAlert('DO calibration (' + type + ') successful!', 'success');
+                    setTimeout(readDO, 1000);
+                } else {
+                    showAlert('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
+                }
+            })
+            .catch(err => showAlert('Error during DO calibration', 'error'));
+        }
+
         // Toggle value input visibility based on calibration type
         document.getElementById('tempCalType').addEventListener('change', function() {
             document.getElementById('tempValueGroup').style.display = this.value === 'clear' ? 'none' : 'block';
@@ -891,6 +1083,14 @@ void SeaSenseWebServer::handleCalibrate() {
         document.getElementById('ecCalType').addEventListener('change', function() {
             document.getElementById('ecValueGroup').style.display = (this.value === 'clear' || this.value === 'dry') ? 'none' : 'block';
         });
+
+        // Pre-fill pH reference value based on selected calibration type
+        document.getElementById('phCalType').addEventListener('change', function() {
+            const defaults = { mid: '7.00', low: '4.00', high: '10.00' };
+            document.getElementById('phValue').value = defaults[this.value] || '';
+        });
+        // Set initial default
+        document.getElementById('phValue').value = '7.00';
 
         // Initial read
         readTemp();
@@ -919,10 +1119,10 @@ void SeaSenseWebServer::handleData() {
         .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
         .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
         .hamburger:hover { color:var(--ac); background:var(--ag) }
-        .title { font-size:14px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:var(--ac) }
+        .title { font-size:14px; font-weight:600; letter-spacing:0.5px; color:var(--ac) }
         .sidebar { position:fixed; left:-260px; top:0; width:260px; height:100%; background:var(--bg); border-right:1px solid var(--bd); transition:left 0.3s ease; z-index:201; pointer-events:auto }
         .sidebar.open { left:0 }
-        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:700; color:var(--ac); font-size:11px; letter-spacing:4px; text-transform:uppercase; background:var(--bg) }
+        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:600; color:var(--ac); font-size:13px; letter-spacing:0.5px; background:var(--bg) }
         .sidebar-nav { list-style:none; padding:8px 0 }
         .sidebar-nav a { display:block; padding:12px 20px; color:var(--t2); text-decoration:none; font-size:14px; font-weight:500; transition:all 0.2s; border-left:2px solid transparent; border-bottom:1px solid rgba(26,39,68,0.5) }
         .sidebar-nav a:hover { color:var(--tx); background:rgba(34,211,238,0.05) }
@@ -981,7 +1181,7 @@ void SeaSenseWebServer::handleData() {
 <body>
     <div class="overlay" id="overlay" onclick="closeMenu()"></div>
     <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">SEASENSE</div>
+        <div class="sidebar-header">Project SeaSense Data Logger</div>
         <ul class="sidebar-nav">
             <li><a href="/dashboard">Dashboard</a></li>
             <li><a href="/settings">Settings</a></li>
@@ -991,7 +1191,7 @@ void SeaSenseWebServer::handleData() {
     </div>
     <div class="header">
         <button class="hamburger" onclick="toggleMenu()">&#9776;</button>
-        <div class="title">SEASENSE</div>
+        <div class="title">Project SeaSense Data Logger</div>
     </div>
 
     <div class="container">
@@ -1272,10 +1472,10 @@ void SeaSenseWebServer::handleSettings() {
         .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
         .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
         .hamburger:hover { color:var(--ac); background:var(--ag) }
-        .title { font-size:14px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:var(--ac) }
+        .title { font-size:14px; font-weight:600; letter-spacing:0.5px; color:var(--ac) }
         .sidebar { position:fixed; left:-260px; top:0; width:260px; height:100%; background:var(--bg); border-right:1px solid var(--bd); transition:left 0.3s ease; z-index:201; pointer-events:auto }
         .sidebar.open { left:0 }
-        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:700; color:var(--ac); font-size:11px; letter-spacing:4px; text-transform:uppercase; background:var(--bg) }
+        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:600; color:var(--ac); font-size:13px; letter-spacing:0.5px; background:var(--bg) }
         .sidebar-nav { list-style:none; padding:8px 0 }
         .sidebar-nav a { display:block; padding:12px 20px; color:var(--t2); text-decoration:none; font-size:14px; font-weight:500; transition:all 0.2s; border-left:2px solid transparent; border-bottom:1px solid rgba(26,39,68,0.5) }
         .sidebar-nav a:hover { color:var(--tx); background:rgba(34,211,238,0.05) }
@@ -1315,7 +1515,7 @@ void SeaSenseWebServer::handleSettings() {
     <div class="overlay" id="overlay" onclick="closeMenu()"></div>
 
     <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">SEASENSE</div>
+        <div class="sidebar-header">Project SeaSense Data Logger</div>
         <ul class="sidebar-nav">
             <li><a href="/dashboard">Dashboard</a></li>
             <li><a href="/settings" class="active">Settings</a></li>
@@ -1326,7 +1526,7 @@ void SeaSenseWebServer::handleSettings() {
 
     <div class="header">
         <button class="hamburger" onclick="toggleMenu()">&#9776;</button>
-        <div class="title">SEASENSE</div>
+        <div class="title">Project SeaSense Data Logger</div>
     </div>
 
     <div id="toast" class="toast"></div>
@@ -1709,8 +1909,12 @@ void SeaSenseWebServer::handleApiSensorReading() {
         sendJSON(sensorToJSON(_tempSensor));
     } else if (sensorType == "conductivity" && _ecSensor) {
         sendJSON(sensorToJSON(_ecSensor));
+    } else if (sensorType == "ph" && _phSensor && _phSensor->isEnabled()) {
+        sendJSON(sensorToJSON(_phSensor));
+    } else if (sensorType == "dissolved_oxygen" && _doSensor && _doSensor->isEnabled()) {
+        sendJSON(sensorToJSON(_doSensor));
     } else {
-        sendError("Unknown sensor type");
+        sendError("Unknown or unavailable sensor type");
     }
 }
 
@@ -1728,27 +1932,45 @@ void SeaSenseWebServer::handleApiSensorRead() {
         return;
     }
 
-    // Force read both sensors
+    // Force read all sensors
     bool tempSuccess = false;
     bool ecSuccess = false;
+    bool phSuccess = false;
+    bool doSuccess = false;
 
     if (_tempSensor && _tempSensor->isEnabled()) {
         tempSuccess = _tempSensor->read();
 
-        // Set temperature compensation for EC sensor
+        // Set temperature compensation for other sensors
         if (tempSuccess) {
             SensorData tempData = _tempSensor->getData();
-            _ecSensor->setTemperatureCompensation(tempData.value);
+            if (_ecSensor) _ecSensor->setTemperatureCompensation(tempData.value);
+            if (_phSensor && _phSensor->isEnabled()) _phSensor->setTemperatureCompensation(tempData.value);
+            if (_doSensor && _doSensor->isEnabled()) _doSensor->setTemperatureCompensation(tempData.value);
         }
     }
 
     if (_ecSensor && _ecSensor->isEnabled()) {
         ecSuccess = _ecSensor->read();
+        if (ecSuccess && _doSensor && _doSensor->isEnabled()) {
+            _doSensor->setSalinityCompensation(_ecSensor->getSalinity());
+        }
+    }
+
+    if (_phSensor && _phSensor->isEnabled()) {
+        phSuccess = _phSensor->read();
+    }
+
+    if (_doSensor && _doSensor->isEnabled()) {
+        doSuccess = _doSensor->read();
     }
 
     xSemaphoreGive(g_i2cMutex);
 
-    sendJSON("{\"success\":true,\"temperature\":" + String(tempSuccess ? "true" : "false") + ",\"conductivity\":" + String(ecSuccess ? "true" : "false") + "}");
+    sendJSON("{\"success\":true,\"temperature\":" + String(tempSuccess ? "true" : "false") +
+             ",\"conductivity\":" + String(ecSuccess ? "true" : "false") +
+             ",\"ph\":" + String(phSuccess ? "true" : "false") +
+             ",\"dissolved_oxygen\":" + String(doSuccess ? "true" : "false") + "}");
 }
 
 void SeaSenseWebServer::handleApiCalibrate() {
@@ -1791,6 +2013,20 @@ void SeaSenseWebServer::handleApiCalibrate() {
             calibrationType = CalibrationType::EC_TWO_LOW;
         } else if (calType == "two-high") {
             calibrationType = CalibrationType::EC_TWO_HIGH;
+        }
+    } else if (sensorType == "ph") {
+        if (calType == "mid") {
+            calibrationType = CalibrationType::PH_MID;
+        } else if (calType == "low") {
+            calibrationType = CalibrationType::PH_LOW;
+        } else if (calType == "high") {
+            calibrationType = CalibrationType::PH_HIGH;
+        }
+    } else if (sensorType == "dissolved_oxygen") {
+        if (calType == "atmospheric") {
+            calibrationType = CalibrationType::DO_ATMOSPHERIC;
+        } else if (calType == "zero") {
+            calibrationType = CalibrationType::DO_ZERO;
         }
     }
 
@@ -2560,6 +2796,26 @@ String SeaSenseWebServer::allSensorsToJSON() {
         salinityObj["value"] = salinity;
         salinityObj["unit"] = "PSU";
         salinityObj["quality"] = sensorQualityToString(data.quality);
+    }
+
+    if (_phSensor && _phSensor->isEnabled()) {
+        SensorData data = _phSensor->getData();
+        JsonObject sensor = sensors.add<JsonObject>();
+        sensor["type"] = data.sensorType;
+        sensor["model"] = data.sensorModel;
+        sensor["value"] = data.value;
+        sensor["unit"] = data.unit;
+        sensor["quality"] = sensorQualityToString(data.quality);
+    }
+
+    if (_doSensor && _doSensor->isEnabled()) {
+        SensorData data = _doSensor->getData();
+        JsonObject sensor = sensors.add<JsonObject>();
+        sensor["type"] = data.sensorType;
+        sensor["model"] = data.sensorModel;
+        sensor["value"] = data.value;
+        sensor["unit"] = data.unit;
+        sensor["quality"] = sensorQualityToString(data.quality);
     }
 
     String json;

@@ -89,13 +89,13 @@ StorageManager storage(SPIFFS_CIRCULAR_BUFFER_SIZE, SD_CS_PIN);
 ConfigManager configManager;
 
 // Calibration
-CalibrationManager calibration(&tempSensor, &ecSensor);
+CalibrationManager calibration(&tempSensor, &ecSensor, &phSensor, &doSensor);
 
 // Pump controller
 PumpController pumpController(&tempSensor, &ecSensor);
 
 // Web server
-SeaSenseWebServer webServer(&tempSensor, &ecSensor, &storage, &calibration, &pumpController, &configManager);
+SeaSenseWebServer webServer(&tempSensor, &ecSensor, &storage, &calibration, &pumpController, &configManager, &phSensor, &doSensor);
 
 // API Uploader
 APIUploader apiUploader(&storage);

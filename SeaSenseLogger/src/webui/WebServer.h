@@ -22,6 +22,8 @@
 // Forward declarations
 class EZO_RTD;
 class EZO_EC;
+class EZO_pH;
+class EZO_DO;
 class ConfigManager;
 
 class SeaSenseWebServer {
@@ -34,7 +36,7 @@ public:
      * @param calibration Pointer to calibration manager
      * @param pumpController Pointer to pump controller
      */
-    SeaSenseWebServer(EZO_RTD* tempSensor, EZO_EC* ecSensor, StorageManager* storage, CalibrationManager* calibration, PumpController* pumpController = nullptr, ConfigManager* configManager = nullptr);
+    SeaSenseWebServer(EZO_RTD* tempSensor, EZO_EC* ecSensor, StorageManager* storage, CalibrationManager* calibration, PumpController* pumpController = nullptr, ConfigManager* configManager = nullptr, EZO_pH* phSensor = nullptr, EZO_DO* doSensor = nullptr);
 
     ~SeaSenseWebServer();
 
@@ -84,6 +86,8 @@ private:
     // Sensors
     EZO_RTD* _tempSensor;
     EZO_EC* _ecSensor;
+    EZO_pH* _phSensor;
+    EZO_DO* _doSensor;
 
     // Storage
     StorageManager* _storage;
