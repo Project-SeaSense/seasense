@@ -127,7 +127,7 @@ bool SeaSenseWebServer::isWiFiConnected() const {
 
 String SeaSenseWebServer::getWiFiStatus() const {
     if (isWiFiConnected()) {
-        return "Connected to " + String(WIFI_STATION_SSID);
+        return "Connected to " + WiFi.SSID();
     }
     return "AP Mode Only";
 }
@@ -154,7 +154,15 @@ bool SeaSenseWebServer::startAP() {
     WiFi.mode(WIFI_AP_STA);  // AP + Station mode
     WiFi.softAPConfig(_apIP, _apIP, IPAddress(255, 255, 255, 0));
 
-    if (!WiFi.softAP(_apSSID.c_str(), WIFI_AP_PASSWORD, WIFI_AP_CHANNEL, 0, WIFI_AP_MAX_CONNECTIONS)) {
+    // Use saved AP password from ConfigManager, fall back to compile-time default
+    const char* apPass = WIFI_AP_PASSWORD;
+    String savedApPass;
+    if (_configManager) {
+        savedApPass = _configManager->getWiFiConfig().apPassword;
+        if (savedApPass.length() > 0) apPass = savedApPass.c_str();
+    }
+
+    if (!WiFi.softAP(_apSSID.c_str(), apPass, WIFI_AP_CHANNEL, 0, WIFI_AP_MAX_CONNECTIONS)) {
         return false;
     }
 
@@ -171,8 +179,19 @@ bool SeaSenseWebServer::startAP() {
 }
 
 bool SeaSenseWebServer::startStation() {
-    // Check if WiFi credentials are configured
-    String ssid = String(WIFI_STATION_SSID);
+    // Read WiFi credentials from ConfigManager (saved via web UI),
+    // fall back to compile-time defaults from secrets.h
+    String ssid, password;
+    if (_configManager) {
+        ConfigManager::WiFiConfig wc = _configManager->getWiFiConfig();
+        ssid = wc.stationSSID;
+        password = wc.stationPassword;
+    }
+    if (ssid.length() == 0) {
+        ssid = WIFI_STATION_SSID;
+        password = WIFI_STATION_PASSWORD;
+    }
+
     if (ssid.length() == 0) {
         DEBUG_WIFI_PRINTLN("No WiFi credentials configured");
         return false;
@@ -183,7 +202,7 @@ bool SeaSenseWebServer::startStation() {
     DEBUG_WIFI_PRINTLN(ssid);
 
     WiFi.setHostname(_apSSID.c_str());
-    WiFi.begin(WIFI_STATION_SSID, WIFI_STATION_PASSWORD);
+    WiFi.begin(ssid.c_str(), password.c_str());
 
     unsigned long startTime = millis();
     while (WiFi.status() != WL_CONNECTED &&
@@ -206,8 +225,17 @@ bool SeaSenseWebServer::startStation() {
 }
 
 void SeaSenseWebServer::checkWiFiReconnect() {
-    // Only attempt if station credentials are configured
-    String ssid = String(WIFI_STATION_SSID);
+    // Read credentials from ConfigManager, fall back to compile-time defaults
+    String ssid, password;
+    if (_configManager) {
+        ConfigManager::WiFiConfig wc = _configManager->getWiFiConfig();
+        ssid = wc.stationSSID;
+        password = wc.stationPassword;
+    }
+    if (ssid.length() == 0) {
+        ssid = WIFI_STATION_SSID;
+        password = WIFI_STATION_PASSWORD;
+    }
     if (ssid.length() == 0) return;
 
     // Already connected — update state if needed
@@ -228,7 +256,7 @@ void SeaSenseWebServer::checkWiFiReconnect() {
     _stationConnected = false;
     Serial.println("[WIFI] Station disconnected, attempting reconnection...");
     WiFi.disconnect();
-    WiFi.begin(WIFI_STATION_SSID, WIFI_STATION_PASSWORD);
+    WiFi.begin(ssid.c_str(), password.c_str());
     // Non-blocking on ESP32 AP+STA mode — status checked next iteration
 }
 
@@ -263,7 +291,7 @@ void SeaSenseWebServer::handleDashboard() {
         :root { --bg:#060a13; --sf:#0c1221; --cd:#111a2e; --bd:#1a2744; --b2:#243352; --ac:#22d3ee; --a2:#2dd4bf; --ag:rgba(34,211,238,0.12); --tx:#e2e8f0; --t2:#94a3b8; --t3:#475569; --ok:#34d399; --wn:#fbbf24; --er:#f87171 }
         * { margin:0; padding:0; box-sizing:border-box }
         body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--sf); color:var(--tx); -webkit-font-smoothing:antialiased; min-height:100vh }
-        .header { background:var(--bg); padding:0 16px; height:52px; display:flex; align-items:center; border-bottom:1px solid var(--bd); position:sticky; top:0; z-index:100; box-shadow:0 4px 24px rgba(0,0,0,0.3); position:relative }
+        .header { background:var(--bg); padding:0 16px; height:52px; display:flex; align-items:center; border-bottom:1px solid var(--bd); position:sticky; top:0; z-index:100; box-shadow:0 4px 24px rgba(0,0,0,0.3) }
         .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
         .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
         .hamburger:hover { color:var(--ac); background:var(--ag) }
@@ -583,7 +611,7 @@ void SeaSenseWebServer::handleCalibrate() {
         :root { --bg:#060a13; --sf:#0c1221; --cd:#111a2e; --bd:#1a2744; --b2:#243352; --ac:#22d3ee; --a2:#2dd4bf; --ag:rgba(34,211,238,0.12); --tx:#e2e8f0; --t2:#94a3b8; --t3:#475569; --ok:#34d399; --wn:#fbbf24; --er:#f87171 }
         * { margin:0; padding:0; box-sizing:border-box }
         body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--sf); color:var(--tx); -webkit-font-smoothing:antialiased; min-height:100vh }
-        .header { background:var(--bg); padding:0 16px; height:52px; display:flex; align-items:center; border-bottom:1px solid var(--bd); position:sticky; top:0; z-index:100; box-shadow:0 4px 24px rgba(0,0,0,0.3); position:relative }
+        .header { background:var(--bg); padding:0 16px; height:52px; display:flex; align-items:center; border-bottom:1px solid var(--bd); position:sticky; top:0; z-index:100; box-shadow:0 4px 24px rgba(0,0,0,0.3) }
         .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
         .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
         .hamburger:hover { color:var(--ac); background:var(--ag) }
@@ -887,7 +915,7 @@ void SeaSenseWebServer::handleData() {
         :root { --bg:#060a13; --sf:#0c1221; --cd:#111a2e; --bd:#1a2744; --b2:#243352; --ac:#22d3ee; --a2:#2dd4bf; --ag:rgba(34,211,238,0.12); --tx:#e2e8f0; --t2:#94a3b8; --t3:#475569; --ok:#34d399; --wn:#fbbf24; --er:#f87171 }
         * { margin:0; padding:0; box-sizing:border-box }
         body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--sf); color:var(--tx); -webkit-font-smoothing:antialiased; min-height:100vh }
-        .header { background:var(--bg); padding:0 16px; height:52px; display:flex; align-items:center; border-bottom:1px solid var(--bd); position:sticky; top:0; z-index:100; box-shadow:0 4px 24px rgba(0,0,0,0.3); position:relative }
+        .header { background:var(--bg); padding:0 16px; height:52px; display:flex; align-items:center; border-bottom:1px solid var(--bd); position:sticky; top:0; z-index:100; box-shadow:0 4px 24px rgba(0,0,0,0.3) }
         .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
         .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
         .hamburger:hover { color:var(--ac); background:var(--ag) }
@@ -1231,13 +1259,13 @@ void SeaSenseWebServer::handleSettings() {
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Settings - SeaSense Logger</title>
+    <title>Settings - Project SeaSense</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         :root { --bg:#060a13; --sf:#0c1221; --cd:#111a2e; --bd:#1a2744; --b2:#243352; --ac:#22d3ee; --a2:#2dd4bf; --ag:rgba(34,211,238,0.12); --tx:#e2e8f0; --t2:#94a3b8; --t3:#475569; --ok:#34d399; --wn:#fbbf24; --er:#f87171 }
         * { margin:0; padding:0; box-sizing:border-box }
         body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--sf); color:var(--tx); -webkit-font-smoothing:antialiased; min-height:100vh }
-        .header { background:var(--bg); padding:0 16px; height:52px; display:flex; align-items:center; border-bottom:1px solid var(--bd); position:sticky; top:0; z-index:100; box-shadow:0 4px 24px rgba(0,0,0,0.3); position:relative }
+        .header { background:var(--bg); padding:0 16px; height:52px; display:flex; align-items:center; border-bottom:1px solid var(--bd); position:sticky; top:0; z-index:100; box-shadow:0 4px 24px rgba(0,0,0,0.3) }
         .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
         .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
         .hamburger:hover { color:var(--ac); background:var(--ag) }
