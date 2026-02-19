@@ -33,6 +33,17 @@ enum class UploadStatus {
 };
 
 /**
+ * Single upload attempt record (stored in circular history buffer)
+ */
+struct UploadRecord {
+    unsigned long startMs;      // millis() when upload attempt began
+    unsigned long durationMs;   // how long the attempt took
+    bool success;
+    uint32_t recordCount;       // sensor records in the batch
+    size_t payloadBytes;        // wire bytes sent (compressed if applicable; 0 on pre-send failure)
+};
+
+/**
  * Upload configuration
  */
 struct UploadConfig {
@@ -116,6 +127,23 @@ public:
      */
     void forceUpload();
 
+    /**
+     * Get upload history (most-recent-first order)
+     * @param count Set to number of valid entries returned
+     * @return Pointer to history array (oldest→newest internally; caller iterates count-1 down to 0 for newest-first)
+     */
+    const UploadRecord* getUploadHistory(uint8_t& count) const;
+
+    /** Index of the most-recently-written history slot + 1 (i.e., next write position) */
+    uint8_t getHistoryHead() const { return _historyHead; }
+
+    static const uint8_t UPLOAD_HISTORY_SIZE = 10;
+
+    /**
+     * Get total bytes sent this session (resets on reboot)
+     */
+    unsigned long getTotalBytesSent() const { return _totalBytesSent; }
+
 private:
     StorageManager* _storage;
     UploadConfig _config;
@@ -127,6 +155,13 @@ private:
     uint8_t _retryCount;
     bool _timeSynced;
     time_t _bootTimeEpoch;  // Epoch time when ESP32 booted
+
+    // Upload history
+    UploadRecord _uploadHistory[UPLOAD_HISTORY_SIZE];
+    uint8_t _historyCount;      // valid entries (0..10)
+    uint8_t _historyHead;       // index where next entry will be written
+    unsigned long _totalBytesSent;  // session total wire bytes
+    size_t _lastPayloadBytes;   // set by uploadPayload(), consumed by process()
 
     /**
      * Check if WiFi is connected

@@ -181,6 +181,12 @@ public:
      */
     bool stampDeployDate(const String& utcTimestamp);
 
+    /**
+     * Generate a brand-new device GUID, persist it, and return it.
+     * Call this when the user requests a fresh GUID via the web UI.
+     */
+    String regenerateDeviceGUID();
+
 private:
     static const char* CONFIG_FILE;  // "/settings.json"
 
@@ -213,6 +219,17 @@ private:
      * Clamp all config values to safe operating bounds
      */
     void clampConfig();
+
+    /**
+     * Generate a UUID v4 with "seasense-" prefix using ESP32 hardware RNG
+     */
+    String generateDeviceGUID();
+
+    /**
+     * Ensure device GUID is set; generates one if empty or a known placeholder.
+     * @return true if a new GUID was generated (caller should save)
+     */
+    bool ensureDeviceGUID();
 };
 
 #endif // CONFIG_MANAGER_H

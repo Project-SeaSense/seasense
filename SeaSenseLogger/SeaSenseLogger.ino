@@ -55,6 +55,9 @@
 // API Upload
 #include "src/api/APIUploader.h"
 
+// Pump Controller
+#include "src/pump/PumpController.h"
+
 // Serial Commands
 #include "src/commands/SerialCommands.h"
 
@@ -88,14 +91,17 @@ ConfigManager configManager;
 // Calibration
 CalibrationManager calibration(&tempSensor, &ecSensor);
 
+// Pump controller
+PumpController pumpController(&tempSensor, &ecSensor);
+
 // Web server
-SeaSenseWebServer webServer(&tempSensor, &ecSensor, &storage, &calibration, nullptr, &configManager);
+SeaSenseWebServer webServer(&tempSensor, &ecSensor, &storage, &calibration, &pumpController, &configManager);
 
 // API Uploader
 APIUploader apiUploader(&storage);
 
 // Serial Commands
-SerialCommands serialCommands(&tempSensor, &ecSensor, &gps, &storage, &apiUploader, &webServer, nullptr);
+SerialCommands serialCommands(&tempSensor, &ecSensor, &gps, &storage, &apiUploader, &webServer, &pumpController);
 
 // System Health
 SystemHealth systemHealth;
@@ -106,6 +112,15 @@ bool configLoaded = false;
 
 // Runtime sampling interval (from ConfigManager)
 unsigned long sensorSamplingIntervalMs = 900000;  // Default 15 minutes
+
+// Continuous measurement mode (toggled via web UI; pump never runs in this mode)
+bool continuousMeasurementMode = false;
+
+// Next scheduled sensor read timestamp; starts at 0 so first read fires immediately
+unsigned long nextSensorReadAt = 0;
+
+// Saved normal-mode schedule — restored when exiting continuous mode
+unsigned long savedNextSensorReadAt = 0;
 
 // Runtime GPS source selection (from ConfigManager)
 bool useNMEA2000GPS = false;  // false = onboard GPS, true = NMEA2000 network
@@ -331,6 +346,24 @@ String activeGPSGetTimeUTC() {
     return gps.getTimeUTC();
 }
 
+// Best available UTC timestamp: GPS first, then NTP, then empty
+String getSystemTimeUTC() {
+    String gpsTime = activeGPSGetTimeUTC();
+    if (gpsTime.length() > 0) return gpsTime;
+
+    // NTP-synced system clock (available after WiFi connects and APIUploader syncs)
+    time_t now = time(nullptr);
+    if (now > 1000000000UL) {
+        struct tm timeinfo;
+        gmtime_r(&now, &timeinfo);
+        char buf[25];
+        strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
+        return String(buf);
+    }
+
+    return "";
+}
+
 // ============================================================================
 // NMEA2000 message forward callback (bridges GPS handler → Environment handler)
 // ============================================================================
@@ -340,6 +373,19 @@ void n2kMsgForward(const tN2kMsg& msg) {
     n2kEnv.handleMsg(msg);
 }
 #endif
+
+// ============================================================================
+// Web Server Task (Core 0)
+// Runs independently so sensor/GPS/upload work on Core 1 never blocks the UI.
+// ============================================================================
+
+void webServerTask(void* pvParameters) {
+    for (;;) {
+        webServer.handleClient();
+        webServer.checkWiFiReconnect();
+        vTaskDelay(1);  // 1ms yield — ~1000 handle cycles/sec
+    }
+}
 
 // ============================================================================
 // Setup
@@ -358,23 +404,8 @@ void setup() {
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH);
 
-    // Initialize system health (watchdog, boot loop detection, error tracking)
-    // Must be early - before any subsystem that could hang
-    systemHealth.begin(WDT_TIMEOUT_MS, BOOT_LOOP_THRESHOLD, BOOT_LOOP_WINDOW_MS);
-
-    // In safe mode: only start WiFi AP + web server for diagnostics
-    if (systemHealth.isInSafeMode()) {
-        Serial.println("\n[SAFE MODE] Minimal boot - AP WiFi + web server only");
-        parseDeviceConfig();  // Best effort - needed for web UI
-        configManager.begin();
-        if (!webServer.begin()) {
-            Serial.println("[ERROR] Failed to start web server in safe mode!");
-        }
-        Serial.println("[SAFE MODE] Connect to SeaSense AP to diagnose");
-        Serial.println("[SAFE MODE] Device will attempt normal boot after power cycle");
-        digitalWrite(LED_PIN, LOW);
-        return;
-    }
+    // Initialize system health (watchdog + error tracking)
+    systemHealth.begin(WDT_TIMEOUT_MS, 255, BOOT_LOOP_WINDOW_MS);  // threshold=255 disables safe mode
 
     // Load device configuration
     Serial.println("\n[CONFIG] Loading device configuration...");
@@ -442,7 +473,8 @@ void setup() {
         Serial.print("[SENSORS] - Calibration: ");
         Serial.println(phSensor.getLastCalibrationDate());
     } else {
-        Serial.println("[ERROR] Failed to initialize EZO-pH sensor");
+        phSensor.setEnabled(false);  // Prevent blocking read attempts on missing sensor
+        Serial.println("[SENSORS] EZO-pH not detected - disabled");
     }
 
     if (doSensor.begin()) {
@@ -452,7 +484,8 @@ void setup() {
         Serial.print("[SENSORS] - Calibration: ");
         Serial.println(doSensor.getLastCalibrationDate());
     } else {
-        Serial.println("[ERROR] Failed to initialize EZO-DO sensor");
+        doSensor.setEnabled(false);  // Prevent blocking read attempts on missing sensor
+        Serial.println("[SENSORS] EZO-DO not detected - disabled");
     }
 
     // Initialize GPS
@@ -486,6 +519,10 @@ void setup() {
     if (!webServer.begin()) {
         Serial.println("[ERROR] Failed to start web server!");
     }
+
+    // Pin web server to Core 0 so sensor/upload work on Core 1 never blocks the UI
+    xTaskCreatePinnedToCore(webServerTask, "WebServer", 8192, NULL, 1, NULL, 0);
+    Serial.println("[WIFI] Web server task pinned to Core 0");
 
     // Initialize API uploader
     Serial.println("\n[API] Initializing API uploader...");
@@ -533,6 +570,10 @@ void setup() {
 #endif
     Serial.print("[GPS] GPS source: ");
     Serial.println(useNMEA2000GPS ? "NMEA2000 Network" : "Onboard GPS");
+
+    // Initialize pump controller (relay pin setup, start first cycle immediately)
+    pumpController.begin();
+    pumpController.startPump();  // Begin first pump cycle without waiting for cycleIntervalMs
 
     Serial.println("\n===========================================");
     Serial.println("   SeaSense Logger - Ready");
@@ -587,13 +628,6 @@ void loop() {
 
     unsigned long now = millis();
 
-    // Safe mode: only handle web server + serial commands
-    if (systemHealth.isInSafeMode()) {
-        webServer.handleClient();
-        serialCommands.process();
-        return;
-    }
-
     // Update GPS sources (must be called frequently)
     gps.update();
 #if FEATURE_NMEA2000
@@ -610,12 +644,48 @@ void loop() {
             // Stamp deploy_date on first valid GPS time (persists across reboots)
             configManager.stampDeployDate(activeGPSGetTimeUTC());
         }
+    } else {
+        // No GPS fix — populate from NTP if available and not yet set
+        time_t ntpNow = time(nullptr);
+        if (ntpNow > 1000000000UL && g_systemEpoch == 0) {
+            g_systemEpoch = ntpNow;
+            EZOSensor::setSystemEpoch(g_systemEpoch);
+        }
     }
 
-    // Read sensors at regular intervals
-    static unsigned long lastSensorRead = 0;
-    if (now - lastSensorRead >= sensorSamplingIntervalMs) {
-        lastSensorRead = now;
+    // Advance pump state machine (skipped during continuous mode)
+    if (!continuousMeasurementMode) {
+        pumpController.update();
+    }
+
+    // Determine whether to read sensors and whether to persist the results.
+    // Three modes:
+    //   1. Continuous (display-only): 2s timer, no storage writes
+    //   2. Pump-driven (default): reads gated on pump MEASURING state, always saved
+    //   3. Pump disabled (fallback): configured interval timer, always saved
+    bool doSensorRead = false;
+    bool saveToStorage = false;
+
+    if (continuousMeasurementMode) {
+        if (now >= nextSensorReadAt) {
+            nextSensorReadAt = now + 2000UL;
+            doSensorRead = true;
+        }
+    } else if (pumpController.isEnabled()) {
+        if (pumpController.shouldReadSensors()) {
+            doSensorRead = true;
+            saveToStorage = true;
+        }
+    } else {
+        // Fallback: timer-based reads when pump is disabled
+        if (now >= nextSensorReadAt) {
+            nextSensorReadAt = now + sensorSamplingIntervalMs;
+            doSensorRead = true;
+            saveToStorage = true;
+        }
+    }
+
+    if (doSensorRead) {
         // Blink LED to show activity
         digitalWrite(LED_PIN, HIGH);
 
@@ -687,7 +757,7 @@ void loop() {
             doSensor.setTemperatureCompensation(tempData.value);
 
             // Create DataRecord with GPS + environmental data
-            DataRecord record = sensorDataToRecord(tempData, activeGPSGetTimeUTC());
+            DataRecord record = sensorDataToRecord(tempData, getSystemTimeUTC());
             if (activeGPSHasValidFix()) {
                 record.latitude = gpsData.latitude;
                 record.longitude = gpsData.longitude;
@@ -699,8 +769,8 @@ void loop() {
             stampEnvironmentData(record, envData);
 #endif
 
-            // Log to storage
-            if (!storage.writeRecord(record)) {
+            // Log to storage (pump-driven and fallback modes only)
+            if (saveToStorage && !storage.writeRecord(record)) {
                 Serial.println("[STORAGE] Failed to log temperature");
             }
         } else {
@@ -731,7 +801,7 @@ void loop() {
             Serial.println(" PSU");
 
             // Create DataRecord with GPS + environmental data
-            DataRecord ecRecord = sensorDataToRecord(ecData, activeGPSGetTimeUTC());
+            DataRecord ecRecord = sensorDataToRecord(ecData, getSystemTimeUTC());
             if (activeGPSHasValidFix()) {
                 ecRecord.latitude = gpsData.latitude;
                 ecRecord.longitude = gpsData.longitude;
@@ -743,8 +813,8 @@ void loop() {
             stampEnvironmentData(ecRecord, envData);
 #endif
 
-            // Log to storage
-            if (!storage.writeRecord(ecRecord)) {
+            // Log to storage (pump-driven and fallback modes only)
+            if (saveToStorage && !storage.writeRecord(ecRecord)) {
                 Serial.println("[STORAGE] Failed to log conductivity");
             }
         } else {
@@ -769,7 +839,7 @@ void loop() {
             Serial.println("]");
 
             // Create DataRecord with GPS + environmental data
-            DataRecord phRecord = sensorDataToRecord(phData, activeGPSGetTimeUTC());
+            DataRecord phRecord = sensorDataToRecord(phData, getSystemTimeUTC());
             if (activeGPSHasValidFix()) {
                 phRecord.latitude = gpsData.latitude;
                 phRecord.longitude = gpsData.longitude;
@@ -781,8 +851,8 @@ void loop() {
             stampEnvironmentData(phRecord, envData);
 #endif
 
-            // Log to storage
-            if (!storage.writeRecord(phRecord)) {
+            // Log to storage (pump-driven and fallback modes only)
+            if (saveToStorage && !storage.writeRecord(phRecord)) {
                 Serial.println("[STORAGE] Failed to log pH");
             }
         } else {
@@ -811,7 +881,7 @@ void loop() {
             Serial.println("]");
 
             // Create DataRecord with GPS + environmental data
-            DataRecord doRecord = sensorDataToRecord(doData, activeGPSGetTimeUTC());
+            DataRecord doRecord = sensorDataToRecord(doData, getSystemTimeUTC());
             if (activeGPSHasValidFix()) {
                 doRecord.latitude = gpsData.latitude;
                 doRecord.longitude = gpsData.longitude;
@@ -823,8 +893,8 @@ void loop() {
             stampEnvironmentData(doRecord, envData);
 #endif
 
-            // Log to storage
-            if (!storage.writeRecord(doRecord)) {
+            // Log to storage (pump-driven and fallback modes only)
+            if (saveToStorage && !storage.writeRecord(doRecord)) {
                 Serial.println("[STORAGE] Failed to log dissolved oxygen");
             }
         } else {
@@ -849,17 +919,16 @@ void loop() {
 
         // TODO: Generate NMEA2000 PGNs
 
+        // Notify pump that all sensors have been read this cycle
+        if (saveToStorage) {
+            pumpController.notifyMeasurementComplete();
+        }
+
         digitalWrite(LED_PIN, LOW);
     }
 
     // Process API upload (non-blocking)
     apiUploader.process();
-
-    // Handle web server requests
-    webServer.handleClient();
-
-    // Check WiFi reconnection (non-blocking)
-    webServer.checkWiFiReconnect();
 
     // Update calibration state machine
     calibration.update();

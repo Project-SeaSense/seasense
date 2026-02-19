@@ -211,6 +211,32 @@ uint8_t PumpController::getCycleProgress() const {
     return (elapsed * 100) / _config.cycleIntervalMs;
 }
 
+unsigned long PumpController::getPhaseRemainingMs() const {
+    unsigned long elapsed = millis() - _stateStartTime;
+    unsigned long duration = 0;
+    switch (_state) {
+        case PumpState::PUMP_STARTING: duration = _config.pumpStartupDelayMs; break;
+        case PumpState::STABILIZING:   duration = _config.stabilityWaitMs;    break;
+        case PumpState::PUMP_STOPPING: duration = _config.pumpStopDelayMs;    break;
+        case PumpState::COOLDOWN:      duration = _config.cooldownMs;         break;
+        default: return 0;
+    }
+    return (elapsed < duration) ? (duration - elapsed) : 0;
+}
+
+unsigned long PumpController::getTimeUntilNextMeasurementMs() const {
+    if (!_config.enabled || _state == PumpState::PAUSED || _state == PumpState::ERROR) {
+        return 0;
+    }
+    if (_state == PumpState::IDLE) {
+        unsigned long elapsed = millis() - _lastCycleTime;
+        long remaining = (long)_config.cycleIntervalMs - (long)elapsed;
+        return (unsigned long)(remaining > 0 ? remaining : 0);
+    }
+    // In any active pump phase, measurement is imminent or in progress
+    return 0;
+}
+
 void PumpController::startPump() {
     if (_state == PumpState::IDLE) {
         Serial.println("[PUMP] Manual pump start");

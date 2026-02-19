@@ -154,10 +154,16 @@ private:
     void handleApiDataList();
     void handleApiDataDownload();
     void handleApiDataClear();
+    void handleApiDataRecords();
+
+    // API - Upload control
+    void handleApiUploadForce();
+    void handleApiUploadHistory();
 
     // API - Configuration
     void handleApiConfig();
     void handleApiConfigUpdate();
+    void handleApiDeviceRegenerateGuid();
 
     // API - System
     void handleApiStatus();
@@ -170,6 +176,9 @@ private:
     void handleApiPumpControl();
     void handleApiPumpConfig();
     void handleApiPumpConfigUpdate();
+
+    // API - Measurement mode
+    void handleApiMeasurement();
 
     // API - System
     void handleApiSystemRestart();

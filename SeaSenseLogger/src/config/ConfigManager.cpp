@@ -5,6 +5,8 @@
 #include "ConfigManager.h"
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
+#include <esp_task_wdt.h>
+#include <esp_random.h>
 #include "../../config/hardware_config.h"
 #include "../../config/secrets.h"
 
@@ -29,10 +31,19 @@ bool ConfigManager::begin() {
     // Set defaults from compile-time defines
     setDefaults();
 
-    // Try to load from SPIFFS
-    if (!SPIFFS.begin(true)) {
-        Serial.println("[CONFIG ERROR] Failed to mount SPIFFS");
-        return false;
+    // Try to mount SPIFFS. On first boot after a clean flash or partition layout
+    // change, format() is required. Formatting 12MB can take >20s, so temporarily
+    // unsubscribe from the watchdog to avoid a spurious WDT reset.
+    if (!SPIFFS.begin(false)) {
+        Serial.println("[CONFIG] SPIFFS mount failed, formatting (may take ~20s)...");
+        esp_task_wdt_delete(NULL);  // suspend this task from WDT during format
+        bool ok = SPIFFS.format() && SPIFFS.begin(false);
+        esp_task_wdt_add(NULL);     // re-subscribe
+        if (!ok) {
+            Serial.println("[CONFIG ERROR] Failed to mount SPIFFS after format");
+            return false;
+        }
+        Serial.println("[CONFIG] SPIFFS formatted successfully");
     }
 
     // Load configuration file if it exists
@@ -40,6 +51,7 @@ bool ConfigManager::begin() {
         Serial.println("[CONFIG] Loading configuration from SPIFFS...");
         if (loadFromFile()) {
             Serial.println("[CONFIG] Configuration loaded successfully");
+            if (ensureDeviceGUID()) saveToFile();  // persist if GUID was just generated
             return true;
         } else {
             Serial.println("[CONFIG WARNING] Failed to load config, using defaults");
@@ -48,7 +60,8 @@ bool ConfigManager::begin() {
     } else {
         Serial.println("[CONFIG] No config file found, using defaults");
         Serial.println("[CONFIG] Creating default configuration file...");
-        saveToFile();  // Create initial config file
+        ensureDeviceGUID();  // generate GUID on first boot
+        saveToFile();
         return true;
     }
 }
@@ -382,6 +395,50 @@ void ConfigManager::setDefaults() {
     _deployment.deployDate = "";
     _deployment.purchaseDate = "";
     _deployment.depthCm = 0.0f;
+}
+
+String ConfigManager::generateDeviceGUID() {
+    uint8_t uuid[16];
+    for (int i = 0; i < 4; i++) {
+        uint32_t r = esp_random();
+        uuid[i*4+0] = r & 0xFF;
+        uuid[i*4+1] = (r >> 8) & 0xFF;
+        uuid[i*4+2] = (r >> 16) & 0xFF;
+        uuid[i*4+3] = (r >> 24) & 0xFF;
+    }
+    uuid[6] = (uuid[6] & 0x0F) | 0x40;  // version 4
+    uuid[8] = (uuid[8] & 0x3F) | 0x80;  // variant 10xx
+
+    char buf[47];  // "seasense-" (9) + UUID (36) + '\0'
+    snprintf(buf, sizeof(buf),
+        "seasense-%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+        uuid[0], uuid[1], uuid[2], uuid[3],
+        uuid[4], uuid[5],
+        uuid[6], uuid[7],
+        uuid[8], uuid[9],
+        uuid[10], uuid[11], uuid[12], uuid[13], uuid[14], uuid[15]);
+    return String(buf);
+}
+
+bool ConfigManager::ensureDeviceGUID() {
+    bool isPlaceholder = _device.deviceGUID.isEmpty()
+        || _device.deviceGUID == "seasense-esp32"
+        || _device.deviceGUID == "seasense-v2-001"
+        || _device.deviceGUID.length() < 20;
+    if (!isPlaceholder) return false;
+
+    _device.deviceGUID = generateDeviceGUID();
+    Serial.print("[CONFIG] Generated device GUID: ");
+    Serial.println(_device.deviceGUID);
+    return true;
+}
+
+String ConfigManager::regenerateDeviceGUID() {
+    _device.deviceGUID = generateDeviceGUID();
+    saveToFile();
+    Serial.print("[CONFIG] Regenerated device GUID: ");
+    Serial.println(_device.deviceGUID);
+    return _device.deviceGUID;
 }
 
 void ConfigManager::clampConfig() {

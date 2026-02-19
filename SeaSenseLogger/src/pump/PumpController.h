@@ -144,6 +144,18 @@ public:
     uint8_t getCycleProgress() const;
 
     /**
+     * Get milliseconds until the next measurement window begins.
+     * Returns 0 if a measurement is in progress or imminent.
+     */
+    unsigned long getTimeUntilNextMeasurementMs() const;
+
+    /**
+     * Get milliseconds remaining in the current pump phase.
+     * Returns 0 for phases with no fixed end time (MEASURING, IDLE, ERROR, PAUSED).
+     */
+    unsigned long getPhaseRemainingMs() const;
+
+    /**
      * Manual pump start
      */
     void startPump();

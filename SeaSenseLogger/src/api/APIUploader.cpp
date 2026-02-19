@@ -31,7 +31,11 @@ APIUploader::APIUploader(StorageManager* storage)
       _nextUploadTime(0),
       _retryCount(0),
       _timeSynced(false),
-      _bootTimeEpoch(0)
+      _bootTimeEpoch(0),
+      _historyCount(0),
+      _historyHead(0),
+      _totalBytesSent(0),
+      _lastPayloadBytes(0)
 {
 }
 
@@ -127,7 +131,24 @@ void APIUploader::process() {
 
     // Upload to API
     _status = UploadStatus::UPLOADING;
-    if (uploadPayload(payload)) {
+    _lastPayloadBytes = 0;
+    unsigned long uploadStart = millis();
+    bool ok = uploadPayload(payload);
+    unsigned long uploadDur = millis() - uploadStart;
+
+    // Record history entry
+    UploadRecord rec;
+    rec.startMs      = uploadStart;
+    rec.durationMs   = uploadDur;
+    rec.success      = ok;
+    rec.recordCount  = ok ? (uint32_t)records.size() : 0;
+    rec.payloadBytes = _lastPayloadBytes;
+    _uploadHistory[_historyHead] = rec;
+    _historyHead = (_historyHead + 1) % UPLOAD_HISTORY_SIZE;
+    if (_historyCount < UPLOAD_HISTORY_SIZE) _historyCount++;
+    if (ok) _totalBytesSent += _lastPayloadBytes;
+
+    if (ok) {
         _status = UploadStatus::SUCCESS;
         _lastUploadTime = now;
 
@@ -379,12 +400,14 @@ bool APIUploader::uploadPayload(const String& payload) {
         Serial.print(" bytes (");
         Serial.print(100 - (gzLen * 100 / payload.length()));
         Serial.println("% reduction)");
+        _lastPayloadBytes = gzLen;
         httpCode = http.POST(gzBuf, gzLen);
         free(gzBuf);
     } else {
         // Compression failed or no savings - send raw
         if (gzBuf) free(gzBuf);
         DEBUG_API_PRINTLN("Sending uncompressed");
+        _lastPayloadBytes = payload.length();
         httpCode = http.POST(payload);
     }
 
@@ -428,4 +451,9 @@ void APIUploader::scheduleRetry() {
 
 void APIUploader::resetRetry() {
     _retryCount = 0;
+}
+
+const UploadRecord* APIUploader::getUploadHistory(uint8_t& count) const {
+    count = _historyCount;
+    return _uploadHistory;
 }

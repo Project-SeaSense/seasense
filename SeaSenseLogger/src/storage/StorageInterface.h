@@ -51,11 +51,11 @@ struct StorageStats {
 struct DataRecord {
     unsigned long millis;      // millis() when reading was taken
     String timestampUTC;       // Absolute UTC timestamp (from GPS or NTP)
-    double latitude;           // GPS latitude in degrees (0 if no fix)
-    double longitude;          // GPS longitude in degrees (0 if no fix)
-    double altitude;           // GPS altitude in meters (0 if no fix)
+    double latitude;           // GPS latitude in degrees (NaN if no fix)
+    double longitude;          // GPS longitude in degrees (NaN if no fix)
+    double altitude;           // GPS altitude in meters (NaN if no fix)
     uint8_t gps_satellites;    // Number of GPS satellites (0 if no fix)
-    double gps_hdop;           // GPS horizontal dilution of precision (0 if no fix)
+    double gps_hdop;           // GPS horizontal dilution of precision (NaN if no fix)
     String sensorType;         // e.g., "Temperature", "Conductivity"
     String sensorModel;        // e.g., "EZO-RTD", "EZO-EC"
     String sensorSerial;       // e.g., "RTD-12345"
@@ -201,11 +201,11 @@ inline DataRecord sensorDataToRecord(const SensorData& data, const String& times
     DataRecord record;
     record.millis = data.timestamp;
     record.timestampUTC = timestampUTC;
-    record.latitude = 0.0;           // Initialize GPS fields to 0
-    record.longitude = 0.0;
-    record.altitude = 0.0;
+    record.latitude = NAN;           // NaN = no GPS fix
+    record.longitude = NAN;
+    record.altitude = NAN;
     record.gps_satellites = 0;
-    record.gps_hdop = 0.0;
+    record.gps_hdop = NAN;
     record.sensorType = data.sensorType;
     record.sensorModel = data.sensorModel;
     record.sensorSerial = data.sensorSerial;

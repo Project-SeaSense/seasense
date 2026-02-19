@@ -241,15 +241,15 @@ String SDStorage::recordToCSV(const DataRecord& record) const {
     csv += ",";
     csv += record.timestampUTC.length() > 0 ? record.timestampUTC : "";
     csv += ",";
-    csv += String(record.latitude, 6);  // 6 decimal places for GPS coordinates
+    csv += isnan(record.latitude)  ? "" : String(record.latitude,  6);
     csv += ",";
-    csv += String(record.longitude, 6);
+    csv += isnan(record.longitude) ? "" : String(record.longitude, 6);
     csv += ",";
-    csv += String(record.altitude, 1);
+    csv += isnan(record.altitude)  ? "" : String(record.altitude,  1);
     csv += ",";
     csv += String(record.gps_satellites);
     csv += ",";
-    csv += String(record.gps_hdop, 1);
+    csv += isnan(record.gps_hdop)  ? "" : String(record.gps_hdop,  1);
     csv += ",";
     csv += record.sensorType;
     csv += ",";
@@ -457,11 +457,11 @@ bool SDStorage::parseCSVLine(const String& line, DataRecord& record) const {
             switch (fieldIndex) {
                 case 0: record.millis = field.toInt(); break;
                 case 1: record.timestampUTC = field; break;
-                case 2: record.latitude = field.toDouble(); break;
-                case 3: record.longitude = field.toDouble(); break;
-                case 4: record.altitude = field.toDouble(); break;
+                case 2: record.latitude  = field.length() == 0 ? NAN : field.toDouble(); break;
+                case 3: record.longitude = field.length() == 0 ? NAN : field.toDouble(); break;
+                case 4: record.altitude  = field.length() == 0 ? NAN : field.toDouble(); break;
                 case 5: record.gps_satellites = field.toInt(); break;
-                case 6: record.gps_hdop = field.toDouble(); break;
+                case 6: record.gps_hdop  = field.length() == 0 ? NAN : field.toDouble(); break;
                 case 7: record.sensorType = field; break;
                 case 8: record.sensorModel = field; break;
                 case 9: record.sensorSerial = field; break;

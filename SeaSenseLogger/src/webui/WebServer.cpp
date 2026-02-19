@@ -77,6 +77,10 @@ bool SeaSenseWebServer::begin() {
     _server->on("/api/data/list", std::bind(&SeaSenseWebServer::handleApiDataList, this));
     _server->on("/api/data/download", std::bind(&SeaSenseWebServer::handleApiDataDownload, this));
     _server->on("/api/data/clear", std::bind(&SeaSenseWebServer::handleApiDataClear, this));
+    _server->on("/api/data/records", std::bind(&SeaSenseWebServer::handleApiDataRecords, this));
+    _server->on("/api/upload/force", std::bind(&SeaSenseWebServer::handleApiUploadForce, this));
+    _server->on("/api/upload/history", std::bind(&SeaSenseWebServer::handleApiUploadHistory, this));
+    _server->on("/api/device/regenerate-guid", std::bind(&SeaSenseWebServer::handleApiDeviceRegenerateGuid, this));
     _server->on("/api/config", std::bind(&SeaSenseWebServer::handleApiConfig, this));
     _server->on("/api/config/update", std::bind(&SeaSenseWebServer::handleApiConfigUpdate, this));
     _server->on("/api/status", std::bind(&SeaSenseWebServer::handleApiStatus, this));
@@ -86,6 +90,7 @@ bool SeaSenseWebServer::begin() {
     _server->on("/api/pump/config/update", std::bind(&SeaSenseWebServer::handleApiPumpConfigUpdate, this));
     _server->on("/api/config/reset", std::bind(&SeaSenseWebServer::handleApiConfigReset, this));
     _server->on("/api/environment", std::bind(&SeaSenseWebServer::handleApiEnvironment, this));
+    _server->on("/api/measurement", std::bind(&SeaSenseWebServer::handleApiMeasurement, this));
     _server->on("/api/system/restart", std::bind(&SeaSenseWebServer::handleApiSystemRestart, this));
     _server->on("/api/system/clear-safe-mode", std::bind(&SeaSenseWebServer::handleApiClearSafeMode, this));
 
@@ -304,6 +309,21 @@ void SeaSenseWebServer::handleDashboard() {
 
         /* Status message */
         .status-msg { text-align: center; padding: 30px; color: #888; font-size: 14px; }
+
+        /* Measurement control bar */
+        .measure-bar { display: flex; align-items: center; justify-content: space-between; background: white; border-radius: 8px; padding: 10px 15px; margin: 10px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+        .countdown { font-size: 13px; color: #0a4f66; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .toggle-btn { padding: 7px 14px; border: none; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; background: #e0e0e0; color: #555; transition: all 0.2s; }
+        .toggle-btn.active { background: #0e7fa3; color: white; }
+
+        /* Upload status bar */
+        .upload-bar { background: white; border-radius: 8px; padding: 8px 15px; margin: 0 0 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); font-size: 12px; color: #888; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 34px; }
+        .up-state { font-weight: 700; }
+        .up-state.ok { color: #2e7d32; }
+        .up-state.err { color: #c62828; }
+        .up-state.busy { color: #e65100; }
+        .up-nostore { color: #e65100; font-weight: 600; font-style: italic; }
+        .up-sep { color: #ccc; }
     </style>
 </head>
 <body>
@@ -325,6 +345,19 @@ void SeaSenseWebServer::handleDashboard() {
     </div>
 
     <div class="container">
+        <div class="measure-bar">
+            <span class="countdown" id="countdownLabel">Next pump &amp; measurement starts in --:--</span>
+            <button class="toggle-btn" id="toggleBtn" onclick="toggleContinuous()">Continuous: OFF</button>
+        </div>
+        <div class="upload-bar" id="uploadBar">
+            <span id="uploadStateSpan" class="up-state">--</span>
+            <span class="up-sep">&middot;</span>
+            <span id="uploadPendingSpan">-- pending</span>
+            <span class="up-sep">&middot;</span>
+            <span>Last: <span id="uploadLastSpan">--</span></span>
+            <span class="up-sep">&middot;</span>
+            <span>Next: <span id="uploadNextSpan">--</span></span>
+        </div>
         <div class="sensors-grid" id="sensors">
             <div class="status-msg">Loading sensor data...</div>
         </div>
@@ -336,6 +369,9 @@ void SeaSenseWebServer::handleDashboard() {
 
     <script>
         let autoUpdate = true;
+        let continuousMode = false;
+        let countdownMs = null;
+        let pumpPhaseLabel = '';
 
         function toggleMenu() {
             document.getElementById('sidebar').classList.toggle('open');
@@ -351,11 +387,108 @@ void SeaSenseWebServer::handleDashboard() {
         document.addEventListener('DOMContentLoaded', function() {
             const sidebar = document.getElementById('sidebar');
             if (sidebar) {
-                sidebar.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                });
+                sidebar.addEventListener('click', function(e) { e.stopPropagation(); });
             }
         });
+
+        // Countdown ticker — runs every 100ms locally to avoid excess requests
+        setInterval(function() {
+            const label = document.getElementById('countdownLabel');
+            if (!label) return;
+            if (pumpPhaseLabel) { label.textContent = pumpPhaseLabel; return; }
+            if (continuousMode) { label.textContent = 'Measuring every 2s'; return; }
+            if (countdownMs === null) return;
+            countdownMs = Math.max(0, countdownMs - 100);
+            const s = Math.floor(countdownMs / 1000);
+            const m = Math.floor(s / 60);
+            label.textContent = 'Next pump & measurement starts in ' + m + ':' + String(s % 60).padStart(2, '0');
+        }, 100);
+
+        let _pollTimer = null;
+        function _startPolling(intervalMs) {
+            if (_pollTimer) clearInterval(_pollTimer);
+            _pollTimer = setInterval(() => { if (autoUpdate) { update(); updateEnv(); updateMeasurement(); } }, intervalMs);
+        }
+
+        function updateMeasurement() {
+            fetch('/api/measurement')
+                .then(r => r.json())
+                .then(d => {
+                    const wasContinuous = continuousMode;
+                    continuousMode = d.mode === 'continuous';
+                    countdownMs = d.next_read_in_ms;
+                    pumpPhaseLabel = d.pump_phase_label || '';
+                    const btn = document.getElementById('toggleBtn');
+                    if (btn) {
+                        btn.textContent = continuousMode ? 'Continuous: ON' : 'Continuous: OFF';
+                        btn.className = continuousMode ? 'toggle-btn active' : 'toggle-btn';
+                    }
+                    // Adjust polling rate when mode changes
+                    if (wasContinuous !== continuousMode) {
+                        _startPolling(continuousMode ? 1000 : 3000);
+                        updateUploadStatus();  // Immediately refresh bar on mode change
+                    }
+                })
+                .catch(() => {});
+        }
+
+        function toggleContinuous() {
+            fetch('/api/measurement', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({mode: continuousMode ? 'normal' : 'continuous'})
+            }).then(() => updateMeasurement()).catch(() => {});
+        }
+
+        function fmtMs(ms) {
+            const s = Math.floor(ms / 1000);
+            if (s < 60) return s + 's';
+            return Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+        }
+
+        function fmtAgo(elapsedMs) {
+            const s = Math.floor(elapsedMs / 1000);
+            if (s < 5) return 'just now';
+            if (s < 60) return s + 's ago';
+            if (s < 3600) return Math.floor(s / 60) + 'm ago';
+            return Math.floor(s / 3600) + 'h ago';
+        }
+
+        function updateUploadStatus() {
+            const bar = document.getElementById('uploadBar');
+            if (!bar) return;
+            if (continuousMode) {
+                bar.innerHTML = '<span class="up-nostore">&#9888; Continuous mode &mdash; data not saved</span>';
+                return;
+            }
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(d => {
+                    const u = d.upload || {};
+                    const uptimeMs = d.uptime_ms || 0;
+                    const status = u.status || '--';
+                    const stateClass = status.startsWith('ERROR') ? 'err'
+                        : (status === 'SUCCESS' || status === 'IDLE') ? 'ok' : 'busy';
+                    const pending = (u.pending_records != null) ? u.pending_records + ' pending' : '--';
+                    const lastMs = u.last_success_ms || 0;
+                    const lastStr = (lastMs > 0 && uptimeMs > 0) ? fmtAgo(uptimeMs - lastMs) : 'never';
+                    const nextMs = u.next_upload_ms || 0;
+                    const nextStr = nextMs > 0 ? fmtMs(nextMs) : '--';
+                    let html = '<span class="up-state ' + stateClass + '">' + status + '</span>'
+                        + '<span class="up-sep">&middot;</span>'
+                        + '<span>' + pending + '</span>'
+                        + '<span class="up-sep">&middot;</span>'
+                        + '<span>Last: ' + lastStr + '</span>'
+                        + '<span class="up-sep">&middot;</span>'
+                        + '<span>Next: ' + nextStr + '</span>';
+                    if (u.retry_count > 0) {
+                        html += '<span class="up-sep">&middot;</span>'
+                            + '<span style="color:#c62828">Retry #' + u.retry_count + '</span>';
+                    }
+                    bar.innerHTML = html;
+                })
+                .catch(() => {});
+        }
 
         function update() {
             fetch('/api/sensors')
@@ -438,7 +571,10 @@ void SeaSenseWebServer::handleDashboard() {
 
         update();
         updateEnv();
-        setInterval(() => { if(autoUpdate) { update(); updateEnv(); } }, 3000);
+        updateMeasurement();
+        updateUploadStatus();
+        _startPolling(3000);
+        setInterval(updateUploadStatus, 10000);
     </script>
 </body>
 </html>
@@ -502,6 +638,9 @@ void SeaSenseWebServer::handleCalibrate() {
         .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
         .btn-secondary { background: #e0e0e0; color: #333; }
         .btn-secondary:hover { background: #d0d0d0; }
+        .btn-danger { background: #f44336; color: white; flex: none; }
+        .btn-danger:hover { background: #c62828; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; flex: none; }
 
         /* Status messages */
         .alert { padding: 12px; border-radius: 4px; margin: 15px 0; font-size: 13px; }
@@ -640,11 +779,28 @@ void SeaSenseWebServer::handleCalibrate() {
             setTimeout(() => alert.classList.add('hidden'), 5000);
         }
 
+        function updateReadings() {
+            fetch('/api/sensors')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.sensors) return;
+                    data.sensors.forEach(s => {
+                        const t = s.type.toLowerCase();
+                        if (t.includes('temperature')) {
+                            document.getElementById('tempReading').textContent = s.value.toFixed(3);
+                        } else if (t.includes('conductivity')) {
+                            document.getElementById('ecReading').textContent = s.value.toFixed(0);
+                        }
+                    });
+                })
+                .catch(() => {});
+        }
+
         function readTemp() {
             fetch('/api/sensor/reading?type=temperature')
                 .then(r => r.json())
                 .then(data => {
-                    document.getElementById('tempReading').textContent = data.value.toFixed(2);
+                    document.getElementById('tempReading').textContent = data.value.toFixed(3);
                 })
                 .catch(err => showAlert('Error reading temperature sensor', 'error'));
         }
@@ -657,6 +813,9 @@ void SeaSenseWebServer::handleCalibrate() {
                 })
                 .catch(err => showAlert('Error reading conductivity sensor', 'error'));
         }
+
+        updateReadings();
+        setInterval(updateReadings, 3000);
 
         function calibrateTemp() {
             const type = document.getElementById('tempCalType').value;
@@ -743,7 +902,351 @@ void SeaSenseWebServer::handleCalibrate() {
 }
 
 void SeaSenseWebServer::handleData() {
-    _server->send(200, "text/html", "<h1>Data</h1><p>Coming soon...</p>");
+    String html = R"HTML(
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Data - Project SeaSense</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #e8f4f8; color: #1a4d5e; }
+        .header { background: linear-gradient(135deg, #0a4f66 0%, #0e7fa3 100%); color: white; padding: 12px 15px; display: flex; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 100; }
+        .hamburger { background: none; border: none; color: white; font-size: 28px; cursor: pointer; padding: 5px; line-height: 1; }
+        .hamburger:hover { opacity: 0.8; }
+        .title { font-size: 18px; font-weight: 600; margin-left: 12px; }
+        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 201; }
+        .sidebar.open { left: 0; }
+        .sidebar-header { background: #0a4f66; color: white; padding: 15px; font-weight: 600; }
+        .sidebar-nav { list-style: none; }
+        .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; }
+        .sidebar-nav a:hover { background: #e8f4f8; }
+        .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; cursor: pointer; }
+        .overlay.show { display: block; }
+        .container { padding: 15px; max-width: 700px; margin: 0 auto; }
+        .card { background: white; border-radius: 8px; padding: 16px; margin-bottom: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+        .card-title { font-size: 13px; font-weight: 700; color: #0a4f66; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
+        .stat-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+        .stat { flex: 1; min-width: 100px; }
+        .stat-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-value { font-size: 20px; font-weight: 700; color: #1a4d5e; }
+        .stat-sub { font-size: 11px; color: #aaa; }
+        .progress-bar { height: 6px; background: #e0e8f0; border-radius: 3px; margin: 4px 0 8px; overflow: hidden; }
+        .progress-fill { height: 100%; background: #0e7fa3; border-radius: 3px; transition: width 0.4s; }
+        .progress-fill.warn { background: #ff9800; }
+        .progress-fill.danger { background: #f44336; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+        .badge-ok { background: #e8f5e9; color: #2e7d32; }
+        .badge-err { background: #ffebee; color: #c62828; }
+        .badge-idle { background: #f5f5f5; color: #666; }
+        .badge-busy { background: #fff3e0; color: #e65100; }
+        .btn { padding: 8px 16px; border: none; border-radius: 5px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: #0e7fa3; color: white; }
+        .btn-primary:hover { background: #0a4f66; }
+        .btn-primary:disabled { background: #b0c8d4; cursor: not-allowed; }
+        .btn-danger { background: #f44336; color: white; }
+        .btn-danger:hover { background: #c62828; }
+        .btn-sm { padding: 5px 10px; font-size: 12px; }
+        .btn-outline { background: white; border: 1.5px solid #0e7fa3; color: #0e7fa3; }
+        .btn-outline:hover { background: #e8f4f8; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; padding: 6px 8px; border-bottom: 2px solid #d0e8f0; font-size: 11px; text-transform: uppercase; color: #888; letter-spacing: 0.5px; }
+        td { padding: 7px 8px; border-bottom: 1px solid #f0f0f0; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #f8fbfd; }
+        .empty-row { text-align: center; color: #bbb; padding: 20px; font-size: 13px; }
+        .pagination { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+        .page-info { font-size: 12px; color: #888; }
+        .danger-zone { border: 2px solid #ffcdd2; background: #fff8f8; }
+        .danger-zone .card-title { color: #c62828; }
+        .confirm-box { display: none; background: #ffebee; border-radius: 6px; padding: 12px; margin-top: 10px; font-size: 13px; color: #c62828; }
+        .confirm-box.show { display: block; }
+        .confirm-actions { display: flex; gap: 8px; margin-top: 10px; }
+        .alert { padding: 10px 14px; border-radius: 5px; font-size: 13px; margin-bottom: 10px; display: none; }
+        .alert.show { display: block; }
+        .alert-success { background: #e8f5e9; color: #2e7d32; }
+        .alert-error { background: #ffebee; color: #c62828; }
+        .type-temp { color: #e65100; }
+        .type-ec   { color: #1565c0; }
+        .type-ph   { color: #558b2f; }
+        .type-do   { color: #6a1b9a; }
+    </style>
+</head>
+<body>
+    <div class="overlay" id="overlay" onclick="closeMenu()"></div>
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">Menu</div>
+        <ul class="sidebar-nav">
+            <li><a href="/dashboard">Dashboard</a></li>
+            <li><a href="/settings">Settings</a></li>
+            <li><a href="/calibrate">Calibration</a></li>
+            <li><a href="/data" class="active">Data</a></li>
+        </ul>
+    </div>
+    <div class="header">
+        <button class="hamburger" onclick="toggleMenu()">&#9776;</button>
+        <div class="title">Data &amp; Uploads</div>
+    </div>
+
+    <div class="container">
+        <div id="globalAlert" class="alert"></div>
+
+        <!-- Storage Stats -->
+        <div class="card">
+            <div class="card-title">Storage <button class="btn btn-sm btn-outline" onclick="loadStats()">Refresh</button></div>
+            <div class="stat-row" id="statsRow">
+                <div class="stat"><div class="stat-label">Records</div><div class="stat-value" id="statRecords">--</div><div class="stat-sub" id="statPending">-- pending upload</div></div>
+                <div class="stat"><div class="stat-label">SPIFFS Used</div><div class="stat-value" id="statSpiffs">--</div><div class="progress-bar"><div class="progress-fill" id="spiffsBar" style="width:0%"></div></div></div>
+                <div class="stat"><div class="stat-label">SD Card</div><div class="stat-value" id="statSD">--</div><div class="progress-bar"><div class="progress-fill" id="sdBar" style="width:0%"></div></div></div>
+            </div>
+        </div>
+
+        <!-- Upload Control -->
+        <div class="card">
+            <div class="card-title">Upload Control</div>
+            <div class="stat-row">
+                <div class="stat"><div class="stat-label">Status</div><div class="stat-value" style="font-size:15px;padding-top:3px;" id="upStatus"><span class="badge badge-idle">--</span></div></div>
+                <div class="stat"><div class="stat-label">Pending</div><div class="stat-value" id="upPending">--</div><div class="stat-sub">records</div></div>
+                <div class="stat"><div class="stat-label">Last Upload</div><div class="stat-value" style="font-size:14px;padding-top:4px;" id="upLast">--</div></div>
+                <div class="stat"><div class="stat-label">Next Upload</div><div class="stat-value" style="font-size:14px;padding-top:4px;" id="upNext">--</div></div>
+                <div class="stat"><div class="stat-label">Session Bandwidth</div><div class="stat-value" id="upBandwidth">--</div><div class="stat-sub">this session</div></div>
+            </div>
+            <button class="btn btn-primary" id="forceBtn" onclick="forceUpload()">Force Upload Now</button>
+        </div>
+
+        <!-- Upload History -->
+        <div class="card">
+            <div class="card-title">Upload History <button class="btn btn-sm btn-outline" onclick="loadHistory()">Refresh</button></div>
+            <table>
+                <thead><tr><th>Time</th><th>Result</th><th>Records</th><th>Size</th><th>Duration</th></tr></thead>
+                <tbody id="historyBody"><tr><td colspan="5" class="empty-row">Loading...</td></tr></tbody>
+            </table>
+        </div>
+
+        <!-- Data Records -->
+        <div class="card">
+            <div class="card-title">Stored Records</div>
+            <table>
+                <thead><tr><th>Time</th><th>Type</th><th>Value</th><th>Quality</th></tr></thead>
+                <tbody id="recordsBody"><tr><td colspan="4" class="empty-row">Loading...</td></tr></tbody>
+            </table>
+            <div class="pagination">
+                <span class="page-info" id="pageInfo">Page 1</span>
+                <button class="btn btn-sm btn-outline" id="prevBtn" onclick="changePage(-1)" disabled>&#8592; Older</button>
+                <button class="btn btn-sm btn-outline" id="nextBtn" onclick="changePage(1)" disabled>Newer &#8594;</button>
+            </div>
+        </div>
+
+        <!-- Danger Zone -->
+        <div class="card danger-zone">
+            <div class="card-title">Danger Zone</div>
+            <p style="font-size:13px;color:#555;margin-bottom:12px;">Permanently delete all stored sensor records from SPIFFS and SD card. This cannot be undone.</p>
+            <button class="btn btn-danger" onclick="showFlushConfirm()">Flush All Data</button>
+            <div class="confirm-box" id="confirmBox">
+                <strong>Are you sure?</strong> This will delete all <span id="confirmCount">--</span> records permanently.
+                <div class="confirm-actions">
+                    <button class="btn btn-danger" onclick="confirmFlush()">Yes, Delete Everything</button>
+                    <button class="btn btn-outline" onclick="hideFlushConfirm()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 0;
+        const PAGE_SIZE = 20;
+        let totalRecords = 0;
+        let uptimeMs = 0;
+
+        function toggleMenu() { document.getElementById('sidebar').classList.toggle('open'); document.getElementById('overlay').classList.toggle('show'); }
+        function closeMenu()  { document.getElementById('sidebar').classList.remove('open'); document.getElementById('overlay').classList.remove('show'); }
+        document.addEventListener('DOMContentLoaded', () => { document.getElementById('sidebar').addEventListener('click', e => e.stopPropagation()); });
+
+        function fmtBytes(b) {
+            if (b < 1024) return b + ' B';
+            if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+            return (b/1048576).toFixed(2) + ' MB';
+        }
+        function fmtAgo(elapsedMs) {
+            const s = Math.floor(elapsedMs / 1000);
+            if (s < 5)    return 'just now';
+            if (s < 60)   return s + 's ago';
+            if (s < 3600) return Math.floor(s/60) + 'm ago';
+            return Math.floor(s/3600) + 'h ago';
+        }
+        function fmtMs(ms) {
+            const s = Math.floor(ms/1000);
+            if (s < 60) return s + 's';
+            return Math.floor(s/60) + 'm ' + String(s%60).padStart(2,'0') + 's';
+        }
+        function fmtDur(ms) { return ms < 1000 ? ms + 'ms' : (ms/1000).toFixed(1) + 's'; }
+        function typeClass(t) {
+            t = (t||'').toLowerCase();
+            if (t.includes('temp')) return 'type-temp';
+            if (t.includes('cond')) return 'type-ec';
+            if (t.includes('ph'))   return 'type-ph';
+            if (t.includes('oxy'))  return 'type-do';
+            return '';
+        }
+        function fmtValue(v, t) {
+            t = (t||'').toLowerCase();
+            if (t.includes('temp')) return v.toFixed(3);
+            if (t.includes('salin')) return v.toFixed(2);
+            return v.toFixed(0);
+        }
+        function showAlert(msg, type) {
+            const el = document.getElementById('globalAlert');
+            el.className = 'alert alert-' + type + ' show';
+            el.textContent = msg;
+            setTimeout(() => el.className = 'alert', 4000);
+        }
+
+        function loadStats() {
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(d => {
+                    uptimeMs = d.uptime_ms || 0;
+                    const u = d.upload || {};
+                    totalRecords = u.pending_records != null ? u.pending_records : 0;
+
+                    document.getElementById('statRecords').textContent = '--';
+                    document.getElementById('statPending').textContent = (u.pending_records != null ? u.pending_records : '--') + ' pending upload';
+
+                    const status = u.status || '--';
+                    const cls = status.startsWith('ERROR') ? 'badge-err' : (status === 'Success' || status === 'Idle' || status === 'No data') ? 'badge-ok' : 'badge-busy';
+                    document.getElementById('upStatus').innerHTML = '<span class="badge ' + cls + '">' + status + '</span>';
+                    document.getElementById('upPending').textContent = u.pending_records != null ? u.pending_records : '--';
+
+                    const lastMs = u.last_success_ms || 0;
+                    document.getElementById('upLast').textContent = (lastMs > 0 && uptimeMs > 0) ? fmtAgo(uptimeMs - lastMs) : 'never';
+                    const nextMs = u.next_upload_ms || 0;
+                    document.getElementById('upNext').textContent = nextMs > 0 ? fmtMs(nextMs) : '--';
+                })
+                .catch(() => {});
+            // Get storage stats separately
+            fetch('/api/data/list')
+                .then(r => r.json())
+                .then(d => {
+                    document.getElementById('statRecords').textContent = d.totalRecords || 0;
+                    totalRecords = d.totalRecords || 0;
+                    document.getElementById('confirmCount').textContent = totalRecords;
+                    const spPct = d.totalBytes > 0 ? Math.min(100, Math.round(d.usedBytes * 100 / d.totalBytes)) : 0;
+                    document.getElementById('statSpiffs').textContent = fmtBytes(d.usedBytes || 0) + ' / ' + fmtBytes(d.totalBytes || 0);
+                    const bar = document.getElementById('spiffsBar');
+                    bar.style.width = spPct + '%';
+                    bar.className = 'progress-fill' + (spPct > 90 ? ' danger' : spPct > 70 ? ' warn' : '');
+                    document.getElementById('statSD').textContent = 'N/A';
+                    document.getElementById('sdBar').style.width = '0%';
+                })
+                .catch(() => {});
+        }
+
+        function loadHistory() {
+            fetch('/api/upload/history')
+                .then(r => r.json())
+                .then(d => {
+                    const bandwidth = d.total_bytes_sent || 0;
+                    document.getElementById('upBandwidth').textContent = fmtBytes(bandwidth);
+                    const tbody = document.getElementById('historyBody');
+                    if (!d.history || d.history.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No uploads yet this session</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = d.history.map(e => {
+                        const cls = e.success ? 'badge-ok' : 'badge-err';
+                        const lbl = e.success ? 'OK' : 'FAIL';
+                        const time = (e.start_ms > 0 && uptimeMs > 0) ? fmtAgo(uptimeMs - e.start_ms) : (e.start_ms / 1000).toFixed(0) + 's uptime';
+                        return '<tr><td>' + time + '</td>'
+                            + '<td><span class="badge ' + cls + '">' + lbl + '</span></td>'
+                            + '<td>' + (e.record_count || 0) + '</td>'
+                            + '<td>' + fmtBytes(e.payload_bytes || 0) + '</td>'
+                            + '<td>' + fmtDur(e.duration_ms || 0) + '</td></tr>';
+                    }).join('');
+                })
+                .catch(() => { document.getElementById('historyBody').innerHTML = '<tr><td colspan="5" class="empty-row">Error loading history</td></tr>'; });
+        }
+
+        function loadRecords() {
+            const tbody = document.getElementById('recordsBody');
+            tbody.innerHTML = '<tr><td colspan="4" class="empty-row">Loading...</td></tr>';
+            fetch('/api/data/records?page=' + currentPage + '&limit=' + PAGE_SIZE)
+                .then(r => r.json())
+                .then(d => {
+                    if (!d.records || d.records.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="4" class="empty-row">No records stored yet</td></tr>';
+                    } else {
+                        tbody.innerHTML = d.records.map(r => {
+                            const tc = typeClass(r.type);
+                            let timeStr;
+                            if (r.time) {
+                                timeStr = r.time;
+                            } else if (uptimeMs > 0 && r.millis > 0) {
+                                timeStr = fmtAgo(uptimeMs - r.millis);
+                            } else {
+                                const s = Math.floor((r.millis || 0) / 1000);
+                                timeStr = 'Boot +' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+                            }
+                            return '<tr><td style="font-size:11px;color:#888;">' + timeStr + '</td>'
+                                + '<td class="' + tc + '">' + r.type + '</td>'
+                                + '<td>' + fmtValue(r.value, r.type) + ' <span style="color:#aaa;font-size:11px;">' + r.unit + '</span></td>'
+                                + '<td style="font-size:11px;color:#888;">' + (r.quality||'--') + '</td></tr>';
+                        }).join('');
+                    }
+                    const maxPage = Math.floor((d.total - 1) / PAGE_SIZE);
+                    document.getElementById('pageInfo').textContent = 'Page ' + (currentPage + 1) + ' of ' + (maxPage + 1);
+                    document.getElementById('prevBtn').disabled = currentPage >= maxPage;
+                    document.getElementById('nextBtn').disabled = currentPage <= 0;
+                })
+                .catch(() => { tbody.innerHTML = '<tr><td colspan="4" class="empty-row">Error loading records</td></tr>'; });
+        }
+
+        function changePage(dir) {
+            currentPage = Math.max(0, currentPage - dir);  // page 0 = most recent
+            loadRecords();
+        }
+
+        function forceUpload() {
+            const btn = document.getElementById('forceBtn');
+            btn.disabled = true; btn.textContent = 'Scheduling...';
+            fetch('/api/upload/force', { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    showAlert('Upload scheduled — check history in a moment', 'success');
+                    btn.textContent = 'Force Upload Now';
+                    btn.disabled = false;
+                    setTimeout(() => { loadStats(); loadHistory(); }, 3000);
+                })
+                .catch(() => { btn.textContent = 'Force Upload Now'; btn.disabled = false; showAlert('Request failed', 'error'); });
+        }
+
+        function showFlushConfirm() {
+            document.getElementById('confirmCount').textContent = totalRecords;
+            document.getElementById('confirmBox').classList.add('show');
+        }
+        function hideFlushConfirm() { document.getElementById('confirmBox').classList.remove('show'); }
+        function confirmFlush() {
+            fetch('/api/data/clear', { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    hideFlushConfirm();
+                    showAlert('All data flushed successfully', 'success');
+                    currentPage = 0;
+                    setTimeout(() => { loadStats(); loadRecords(); }, 500);
+                })
+                .catch(() => { showAlert('Flush failed', 'error'); });
+        }
+
+        loadStats();
+        loadHistory();
+        loadRecords();
+        setInterval(loadStats, 15000);
+    </script>
+</body>
+</html>
+)HTML";
+    _server->send(200, "text/html", html);
 }
 
 void SeaSenseWebServer::handleSettings() {
@@ -874,9 +1377,18 @@ void SeaSenseWebServer::handleSettings() {
 
             <h3>Sampling Configuration</h3>
             <div class="form-group">
-                <label>Sensor Reading Interval (minutes)</label>
-                <input type="number" id="sensor-interval" name="sensor-interval" min="0.083" max="1440" step="0.1" value="15">
-                <small>How often to read sensors. Range: 5 seconds to 24 hours. Default: 15 minutes.</small>
+                <label>Sensor Reading Interval</label>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <input type="number" id="sensor-interval-min" min="0" max="1439" step="1" value="15" style="width:70px;">
+                        <span style="font-size:13px;color:#666;">min</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <input type="number" id="sensor-interval-sec" min="0" max="59" step="1" value="0" style="width:60px;">
+                        <span style="font-size:13px;color:#666;">sec</span>
+                    </div>
+                </div>
+                <small id="interval-hint">How often to pump and read sensors. Default: 15 min.</small>
             </div>
 
             <h3>GPS Source</h3>
@@ -901,7 +1413,17 @@ void SeaSenseWebServer::handleSettings() {
             <h2>Device Configuration</h2>
             <div class="form-group">
                 <label>Device GUID</label>
-                <input type="text" id="device-guid" name="device-guid">
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="text" id="device-guid" name="device-guid" style="flex:1;">
+                    <button type="button" class="btn btn-sm" onclick="showRegenConfirm()" style="white-space:nowrap;">Generate New</button>
+                </div>
+                <div id="regenConfirm" style="display:none;margin-top:8px;padding:10px;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;font-size:13px;">
+                    Generating a new GUID will change the device identity. Any existing data linked to the old GUID will be orphaned. Are you sure?
+                    <div style="margin-top:8px;display:flex;gap:8px;">
+                        <button type="button" class="btn btn-danger btn-sm" onclick="confirmRegen()">Yes, Generate New GUID</button>
+                        <button type="button" class="btn btn-sm" onclick="cancelRegen()">Cancel</button>
+                    </div>
+                </div>
             </div>
             <div class="form-group">
                 <label>Partner ID</label>
@@ -961,7 +1483,25 @@ void SeaSenseWebServer::handleSettings() {
 
                 // Sampling
                 if (config.sampling) {
-                    document.getElementById('sensor-interval').value = (config.sampling.sensor_interval_ms / 60000) || 15;
+                    const ms = config.sampling.sensor_interval_ms || 900000;
+                    document.getElementById('sensor-interval-min').value = Math.floor(ms / 60000);
+                    document.getElementById('sensor-interval-sec').value = Math.round((ms % 60000) / 1000);
+
+                    // Show minimum derived from pump cycle
+                    const minMs = config.sampling.min_sampling_ms || 5000;
+                    const minMin = Math.floor(minMs / 60000);
+                    const minSec = Math.round((minMs % 60000) / 1000);
+                    const minStr = minMin > 0
+                        ? (minMin + 'm ' + (minSec > 0 ? minSec + 's' : '')).trim()
+                        : minSec + 's';
+                    const hint = document.getElementById('interval-hint');
+                    if (hint) hint.textContent = 'Minimum: ' + minStr + ' (full pump cycle). Default: 15 min.';
+
+                    // Enforce minimum on the minutes input
+                    document.getElementById('sensor-interval-min').min = minMin;
+                    if (minMin === 0) {
+                        document.getElementById('sensor-interval-sec').min = minSec;
+                    }
                 }
 
                 // GPS source
@@ -983,6 +1523,18 @@ void SeaSenseWebServer::handleSettings() {
         async function saveConfig(event) {
             event.preventDefault();
 
+            // Clamp interval to minimum (backend also clamps, but give immediate feedback)
+            const minMs = parseInt(document.getElementById('sensor-interval-min').min || 0) * 60000
+                + parseInt(document.getElementById('sensor-interval-sec').min || 0) * 1000;
+            const enteredMs = (parseInt(document.getElementById('sensor-interval-min').value || 0) * 60
+                + parseInt(document.getElementById('sensor-interval-sec').value || 0)) * 1000;
+            if (minMs > 0 && enteredMs < minMs) {
+                document.getElementById('sensor-interval-min').value = Math.floor(minMs / 60000);
+                document.getElementById('sensor-interval-sec').value = Math.round((minMs % 60000) / 1000);
+                showToast('Interval raised to minimum pump cycle duration.', 'error');
+                return;
+            }
+
             const config = {
                 wifi: {
                     station_ssid: document.getElementById('wifi-ssid').value,
@@ -997,7 +1549,8 @@ void SeaSenseWebServer::handleSettings() {
                     max_retries: parseInt(document.getElementById('api-retries').value)
                 },
                 sampling: {
-                    sensor_interval_ms: parseFloat(document.getElementById('sensor-interval').value) * 60000
+                    sensor_interval_ms: (parseInt(document.getElementById('sensor-interval-min').value || 0) * 60
+                        + parseInt(document.getElementById('sensor-interval-sec').value || 0)) * 1000
                 },
                 gps: {
                     use_nmea2000: document.getElementById('gps-source').value === 'nmea2000',
@@ -1020,9 +1573,34 @@ void SeaSenseWebServer::handleSettings() {
                 const result = await response.json();
 
                 if (response.ok) {
-                    showToast(result.message || 'Configuration saved!', 'success');
+                    const min = parseInt(document.getElementById('sensor-interval-min').value || 0);
+                    const sec = parseInt(document.getElementById('sensor-interval-sec').value || 0);
+                    const intervalStr = min > 0 ? (min + 'm ' + (sec > 0 ? sec + 's' : '')).trim() : sec + 's';
+                    showToast('Saved. Sampling interval: ' + intervalStr + '. Dashboard updated.', 'success');
                 } else {
                     showToast('Error: ' + (result.error || 'Unknown error'), 'error');
+                }
+            } catch (e) {
+                showToast('Network error: ' + e.message, 'error');
+            }
+        }
+
+        function showRegenConfirm() {
+            document.getElementById('regenConfirm').style.display = 'block';
+        }
+        function cancelRegen() {
+            document.getElementById('regenConfirm').style.display = 'none';
+        }
+        async function confirmRegen() {
+            cancelRegen();
+            try {
+                const response = await fetch('/api/device/regenerate-guid', {method: 'POST'});
+                const result = await response.json();
+                if (response.ok && result.device_guid) {
+                    document.getElementById('device-guid').value = result.device_guid;
+                    showToast('New GUID generated and saved', 'success');
+                } else {
+                    showToast('Error generating GUID', 'error');
                 }
             } catch (e) {
                 showToast('Network error: ' + e.message, 'error');
@@ -1259,6 +1837,84 @@ void SeaSenseWebServer::handleApiDataClear() {
     }
 }
 
+void SeaSenseWebServer::handleApiDataRecords() {
+    uint16_t limit = 20;
+    uint16_t page  = 0;
+    if (_server->hasArg("limit")) { limit = (uint16_t)_server->arg("limit").toInt(); if (limit > 50) limit = 50; }
+    if (_server->hasArg("page"))  { page  = (uint16_t)_server->arg("page").toInt(); }
+
+    StorageStats stats = _storage->getStats();
+    uint32_t total = stats.totalRecords;
+
+    // Read enough records to cover this page (most-recent-first)
+    uint16_t needed = (page + 1) * limit;
+    if (needed > 500) needed = 500;
+    std::vector<DataRecord> recs = _storage->readRecords(0, needed);
+
+    JsonDocument doc;
+    doc["total"]  = total;
+    doc["page"]   = page;
+    doc["limit"]  = limit;
+    JsonArray arr = doc["records"].to<JsonArray>();
+
+    // Slice most-recent-first from tail of the read batch
+    int startIdx = (int)recs.size() - 1 - (page * (int)limit);
+    for (int i = startIdx; i > startIdx - (int)limit && i >= 0; i--) {
+        JsonObject r = arr.add<JsonObject>();
+        r["millis"]  = recs[i].millis;
+        r["time"]    = recs[i].timestampUTC;  // empty string if no GPS/NTP fix yet
+        r["type"]    = recs[i].sensorType;
+        r["value"]   = recs[i].value;
+        r["unit"]    = recs[i].unit;
+        r["quality"] = recs[i].quality;
+    }
+
+    String json;
+    serializeJson(doc, json);
+    sendJSON(json);
+}
+
+void SeaSenseWebServer::handleApiUploadForce() {
+    if (_server->method() != HTTP_POST) { sendError("POST required", 405); return; }
+    extern APIUploader apiUploader;
+    apiUploader.forceUpload();
+    sendJSON("{\"success\":true,\"message\":\"Upload scheduled\"}");
+}
+
+void SeaSenseWebServer::handleApiUploadHistory() {
+    extern APIUploader apiUploader;
+
+    uint8_t count = 0;
+    const UploadRecord* hist = apiUploader.getUploadHistory(count);
+    uint8_t head = apiUploader.getHistoryHead();
+
+    JsonDocument doc;
+    doc["total_bytes_sent"] = apiUploader.getTotalBytesSent();
+    JsonArray arr = doc["history"].to<JsonArray>();
+
+    // Iterate most-recent-first: head-1, head-2, ... wrapping around
+    for (uint8_t i = 0; i < count; i++) {
+        uint8_t idx = (head + APIUploader::UPLOAD_HISTORY_SIZE - 1 - i) % APIUploader::UPLOAD_HISTORY_SIZE;
+        JsonObject e = arr.add<JsonObject>();
+        e["start_ms"]    = hist[idx].startMs;
+        e["duration_ms"] = hist[idx].durationMs;
+        e["success"]     = hist[idx].success;
+        e["record_count"]  = hist[idx].recordCount;
+        e["payload_bytes"] = hist[idx].payloadBytes;
+    }
+
+    String json;
+    serializeJson(doc, json);
+    sendJSON(json);
+}
+
+void SeaSenseWebServer::handleApiDeviceRegenerateGuid() {
+    if (_server->method() != HTTP_POST) { sendError("POST required", 405); return; }
+    if (!_configManager) { sendError("Configuration manager not available", 503); return; }
+    String newGUID = _configManager->regenerateDeviceGUID();
+    sendJSON("{\"device_guid\":\"" + newGUID + "\"}");
+}
+
 void SeaSenseWebServer::handleApiConfig() {
     if (!_configManager) {
         sendError("Configuration manager not available", 503);
@@ -1287,6 +1943,17 @@ void SeaSenseWebServer::handleApiConfig() {
     ConfigManager::SamplingConfig sampling = _configManager->getSamplingConfig();
     JsonObject samplingObj = doc["sampling"].to<JsonObject>();
     samplingObj["sensor_interval_ms"] = sampling.sensorIntervalMs;
+
+    // Minimum sampling interval = full pump cycle duration (calculated from current pump config)
+    {
+        PumpConfig pc = _configManager->getPumpConfig();
+        unsigned long minMs = (unsigned long)pc.pumpStartupDelayMs
+            + pc.stabilityWaitMs
+            + ((unsigned long)pc.measurementCount * pc.measurementIntervalMs)
+            + pc.pumpStopDelayMs
+            + pc.cooldownMs;
+        samplingObj["min_sampling_ms"] = max(minMs, 5000UL);
+    }
 
     // GPS config
     ConfigManager::GPSConfig gpsConfig = _configManager->getGPSConfig();
@@ -1348,15 +2015,25 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
 
     // Update sampling config
     if (doc["sampling"].is<JsonObject>()) {
+        // Calculate minimum from current pump config
+        PumpConfig pc = _configManager->getPumpConfig();
+        unsigned long minSamplingMs = (unsigned long)pc.pumpStartupDelayMs
+            + pc.stabilityWaitMs
+            + ((unsigned long)pc.measurementCount * pc.measurementIntervalMs)
+            + pc.pumpStopDelayMs
+            + pc.cooldownMs;
+        minSamplingMs = max(minSamplingMs, 5000UL);
+
         ConfigManager::SamplingConfig sampling;
-        sampling.sensorIntervalMs = doc["sampling"]["sensor_interval_ms"] | 900000;
+        sampling.sensorIntervalMs = doc["sampling"]["sensor_interval_ms"] | 900000UL;
+        sampling.sensorIntervalMs = max(sampling.sensorIntervalMs, minSamplingMs);
         _configManager->setSamplingConfig(sampling);
 
-        // Update global variable in main program
-        // Note: This requires the global variable to be accessible
-        // The main loop will use the new value on next iteration
+        // Apply immediately: update globals so dashboard countdown reflects new interval
         extern unsigned long sensorSamplingIntervalMs;
+        extern unsigned long nextSensorReadAt;
         sensorSamplingIntervalMs = sampling.sensorIntervalMs;
+        nextSensorReadAt = millis() + sampling.sensorIntervalMs;  // reschedule from now
     }
 
     // Update GPS config
@@ -1694,6 +2371,82 @@ void SeaSenseWebServer::handleApiPumpConfigUpdate() {
     } else {
         sendError("Failed to save pump configuration", 500);
     }
+}
+
+void SeaSenseWebServer::handleApiMeasurement() {
+    extern bool continuousMeasurementMode;
+    extern unsigned long nextSensorReadAt;
+    extern unsigned long savedNextSensorReadAt;
+    extern unsigned long sensorSamplingIntervalMs;
+
+    if (_server->method() == HTTP_POST) {
+        JsonDocument req;
+        if (deserializeJson(req, _server->arg("plain")) == DeserializationError::Ok) {
+            String mode = req["mode"] | "";
+            if (mode == "continuous" && !continuousMeasurementMode) {
+                savedNextSensorReadAt = nextSensorReadAt;
+                continuousMeasurementMode = true;
+                nextSensorReadAt = 0;  // fire first continuous read immediately
+                // Pause pump so relay doesn't fire during display-only mode
+                if (_pumpController) _pumpController->pause();
+            } else if (mode == "normal" && continuousMeasurementMode) {
+                continuousMeasurementMode = false;
+                // Reschedule timer for pump-disabled fallback (avoid immediate write on exit)
+                nextSensorReadAt = millis() + sensorSamplingIntervalMs;
+                // Resume pump — it will wait for cycleIntervalMs before next cycle
+                if (_pumpController) _pumpController->resume();
+            }
+        }
+    }
+
+    unsigned long now = millis();
+    unsigned long remaining;
+    if (!continuousMeasurementMode && _pumpController && _pumpController->isEnabled()) {
+        remaining = _pumpController->getTimeUntilNextMeasurementMs();
+    } else {
+        long r = (long)nextSensorReadAt - (long)now;
+        remaining = (unsigned long)(r < 0 ? 0 : r);
+    }
+
+    JsonDocument resp;
+    resp["mode"] = continuousMeasurementMode ? "continuous" : "normal";
+    resp["next_read_in_ms"] = remaining;
+    resp["interval_ms"] = continuousMeasurementMode
+        ? 2000UL
+        : (_pumpController && _pumpController->isEnabled()
+            ? _pumpController->getCycleInterval()
+            : sensorSamplingIntervalMs);
+
+    // Include pump cycle phase for dashboard status label (with countdown seconds)
+    if (_pumpController) {
+        PumpState ps = _pumpController->getState();
+        const char* phaseName = nullptr;
+        switch (ps) {
+            case PumpState::PUMP_STARTING: phaseName = "Pump started";  break;
+            case PumpState::STABILIZING:   phaseName = "Flushing pipe"; break;
+            case PumpState::MEASURING:     phaseName = "Measuring";     break;
+            case PumpState::PUMP_STOPPING: phaseName = "Pump stopping"; break;
+            case PumpState::COOLDOWN:      phaseName = "Cooling down";  break;
+            default: break;
+        }
+        if (phaseName) {
+            unsigned long remMs = _pumpController->getPhaseRemainingMs();
+            String label = "Measurement status: ";
+            label += phaseName;
+            if (remMs > 0) {
+                label += " (";
+                label += String((remMs + 999) / 1000);  // round up to whole seconds
+                label += "s)";
+            }
+            resp["pump_phase_label"] = label;
+        } else {
+            resp["pump_phase_label"] = "";
+        }
+    }
+
+    String json;
+    serializeJson(resp, json);
+    sendJSON(json);
 }
 
 // ============================================================================

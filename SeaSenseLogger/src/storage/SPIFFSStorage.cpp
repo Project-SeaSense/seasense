@@ -5,6 +5,7 @@
 #include "SPIFFSStorage.h"
 #include "../../config/hardware_config.h"
 #include <ArduinoJson.h>
+#include <esp_task_wdt.h>
 
 // File paths
 const char* SPIFFSStorage::DATA_FILE = "/data.csv";
@@ -17,7 +18,8 @@ const char* SPIFFSStorage::TEMP_FILE = "/data.tmp";
 
 SPIFFSStorage::SPIFFSStorage(uint16_t maxRecords)
     : _maxRecords(maxRecords),
-      _mounted(false)
+      _mounted(false),
+      _cachedRecordCount(0)
 {
     _metadata.lastUploadedMillis = 0;
     _metadata.totalRecordsWritten = 0;
@@ -37,10 +39,19 @@ SPIFFSStorage::~SPIFFSStorage() {
 bool SPIFFSStorage::begin() {
     DEBUG_STORAGE_PRINTLN("Initializing SPIFFS storage...");
 
-    if (!SPIFFS.begin(true)) {  // true = format if mount fails
-        DEBUG_STORAGE_PRINTLN("SPIFFS mount failed");
-        _mounted = false;
-        return false;
+    // On first boot with a blank or incompatible partition, format() is required.
+    // Formatting 12MB takes ~20s — temporarily unsubscribe from WDT to avoid reset.
+    if (!SPIFFS.begin(false)) {
+        DEBUG_STORAGE_PRINTLN("SPIFFS mount failed, formatting (may take ~20s)...");
+        esp_task_wdt_delete(NULL);
+        bool ok = SPIFFS.format() && SPIFFS.begin(false);
+        esp_task_wdt_add(NULL);
+        if (!ok) {
+            DEBUG_STORAGE_PRINTLN("SPIFFS mount failed after format");
+            _mounted = false;
+            return false;
+        }
+        DEBUG_STORAGE_PRINTLN("SPIFFS formatted successfully");
     }
 
     _mounted = true;
@@ -58,8 +69,11 @@ bool SPIFFSStorage::begin() {
         return false;
     }
 
+    // Seed the in-memory count (one-time O(n) scan at startup)
+    _cachedRecordCount = countRecords();
+
     DEBUG_STORAGE_PRINT("SPIFFS initialized, ");
-    DEBUG_STORAGE_PRINT(countRecords());
+    DEBUG_STORAGE_PRINT(_cachedRecordCount);
     DEBUG_STORAGE_PRINTLN(" records");
 
     return true;
@@ -102,9 +116,9 @@ bool SPIFFSStorage::writeRecord(const DataRecord& record) {
     DEBUG_STORAGE_PRINT("Written record: ");
     DEBUG_STORAGE_PRINTLN(csvLine);
 
-    // Trim old records if buffer is full
-    uint32_t count = countRecords();
-    if (count > _maxRecords) {
+    // Update in-memory count, trim when hysteresis threshold exceeded
+    _cachedRecordCount++;
+    if (_cachedRecordCount > _maxRecords + TRIM_HYSTERESIS) {
         DEBUG_STORAGE_PRINTLN("Circular buffer full, trimming old records");
         trimOldRecords();
     }
@@ -166,7 +180,7 @@ StorageStats SPIFFSStorage::getStats() const {
         stats.totalBytes = SPIFFS.totalBytes();
         stats.usedBytes = SPIFFS.usedBytes();
         stats.freeBytes = stats.totalBytes - stats.usedBytes;
-        stats.totalRecords = countRecords();
+        stats.totalRecords = _cachedRecordCount;
         stats.recordsSinceUpload = (stats.totalRecords > _metadata.recordsAtLastUpload)
             ? (stats.totalRecords - _metadata.recordsAtLastUpload)
             : stats.totalRecords;
@@ -208,10 +222,11 @@ bool SPIFFSStorage::clear() {
         SPIFFS.remove(DATA_FILE);
     }
 
-    // Reset metadata
+    // Reset metadata and in-memory count
     _metadata.lastUploadedMillis = 0;
     _metadata.totalRecordsWritten = 0;
     _metadata.recordsAtLastUpload = 0;
+    _cachedRecordCount = 0;
     saveMetadata();
 
     // Recreate data file with header
@@ -260,15 +275,15 @@ String SPIFFSStorage::recordToCSV(const DataRecord& record) const {
     csv += ",";
     csv += record.timestampUTC.length() > 0 ? record.timestampUTC : "";
     csv += ",";
-    csv += String(record.latitude, 6);  // 6 decimal places for GPS coordinates
+    csv += isnan(record.latitude)  ? "" : String(record.latitude,  6);
     csv += ",";
-    csv += String(record.longitude, 6);
+    csv += isnan(record.longitude) ? "" : String(record.longitude, 6);
     csv += ",";
-    csv += String(record.altitude, 1);
+    csv += isnan(record.altitude)  ? "" : String(record.altitude,  1);
     csv += ",";
     csv += String(record.gps_satellites);
     csv += ",";
-    csv += String(record.gps_hdop, 1);
+    csv += isnan(record.gps_hdop)  ? "" : String(record.gps_hdop,  1);
     csv += ",";
     csv += record.sensorType;
     csv += ",";
@@ -392,39 +407,56 @@ bool SPIFFSStorage::trimOldRecords() {
         return false;
     }
 
-    DEBUG_STORAGE_PRINTLN("Trimming old records...");
-
-    // Read all records
-    std::vector<DataRecord> allRecords = readRecords(0, 65535);
-
-    if (allRecords.size() <= _maxRecords) {
-        return true;  // Nothing to trim
+    uint32_t total = _cachedRecordCount;
+    if (total <= _maxRecords) {
+        return true;
     }
 
-    // Keep only the most recent _maxRecords
-    size_t startIndex = allRecords.size() - _maxRecords;
+    uint32_t toSkip = total - _maxRecords;
+    DEBUG_STORAGE_PRINT("Trimming ");
+    DEBUG_STORAGE_PRINT(toSkip);
+    DEBUG_STORAGE_PRINTLN(" old records (streaming)...");
 
-    // Write to temporary file
-    File tempFile = SPIFFS.open(TEMP_FILE, FILE_WRITE);
-    if (!tempFile) {
-        DEBUG_STORAGE_PRINTLN("Failed to create temp file");
+    File src = SPIFFS.open(DATA_FILE, FILE_READ);
+    if (!src) {
+        DEBUG_STORAGE_PRINTLN("Failed to open source for trim");
         return false;
     }
 
-    // Write header
-    tempFile.println(getCSVHeader());
-
-    // Write recent records
-    for (size_t i = startIndex; i < allRecords.size(); i++) {
-        tempFile.println(recordToCSV(allRecords[i]));
+    File dst = SPIFFS.open(TEMP_FILE, FILE_WRITE);
+    if (!dst) {
+        src.close();
+        DEBUG_STORAGE_PRINTLN("Failed to open temp file for trim");
+        return false;
     }
 
-    tempFile.flush();
-    tempFile.close();
+    // Copy header line
+    if (src.available()) {
+        dst.println(src.readStringUntil('\n'));
+    }
 
-    // Replace original file with temp file
+    // Skip old records
+    for (uint32_t i = 0; i < toSkip && src.available(); i++) {
+        src.readStringUntil('\n');
+    }
+
+    // Stream-copy remaining (recent) records one line at a time
+    while (src.available()) {
+        String line = src.readStringUntil('\n');
+        line.trim();
+        if (line.length() > 0) {
+            dst.println(line);
+        }
+    }
+
+    dst.flush();
+    dst.close();
+    src.close();
+
     SPIFFS.remove(DATA_FILE);
     SPIFFS.rename(TEMP_FILE, DATA_FILE);
+
+    _cachedRecordCount = _maxRecords;
 
     DEBUG_STORAGE_PRINT("Trimmed to ");
     DEBUG_STORAGE_PRINT(_maxRecords);
@@ -475,11 +507,11 @@ bool SPIFFSStorage::parseCSVLine(const String& line, DataRecord& record) const {
             switch (fieldIndex) {
                 case 0: record.millis = field.toInt(); break;
                 case 1: record.timestampUTC = field; break;
-                case 2: record.latitude = field.toDouble(); break;
-                case 3: record.longitude = field.toDouble(); break;
-                case 4: record.altitude = field.toDouble(); break;
+                case 2: record.latitude  = field.length() == 0 ? NAN : field.toDouble(); break;
+                case 3: record.longitude = field.length() == 0 ? NAN : field.toDouble(); break;
+                case 4: record.altitude  = field.length() == 0 ? NAN : field.toDouble(); break;
                 case 5: record.gps_satellites = field.toInt(); break;
-                case 6: record.gps_hdop = field.toDouble(); break;
+                case 6: record.gps_hdop  = field.length() == 0 ? NAN : field.toDouble(); break;
                 case 7: record.sensorType = field; break;
                 case 8: record.sensorModel = field; break;
                 case 9: record.sensorSerial = field; break;

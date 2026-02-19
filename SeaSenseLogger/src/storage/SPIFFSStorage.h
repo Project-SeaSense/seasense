@@ -112,6 +112,14 @@ private:
         uint32_t totalRecordsWritten;
         uint32_t recordsAtLastUpload;
     } _metadata;
+
+    // In-memory record count — avoids O(n) file scan on every write/status call.
+    // Initialized from countRecords() once in begin(), then kept current.
+    uint32_t _cachedRecordCount;
+
+    // Trim hysteresis: only trim when this many records over the limit,
+    // so trim runs every ~TRIM_HYSTERESIS writes instead of every write.
+    static const uint16_t TRIM_HYSTERESIS = 50;
 };
 
 #endif // SPIFFS_STORAGE_H
