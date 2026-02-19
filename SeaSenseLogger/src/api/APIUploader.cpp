@@ -8,7 +8,8 @@
 #include "../../config/hardware_config.h"
 #include "../../config/secrets.h"
 #include <ArduinoJson.h>
-#include <ESP32-targz.h>
+// Note: gzip compression removed — ESP32-targz didn't support ESP32-S3,
+// and ROM miniz disables zlib APIs. Payloads are sent uncompressed.
 
 // Retry backoff intervals (milliseconds)
 const unsigned long RETRY_INTERVALS[] = {
@@ -393,31 +394,9 @@ bool APIUploader::uploadPayload(const String& payload) {
     Serial.print(payload.length());
     Serial.println(" bytes");
 
-    // Attempt gzip compression
-    int httpCode;
-    uint8_t* gzBuf = nullptr;
-    size_t gzLen = LZPacker::compress(
-        (uint8_t*)payload.c_str(), payload.length(), &gzBuf
-    );
-
-    if (gzLen > 0 && gzBuf && gzLen < payload.length()) {
-        // Compressed is smaller - send gzipped
-        http.addHeader("Content-Encoding", "gzip");
-        Serial.print("[API] Compressed: ");
-        Serial.print(gzLen);
-        Serial.print(" bytes (");
-        Serial.print(100 - (gzLen * 100 / payload.length()));
-        Serial.println("% reduction)");
-        _lastPayloadBytes = gzLen;
-        httpCode = http.POST(gzBuf, gzLen);
-        free(gzBuf);
-    } else {
-        // Compression failed or no savings - send raw
-        if (gzBuf) free(gzBuf);
-        DEBUG_API_PRINTLN("Sending uncompressed");
-        _lastPayloadBytes = payload.length();
-        httpCode = http.POST(payload);
-    }
+    // Send payload uncompressed
+    _lastPayloadBytes = payload.length();
+    int httpCode = http.POST(payload);
 
     DEBUG_API_PRINT("HTTP response: ");
     DEBUG_API_PRINTLN(httpCode);
