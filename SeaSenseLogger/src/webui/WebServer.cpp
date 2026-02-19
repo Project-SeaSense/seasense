@@ -1260,6 +1260,11 @@ void SeaSenseWebServer::handleData() {
             return Math.floor(s/60) + 'm ' + String(s%60).padStart(2,'0') + 's';
         }
         function fmtDur(ms) { return ms < 1000 ? ms + 'ms' : (ms/1000).toFixed(1) + 's'; }
+        function fmtUTC(s) {
+            if (!s) return '--';
+            // Handle "YYYY-MM-DDTHH:MM:SSZ" or "YYYY-MM-DD HH:MM:SS"
+            return s.replace('T',' ').replace('Z','');
+        }
         function typeClass(t) {
             t = (t||'').toLowerCase();
             if (t.includes('temp')) return 'type-temp';
@@ -1336,7 +1341,7 @@ void SeaSenseWebServer::handleData() {
                     tbody.innerHTML = d.history.map(e => {
                         const cls = e.success ? 'badge-ok' : 'badge-err';
                         const lbl = e.success ? 'OK' : 'FAIL';
-                        const time = (e.start_ms > 0 && uptimeMs > 0) ? fmtAgo(uptimeMs - e.start_ms) : (e.start_ms / 1000).toFixed(0) + 's uptime';
+                        const time = (e.start_ms > 0 && uptimeMs > 0) ? fmtAgo(uptimeMs - e.start_ms) : '--';
                         return '<tr><td>' + time + '</td>'
                             + '<td><span class="badge ' + cls + '">' + lbl + '</span></td>'
                             + '<td>' + (e.record_count || 0) + '</td>'
@@ -1360,12 +1365,9 @@ void SeaSenseWebServer::handleData() {
                             const tc = typeClass(r.type);
                             let timeStr;
                             if (r.time) {
-                                timeStr = r.time;
+                                timeStr = fmtUTC(r.time);
                             } else if (uptimeMs > 0 && r.millis > 0 && r.millis <= uptimeMs) {
                                 timeStr = fmtAgo(uptimeMs - r.millis);
-                            } else if (r.millis > 0) {
-                                const s = Math.floor((r.millis || 0) / 1000);
-                                timeStr = 'Boot +' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
                             } else {
                                 timeStr = '--';
                             }
