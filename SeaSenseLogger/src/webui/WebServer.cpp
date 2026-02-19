@@ -2304,8 +2304,8 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
     if (doc["device"].is<JsonObject>()) {
         ConfigManager::DeviceConfig device;
         device.deviceGUID = doc["device"]["device_guid"] | "";
-        device.partnerID = doc["device"]["partner_id"] | "";
-        device.firmwareVersion = doc["device"]["firmware_version"] | "2.0.0";
+        device.partnerID = doc["device"]["partner_id"] | PARTNER_ID_DEFAULT;
+        device.firmwareVersion = FIRMWARE_VERSION;  // Always use compiled-in version
         _configManager->setDeviceConfig(device);
     }
 

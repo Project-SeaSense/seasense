@@ -189,8 +189,9 @@ bool ConfigManager::loadFromFile() {
     if (doc["device"].is<JsonObject>()) {
         JsonObject device = doc["device"];
         _device.deviceGUID = device["device_guid"] | "";
-        _device.partnerID = device["partner_id"] | "";
-        _device.firmwareVersion = device["firmware_version"] | "2.0.0";
+        _device.partnerID = device["partner_id"] | PARTNER_ID_DEFAULT;
+        // Always use compiled-in version (reflects what's actually running)
+        _device.firmwareVersion = FIRMWARE_VERSION;
     }
 
     // Load pump config
@@ -344,8 +345,8 @@ void ConfigManager::setDefaults() {
 
     // Device defaults
     _device.deviceGUID = "seasense-esp32";  // Will be overridden by device_config.h
-    _device.partnerID = "";
-    _device.firmwareVersion = "2.0.0";
+    _device.partnerID = PARTNER_ID_DEFAULT;
+    _device.firmwareVersion = FIRMWARE_VERSION;
 
     // Pump defaults from hardware_config.h
     _pump.flushDurationMs = PUMP_FLUSH_DURATION_MS;
