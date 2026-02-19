@@ -299,10 +299,10 @@ void SeaSenseWebServer::handleDashboard() {
         .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
         .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
         .hamburger:hover { color:var(--ac); background:var(--ag) }
-        .title { font-size:14px; font-weight:600; letter-spacing:0.5px; color:var(--ac) }
+        .title { font-size:14px; font-weight:600; color:var(--ac); text-transform:none }
         .sidebar { position:fixed; left:-260px; top:0; width:260px; height:100%; background:var(--bg); border-right:1px solid var(--bd); transition:left 0.3s ease; z-index:201; pointer-events:auto }
         .sidebar.open { left:0 }
-        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:600; color:var(--ac); font-size:13px; letter-spacing:0.5px; background:var(--bg) }
+        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:600; color:var(--ac); font-size:13px; background:var(--bg); text-transform:none }
         .sidebar-nav { list-style:none; padding:8px 0 }
         .sidebar-nav a { display:block; padding:12px 20px; color:var(--t2); text-decoration:none; font-size:14px; font-weight:500; transition:all 0.2s; border-left:2px solid transparent; border-bottom:1px solid rgba(26,39,68,0.5) }
         .sidebar-nav a:hover { color:var(--tx); background:rgba(34,211,238,0.05) }
@@ -642,10 +642,10 @@ void SeaSenseWebServer::handleCalibrate() {
         .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
         .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
         .hamburger:hover { color:var(--ac); background:var(--ag) }
-        .title { font-size:14px; font-weight:600; letter-spacing:0.5px; color:var(--ac) }
+        .title { font-size:14px; font-weight:600; color:var(--ac); text-transform:none }
         .sidebar { position:fixed; left:-260px; top:0; width:260px; height:100%; background:var(--bg); border-right:1px solid var(--bd); transition:left 0.3s ease; z-index:201; pointer-events:auto }
         .sidebar.open { left:0 }
-        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:600; color:var(--ac); font-size:13px; letter-spacing:0.5px; background:var(--bg) }
+        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:600; color:var(--ac); font-size:13px; background:var(--bg); text-transform:none }
         .sidebar-nav { list-style:none; padding:8px 0 }
         .sidebar-nav a { display:block; padding:12px 20px; color:var(--t2); text-decoration:none; font-size:14px; font-weight:500; transition:all 0.2s; border-left:2px solid transparent; border-bottom:1px solid rgba(26,39,68,0.5) }
         .sidebar-nav a:hover { color:var(--tx); background:rgba(34,211,238,0.05) }
@@ -1119,10 +1119,10 @@ void SeaSenseWebServer::handleData() {
         .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
         .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
         .hamburger:hover { color:var(--ac); background:var(--ag) }
-        .title { font-size:14px; font-weight:600; letter-spacing:0.5px; color:var(--ac) }
+        .title { font-size:14px; font-weight:600; color:var(--ac); text-transform:none }
         .sidebar { position:fixed; left:-260px; top:0; width:260px; height:100%; background:var(--bg); border-right:1px solid var(--bd); transition:left 0.3s ease; z-index:201; pointer-events:auto }
         .sidebar.open { left:0 }
-        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:600; color:var(--ac); font-size:13px; letter-spacing:0.5px; background:var(--bg) }
+        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:600; color:var(--ac); font-size:13px; background:var(--bg); text-transform:none }
         .sidebar-nav { list-style:none; padding:8px 0 }
         .sidebar-nav a { display:block; padding:12px 20px; color:var(--t2); text-decoration:none; font-size:14px; font-weight:500; transition:all 0.2s; border-left:2px solid transparent; border-bottom:1px solid rgba(26,39,68,0.5) }
         .sidebar-nav a:hover { color:var(--tx); background:rgba(34,211,238,0.05) }
@@ -1472,10 +1472,10 @@ void SeaSenseWebServer::handleSettings() {
         .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
         .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
         .hamburger:hover { color:var(--ac); background:var(--ag) }
-        .title { font-size:14px; font-weight:600; letter-spacing:0.5px; color:var(--ac) }
+        .title { font-size:14px; font-weight:600; color:var(--ac); text-transform:none }
         .sidebar { position:fixed; left:-260px; top:0; width:260px; height:100%; background:var(--bg); border-right:1px solid var(--bd); transition:left 0.3s ease; z-index:201; pointer-events:auto }
         .sidebar.open { left:0 }
-        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:600; color:var(--ac); font-size:13px; letter-spacing:0.5px; background:var(--bg) }
+        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:600; color:var(--ac); font-size:13px; background:var(--bg); text-transform:none }
         .sidebar-nav { list-style:none; padding:8px 0 }
         .sidebar-nav a { display:block; padding:12px 20px; color:var(--t2); text-decoration:none; font-size:14px; font-weight:500; transition:all 0.2s; border-left:2px solid transparent; border-bottom:1px solid rgba(26,39,68,0.5) }
         .sidebar-nav a:hover { color:var(--tx); background:rgba(34,211,238,0.05) }
