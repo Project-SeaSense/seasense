@@ -1581,7 +1581,10 @@ void SeaSenseWebServer::handleSettings() {
             <h2>Device Configuration</h2>
             <div class="form-group">
                 <label>Device GUID</label>
-                <input type="text" id="device-guid" name="device-guid" readonly>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="device-guid" name="device-guid" readonly style="flex:1;">
+                    <button type="button" class="btn" onclick="regenerateGUID()" style="white-space:nowrap;">Regenerate</button>
+                </div>
             </div>
             <div class="form-group">
                 <label>Partner ID</label>
@@ -1777,6 +1780,22 @@ void SeaSenseWebServer::handleSettings() {
                 }
             } catch (e) {
                 showToast('Network error: ' + e.message, 'error');
+            }
+        }
+
+        async function regenerateGUID() {
+            if (!confirm('Generate a new Device GUID? The old one cannot be recovered.')) return;
+            try {
+                const r = await fetch('/api/device/regenerate-guid', {method:'POST'});
+                const d = await r.json();
+                if (r.ok) {
+                    document.getElementById('device-guid').value = d.device_guid;
+                    showToast('Device GUID regenerated.', 'success');
+                } else {
+                    showToast('Failed to regenerate GUID.', 'error');
+                }
+            } catch (e) {
+                showToast('Error: ' + e.message, 'error');
             }
         }
 
