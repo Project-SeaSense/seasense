@@ -7,6 +7,7 @@
 #include <ArduinoJson.h>
 #include <esp_task_wdt.h>
 #include <esp_random.h>
+#include <math.h>
 #include "../../config/hardware_config.h"
 #include "../../config/secrets.h"
 
@@ -217,6 +218,8 @@ bool ConfigManager::loadFromFile() {
     if (doc["sampling"].is<JsonObject>()) {
         JsonObject sampling = doc["sampling"];
         _sampling.sensorIntervalMs = sampling["sensor_interval_ms"] | 900000;
+        _sampling.skipIfStationary = sampling["skip_if_stationary"] | false;
+        _sampling.stationaryDeltaMeters = sampling["stationary_delta_meters"] | 100.0f;
     }
 
     // Load GPS config
@@ -275,6 +278,8 @@ bool ConfigManager::saveToFile() {
     // Sampling section
     JsonObject sampling = doc["sampling"].to<JsonObject>();
     sampling["sensor_interval_ms"] = _sampling.sensorIntervalMs;
+    sampling["skip_if_stationary"] = _sampling.skipIfStationary;
+    sampling["stationary_delta_meters"] = _sampling.stationaryDeltaMeters;
 
     // GPS section
     JsonObject gps = doc["gps"].to<JsonObject>();
@@ -358,7 +363,9 @@ void ConfigManager::setDefaults() {
     _pump.enabled = true;
 
     // Sampling defaults
-    _sampling.sensorIntervalMs = 900000;  // 15 minutes
+    _sampling.sensorIntervalMs = 900000;      // 15 minutes
+    _sampling.skipIfStationary = false;       // default off
+    _sampling.stationaryDeltaMeters = 100.0f;  // significant movement threshold
 
     // GPS defaults - use onboard GPS, fall back if NMEA2000 has no fix
     _gps.useNMEA2000 = false;
@@ -417,6 +424,10 @@ String ConfigManager::regenerateDeviceGUID() {
 void ConfigManager::clampConfig() {
     // Sampling bounds: 5 seconds to 24 hours
     _sampling.sensorIntervalMs = constrain(_sampling.sensorIntervalMs, (uint32_t)5000, (uint32_t)86400000);
+
+    // Movement gate bounds: 1m to 1000m
+    if (isnan(_sampling.stationaryDeltaMeters)) _sampling.stationaryDeltaMeters = 100.0f;
+    _sampling.stationaryDeltaMeters = constrain(_sampling.stationaryDeltaMeters, 1.0f, 1000.0f);
 
     // API upload bounds: 1 minute to 24 hours
     _api.uploadInterval = constrain(_api.uploadInterval, (uint32_t)60000, (uint32_t)86400000);

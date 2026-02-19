@@ -1566,6 +1566,29 @@ void SeaSenseWebServer::handleSettings() {
                 </div>
                 <small id="interval-hint">How often to pump and read sensors. Default: 15 min.</small>
             </div>
+            <div class="form-group">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" id="skip-if-stationary" name="skip-if-stationary" style="width:auto;margin:0;">
+                    Skip measurement cycle if boat has not moved significantly since previous measurement
+                </label>
+                <small>Uses GPS delta vs previous measurement. Significant movement threshold: 100 m.</small>
+            </div>
+
+            <h3>GPS Source</h3>
+            <div class="form-group">
+                <label>Position &amp; Time Source</label>
+                <select id="gps-source" name="gps-source">
+                    <option value="onboard">Onboard GPS (NEO-6M)</option>
+                    <option value="nmea2000">NMEA2000 Network</option>
+                </select>
+                <small>Select NMEA2000 if the device is installed in the bilge without sky visibility. Requires a GPS chartplotter on the NMEA2000 bus.</small>
+            </div>
+            <div class="form-group">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" id="gps-fallback" name="gps-fallback" style="width:auto;margin:0;">
+                    Fall back to onboard GPS if NMEA2000 has no fix
+                </label>
+            </div>
         </div>
 
         <!-- Device Configuration -->
@@ -1658,6 +1681,7 @@ void SeaSenseWebServer::handleSettings() {
                     const ms = config.sampling.sensor_interval_ms || 900000;
                     document.getElementById('sensor-interval-min').value = Math.floor(ms / 60000);
                     document.getElementById('sensor-interval-sec').value = Math.round((ms % 60000) / 1000);
+                    document.getElementById('skip-if-stationary').checked = !!config.sampling.skip_if_stationary;
 
                     // Show minimum derived from pump cycle
                     const minMs = config.sampling.min_sampling_ms || 5000;
@@ -1716,7 +1740,8 @@ void SeaSenseWebServer::handleSettings() {
                 },
                 sampling: {
                     sensor_interval_ms: (parseInt(document.getElementById('sensor-interval-min').value || 0) * 60
-                        + parseInt(document.getElementById('sensor-interval-sec').value || 0)) * 1000
+                        + parseInt(document.getElementById('sensor-interval-sec').value || 0)) * 1000,
+                    skip_if_stationary: document.getElementById('skip-if-stationary').checked
                 },
                 device: {
                     device_guid: document.getElementById('device-guid').value,
@@ -2136,6 +2161,8 @@ void SeaSenseWebServer::handleApiConfig() {
     ConfigManager::SamplingConfig sampling = _configManager->getSamplingConfig();
     JsonObject samplingObj = doc["sampling"].to<JsonObject>();
     samplingObj["sensor_interval_ms"] = sampling.sensorIntervalMs;
+    samplingObj["skip_if_stationary"] = sampling.skipIfStationary;
+    samplingObj["stationary_delta_meters"] = sampling.stationaryDeltaMeters;
 
     // Minimum sampling interval = full pump cycle duration (calculated from current pump config)
     {
@@ -2202,16 +2229,23 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
         unsigned long minSamplingMs = (unsigned long)pc.flushDurationMs + pc.measureDurationMs;
         minSamplingMs = max(minSamplingMs, 5000UL);
 
-        ConfigManager::SamplingConfig sampling;
+        ConfigManager::SamplingConfig sampling = _configManager->getSamplingConfig();
         sampling.sensorIntervalMs = doc["sampling"]["sensor_interval_ms"] | 900000UL;
         sampling.sensorIntervalMs = max(sampling.sensorIntervalMs, minSamplingMs);
+        sampling.skipIfStationary = doc["sampling"]["skip_if_stationary"] | false;
+        // keep/allow threshold updates for forward compatibility
+        sampling.stationaryDeltaMeters = doc["sampling"]["stationary_delta_meters"] | sampling.stationaryDeltaMeters;
         _configManager->setSamplingConfig(sampling);
 
         // Apply immediately: update globals so dashboard countdown reflects new interval
         extern unsigned long sensorSamplingIntervalMs;
+        extern bool skipMeasurementIfStationary;
+        extern float stationaryDeltaMeters;
         extern unsigned long lastSensorReadAt;
         extern portMUX_TYPE g_timerMux;
         sensorSamplingIntervalMs = sampling.sensorIntervalMs;
+        skipMeasurementIfStationary = sampling.skipIfStationary;
+        stationaryDeltaMeters = sampling.stationaryDeltaMeters;
         portENTER_CRITICAL(&g_timerMux);
         lastSensorReadAt = millis();  // reschedule from now
         portEXIT_CRITICAL(&g_timerMux);

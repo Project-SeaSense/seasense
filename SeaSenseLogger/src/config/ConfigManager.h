@@ -46,7 +46,9 @@ public:
      * Sampling configuration
      */
     struct SamplingConfig {
-        uint32_t sensorIntervalMs;  // milliseconds between sensor readings
+        uint32_t sensorIntervalMs;     // milliseconds between sensor readings
+        bool skipIfStationary;         // if true, skip storage measurement when GPS movement is minimal
+        float stationaryDeltaMeters;   // minimum movement to count as significant
     };
 
     /**

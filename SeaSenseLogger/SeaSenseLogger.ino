@@ -106,8 +106,15 @@ SystemHealth systemHealth;
 JsonDocument deviceConfigDoc;
 bool configLoaded = false;
 
-// Runtime sampling interval (from ConfigManager)
+// Runtime sampling interval + movement gating (from ConfigManager)
 unsigned long sensorSamplingIntervalMs = 900000;  // Default 15 minutes
+bool skipMeasurementIfStationary = false;
+float stationaryDeltaMeters = 100.0f;
+
+// Last persisted measurement position (for movement gating)
+bool hasLastMeasurementGPS = false;
+float lastMeasurementLat = NAN;
+float lastMeasurementLon = NAN;
 
 // Timestamp of last sensor read (elapsed-time pattern, rollover-safe)
 unsigned long lastSensorReadAt = 0;
@@ -469,11 +476,16 @@ void setup() {
         Serial.println("[WARNING] Failed to load config from SPIFFS, using defaults");
     }
 
-    // Load sampling interval from configuration
-    sensorSamplingIntervalMs = configManager.getSamplingConfig().sensorIntervalMs;
+    // Load sampling configuration
+    ConfigManager::SamplingConfig samplingCfg = configManager.getSamplingConfig();
+    sensorSamplingIntervalMs = samplingCfg.sensorIntervalMs;
+    skipMeasurementIfStationary = samplingCfg.skipIfStationary;
+    stationaryDeltaMeters = samplingCfg.stationaryDeltaMeters;
     Serial.print("[CONFIG] Sensor sampling interval: ");
     Serial.print(sensorSamplingIntervalMs / 1000);
     Serial.println(" seconds");
+    Serial.print("[CONFIG] Skip stationary cycles: ");
+    Serial.println(skipMeasurementIfStationary ? "enabled" : "disabled");
 
     // Initialize storage
     if (!storage.begin()) {
@@ -578,6 +590,21 @@ void resetI2CBus() {
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     Wire.setClock(I2C_FREQUENCY);
     Serial.println("[I2C] Bus reset performed");
+}
+
+float distanceMeters(float lat1, float lon1, float lat2, float lon2) {
+    // Haversine distance in meters
+    const float R = 6371000.0f;
+    const float toRad = PI / 180.0f;
+    float p1 = lat1 * toRad;
+    float p2 = lat2 * toRad;
+    float dLat = (lat2 - lat1) * toRad;
+    float dLon = (lon2 - lon1) * toRad;
+
+    float a = sinf(dLat * 0.5f) * sinf(dLat * 0.5f)
+            + cosf(p1) * cosf(p2) * sinf(dLon * 0.5f) * sinf(dLon * 0.5f);
+    float c = 2.0f * atan2f(sqrtf(a), sqrtf(max(0.0f, 1.0f - a)));
+    return R * c;
 }
 
 void loop() {
@@ -686,8 +713,31 @@ void loop() {
         const bool gpsValid = activeGPSHasValidFix()
             && !isnan(gpsData.latitude) && !isnan(gpsData.longitude);
 
-        // Acquire I2C mutex for sensor reads (prevents collision with web server)
-        bool i2cLocked = (g_i2cMutex != NULL) && xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(2000));
+        // Optional movement gate: skip storage cycle if boat has not moved enough
+        bool skipByMotionGate = false;
+        if (saveToStorage && skipMeasurementIfStationary) {
+            if (gpsValid && hasLastMeasurementGPS) {
+                float deltaM = distanceMeters(lastMeasurementLat, lastMeasurementLon, gpsData.latitude, gpsData.longitude);
+                if (deltaM < stationaryDeltaMeters) {
+                    skipByMotionGate = true;
+                    Serial.print("[SAMPLING] Skipping cycle (stationary, Δ=");
+                    Serial.print(deltaM, 1);
+                    Serial.print("m < ");
+                    Serial.print(stationaryDeltaMeters, 1);
+                    Serial.println("m)");
+                }
+            } else if (!gpsValid) {
+                Serial.println("[SAMPLING] Motion gate enabled, but GPS fix invalid — measuring anyway");
+            }
+        }
+
+        if (skipByMotionGate) {
+            // Complete pump cycle gracefully without reading/logging
+            pumpController.notifyMeasurementComplete();
+            digitalWrite(LED_PIN, LOW);
+        } else {
+            // Acquire I2C mutex for sensor reads (prevents collision with web server)
+            bool i2cLocked = (g_i2cMutex != NULL) && xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(2000));
 
         // Read temperature
         if (tempSensor.isEnabled() && tempSensor.read()) {
@@ -871,9 +921,15 @@ void loop() {
         // Notify pump that all sensors have been read this cycle
         if (saveToStorage) {
             pumpController.notifyMeasurementComplete();
+            if (gpsValid) {
+                hasLastMeasurementGPS = true;
+                lastMeasurementLat = gpsData.latitude;
+                lastMeasurementLon = gpsData.longitude;
+            }
         }
 
         digitalWrite(LED_PIN, LOW);
+        }
     }
 
     // Process API upload (non-blocking)
