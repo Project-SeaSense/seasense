@@ -330,6 +330,7 @@ void SeaSenseWebServer::handleDashboard() {
         .env-value { font-size:20px; font-weight:700; color:var(--tx); font-family:'SF Mono',ui-monospace,Consolas,monospace; font-variant-numeric:tabular-nums; line-height:1.2 }
         .env-unit { font-size:11px; color:var(--t2); margin-left:2px; font-weight:400 }
         .env-none { text-align:center; padding:20px; color:var(--t3); font-size:13px; grid-column:1/-1 }
+        .env-nodata { font-size:9px; color:var(--t3); font-style:italic; margin-top:2px }
         .loading-pulse { animation:pulse 2s ease-in-out infinite }
         @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
         .status-msg { text-align:center; padding:30px; color:var(--t3); font-size:13px }
@@ -382,8 +383,12 @@ void SeaSenseWebServer::handleDashboard() {
         <div class="sensors-grid" id="sensors">
             <div class="status-msg">Loading sensor data...</div>
         </div>
-        <div class="section-title">Environment (NMEA2000)</div>
-        <div class="env-grid" id="environment">
+        <div class="section-title">Navigation</div>
+        <div class="env-grid" id="envNav">
+            <div class="env-none">Waiting for data...</div>
+        </div>
+        <div class="section-title">Environment</div>
+        <div class="env-grid" id="envData">
             <div class="env-none">Waiting for data...</div>
         </div>
     </div>
@@ -567,45 +572,40 @@ void SeaSenseWebServer::handleDashboard() {
         }
 
         function envCard(label, value, unit) {
-            if (value === undefined) return '';
-            return `<div class="env-card"><div class="env-label">${label}</div><div class="env-value">${value}<span class="env-unit">${unit}</span></div></div>`;
+            if (value !== undefined) {
+                return `<div class="env-card"><div class="env-label">${label}</div><div class="env-value">${value}<span class="env-unit">${unit}</span></div></div>`;
+            }
+            return `<div class="env-card stale"><div class="env-label">${label}</div><div class="env-value">&mdash;<span class="env-unit"></span></div><div class="env-nodata">no data</div></div>`;
         }
 
         function updateEnv() {
             fetch('/api/environment')
                 .then(r => r.json())
                 .then(d => {
-                    if (!d.has_any) {
-                        document.getElementById('environment').innerHTML = '<div class="env-none">No NMEA2000 data</div>';
-                        return;
-                    }
-                    let h = '';
-                    if (d.wind) {
-                        h += envCard('True Wind', d.wind.speed_true, 'm/s');
-                        h += envCard('Wind Angle', d.wind.angle_true, '\u00B0');
-                        h += envCard('App Wind', d.wind.speed_app, 'm/s');
-                        h += envCard('App Angle', d.wind.angle_app, '\u00B0');
-                    }
-                    if (d.water) {
-                        h += envCard('Depth', d.water.depth, 'm');
-                        h += envCard('Speed TW', d.water.stw, 'm/s');
-                        h += envCard('Water Temp', d.water.temp_ext, '\u00B0C');
-                    }
-                    if (d.atmosphere) {
-                        h += envCard('Air Temp', d.atmosphere.air_temp, '\u00B0C');
-                        h += envCard('Pressure', d.atmosphere.pressure_hpa, 'hPa');
-                        h += envCard('Humidity', d.atmosphere.humidity, '%');
-                    }
-                    if (d.navigation) {
-                        h += envCard('COG', d.navigation.cog, '\u00B0');
-                        h += envCard('SOG', d.navigation.sog, 'm/s');
-                        h += envCard('Heading', d.navigation.heading, '\u00B0');
-                    }
-                    if (d.attitude) {
-                        h += envCard('Pitch', d.attitude.pitch, '\u00B0');
-                        h += envCard('Roll', d.attitude.roll, '\u00B0');
-                    }
-                    document.getElementById('environment').innerHTML = h || '<div class="env-none">No NMEA2000 data</div>';
+                    const n = d.navigation || {};
+                    const a = d.attitude || {};
+                    let nav = '';
+                    nav += envCard('COG', n.cog, '\u00B0');
+                    nav += envCard('SOG', n.sog, 'm/s');
+                    nav += envCard('Heading', n.heading, '\u00B0');
+                    nav += envCard('STW', d.water ? d.water.stw : undefined, 'm/s');
+                    nav += envCard('Pitch', a.pitch, '\u00B0');
+                    nav += envCard('Roll', a.roll, '\u00B0');
+                    document.getElementById('envNav').innerHTML = nav;
+
+                    const w = d.wind || {};
+                    const atm = d.atmosphere || {};
+                    const wat = d.water || {};
+                    let env = '';
+                    env += envCard('Water Temp', wat.temp_ext, '\u00B0C');
+                    env += envCard('Air Temp', atm.air_temp, '\u00B0C');
+                    env += envCard('Depth', wat.depth, 'm');
+                    env += envCard('Pressure', atm.pressure_hpa, 'hPa');
+                    env += envCard('True Wind', w.speed_true, 'm/s');
+                    env += envCard('Wind Dir', w.angle_true, '\u00B0');
+                    env += envCard('Humidity', atm.humidity, '%');
+                    env += envCard('App Wind', w.speed_app, 'm/s');
+                    document.getElementById('envData').innerHTML = env;
                 })
                 .catch(() => {});
         }
@@ -2426,44 +2426,34 @@ void SeaSenseWebServer::handleApiEnvironment() {
     doc["has_any"] = n2kEnv.hasAnyData();
 
     // Wind
-    if (env.hasWind) {
-        JsonObject wind = doc["wind"].to<JsonObject>();
-        if (!isnan(env.windSpeedTrue))     wind["speed_true"] = serialized(String(env.windSpeedTrue, 1));
-        if (!isnan(env.windAngleTrue))     wind["angle_true"] = serialized(String(env.windAngleTrue, 0));
-        if (!isnan(env.windSpeedApparent)) wind["speed_app"] = serialized(String(env.windSpeedApparent, 1));
-        if (!isnan(env.windAngleApparent)) wind["angle_app"] = serialized(String(env.windAngleApparent, 0));
-    }
+    JsonObject wind = doc["wind"].to<JsonObject>();
+    if (!isnan(env.windSpeedTrue))     wind["speed_true"] = serialized(String(env.windSpeedTrue, 1));
+    if (!isnan(env.windAngleTrue))     wind["angle_true"] = serialized(String(env.windAngleTrue, 0));
+    if (!isnan(env.windSpeedApparent)) wind["speed_app"] = serialized(String(env.windSpeedApparent, 1));
+    if (!isnan(env.windAngleApparent)) wind["angle_app"] = serialized(String(env.windAngleApparent, 0));
 
     // Water
-    if (env.hasDepth || env.hasSpeedThroughWater || env.hasWaterTempExternal) {
-        JsonObject water = doc["water"].to<JsonObject>();
-        if (!isnan(env.waterDepth))        water["depth"] = serialized(String(env.waterDepth, 1));
-        if (!isnan(env.speedThroughWater)) water["stw"] = serialized(String(env.speedThroughWater, 1));
-        if (!isnan(env.waterTempExternal)) water["temp_ext"] = serialized(String(env.waterTempExternal, 1));
-    }
+    JsonObject water = doc["water"].to<JsonObject>();
+    if (!isnan(env.waterDepth))        water["depth"] = serialized(String(env.waterDepth, 1));
+    if (!isnan(env.speedThroughWater)) water["stw"] = serialized(String(env.speedThroughWater, 1));
+    if (!isnan(env.waterTempExternal)) water["temp_ext"] = serialized(String(env.waterTempExternal, 1));
 
     // Atmosphere
-    if (env.hasAirTemp || env.hasBaroPressure || env.hasHumidity) {
-        JsonObject atmo = doc["atmosphere"].to<JsonObject>();
-        if (!isnan(env.airTemp))      atmo["air_temp"] = serialized(String(env.airTemp, 1));
-        if (!isnan(env.baroPressure)) atmo["pressure_hpa"] = serialized(String(env.baroPressure / 100.0f, 1));
-        if (!isnan(env.humidity))     atmo["humidity"] = serialized(String(env.humidity, 0));
-    }
+    JsonObject atmo = doc["atmosphere"].to<JsonObject>();
+    if (!isnan(env.airTemp))      atmo["air_temp"] = serialized(String(env.airTemp, 1));
+    if (!isnan(env.baroPressure)) atmo["pressure_hpa"] = serialized(String(env.baroPressure / 100.0f, 1));
+    if (!isnan(env.humidity))     atmo["humidity"] = serialized(String(env.humidity, 0));
 
     // Navigation
-    if (env.hasCOGSOG || env.hasHeading) {
-        JsonObject nav = doc["navigation"].to<JsonObject>();
-        if (!isnan(env.cogTrue)) nav["cog"] = serialized(String(env.cogTrue, 0));
-        if (!isnan(env.sog))    nav["sog"] = serialized(String(env.sog, 1));
-        if (!isnan(env.heading)) nav["heading"] = serialized(String(env.heading, 0));
-    }
+    JsonObject nav = doc["navigation"].to<JsonObject>();
+    if (!isnan(env.cogTrue)) nav["cog"] = serialized(String(env.cogTrue, 0));
+    if (!isnan(env.sog))    nav["sog"] = serialized(String(env.sog, 1));
+    if (!isnan(env.heading)) nav["heading"] = serialized(String(env.heading, 0));
 
     // Attitude
-    if (env.hasAttitude) {
-        JsonObject att = doc["attitude"].to<JsonObject>();
-        if (!isnan(env.pitch)) att["pitch"] = serialized(String(env.pitch, 1));
-        if (!isnan(env.roll))  att["roll"] = serialized(String(env.roll, 1));
-    }
+    JsonObject att = doc["attitude"].to<JsonObject>();
+    if (!isnan(env.pitch)) att["pitch"] = serialized(String(env.pitch, 1));
+    if (!isnan(env.roll))  att["roll"] = serialized(String(env.roll, 1));
 
     String json;
     serializeJson(doc, json);
