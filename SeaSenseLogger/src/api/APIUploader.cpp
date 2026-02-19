@@ -116,10 +116,18 @@ void APIUploader::process() {
         }
     }
 
-    // Query data from storage
+    // Query data from storage — use record count to skip already-uploaded records.
+    // millis()-based filtering breaks across reboots since millis() resets to 0.
     _status = UploadStatus::QUERYING_DATA;
-    unsigned long lastUploaded = _storage->getLastUploadedMillis();
-    std::vector<DataRecord> records = _storage->readRecords(lastUploaded, _config.batchSize);
+    StorageStats stats = _storage->getStats();
+    uint32_t alreadyUploaded = stats.totalRecords - stats.recordsSinceUpload;
+
+    // Read all records, then slice off the un-uploaded tail
+    std::vector<DataRecord> allRecords = _storage->readRecords(0, stats.totalRecords);
+    std::vector<DataRecord> records;
+    for (uint32_t i = alreadyUploaded; i < allRecords.size() && records.size() < _config.batchSize; i++) {
+        records.push_back(allRecords[i]);
+    }
 
     if (records.empty()) {
         _status = UploadStatus::ERROR_NO_DATA;
@@ -131,7 +139,9 @@ void APIUploader::process() {
 
     Serial.print("[API] Uploading ");
     Serial.print(records.size());
-    Serial.println(" records...");
+    Serial.print(" of ");
+    Serial.print(stats.recordsSinceUpload);
+    Serial.println(" pending records...");
 
     // Build payload
     String payload = buildPayload(records);
@@ -160,9 +170,8 @@ void APIUploader::process() {
         _lastError = "";
         _lastUploadTime = now;
 
-        // Update last uploaded timestamp
-        unsigned long lastRecordMillis = records[records.size() - 1].millis;
-        _storage->setLastUploadedMillis(lastRecordMillis);
+        // Mark these records as uploaded (persists count to SPIFFS metadata)
+        _storage->setLastUploadedMillis(records[records.size() - 1].millis);
 
         Serial.print("[API] Upload successful! ");
         Serial.print(records.size());
@@ -203,11 +212,8 @@ uint32_t APIUploader::getPendingRecords() const {
 
     StorageStats stats = _storage->getStats();
 
-    // If we've never uploaded, everything is pending
-    if (_lastUploadTime == 0) return stats.totalRecords;
-
-    // Estimate: records written since last upload based on recordsSinceUpload if available
-    return stats.recordsSinceUpload > 0 ? stats.recordsSinceUpload : stats.totalRecords;
+    // recordsSinceUpload is persisted across reboots via SPIFFS metadata
+    return stats.recordsSinceUpload;
 }
 
 unsigned long APIUploader::getTimeUntilNext() const {

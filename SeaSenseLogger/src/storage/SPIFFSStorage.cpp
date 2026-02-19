@@ -207,7 +207,7 @@ StorageStats SPIFFSStorage::getStats() const {
         stats.totalRecords = _cachedRecordCount;
         stats.recordsSinceUpload = (stats.totalRecords > _metadata.recordsAtLastUpload)
             ? (stats.totalRecords - _metadata.recordsAtLastUpload)
-            : stats.totalRecords;
+            : 0;
         stats.status = StorageStatus::OK;
     } else {
         stats.totalBytes = 0;
@@ -484,6 +484,14 @@ bool SPIFFSStorage::trimOldRecords() {
     SPIFFS.remove(BACKUP_FILE);
 
     _cachedRecordCount = _maxRecords;
+
+    // Adjust upload marker: trimmed records were the oldest (already uploaded)
+    if (_metadata.recordsAtLastUpload > toSkip) {
+        _metadata.recordsAtLastUpload -= toSkip;
+    } else {
+        _metadata.recordsAtLastUpload = 0;
+    }
+    saveMetadata();
 
     DEBUG_STORAGE_PRINT("Trimmed to ");
     DEBUG_STORAGE_PRINT(_maxRecords);
