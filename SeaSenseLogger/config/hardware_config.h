@@ -11,7 +11,10 @@
 // Firmware Identity
 // ============================================================================
 
-#define FIRMWARE_VERSION "2.1.0"
+// Override at build time: -DFIRMWARE_VERSION='"abc1234"'
+#ifndef FIRMWARE_VERSION
+#define FIRMWARE_VERSION "c600ff0"
+#endif
 #define PARTNER_ID_DEFAULT "projectseasense"
 
 // ============================================================================

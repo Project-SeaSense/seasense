@@ -189,7 +189,8 @@ bool ConfigManager::loadFromFile() {
     if (doc["device"].is<JsonObject>()) {
         JsonObject device = doc["device"];
         _device.deviceGUID = device["device_guid"] | "";
-        _device.partnerID = device["partner_id"] | PARTNER_ID_DEFAULT;
+        _device.partnerID = device["partner_id"] | "";
+        if (_device.partnerID.length() == 0) _device.partnerID = PARTNER_ID_DEFAULT;
         // Always use compiled-in version (reflects what's actually running)
         _device.firmwareVersion = FIRMWARE_VERSION;
     }
