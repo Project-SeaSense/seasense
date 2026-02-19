@@ -1308,7 +1308,7 @@ void SeaSenseWebServer::handleSettings() {
             <div class="form-group">
                 <label>Station SSID (Boat WiFi)</label>
                 <input type="text" id="wifi-ssid" name="wifi-ssid">
-                <small>Leave empty for AP mode only</small>
+                <small>Leave empty for AP mode only. Device appears on the network as <strong id="hostnameHint"></strong></small>
             </div>
             <div class="form-group">
                 <label>Station Password</label>
@@ -1416,6 +1416,17 @@ void SeaSenseWebServer::handleSettings() {
         </form>
     </div>
 
+    <div id="restartModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;backdrop-filter:blur(4px);align-items:center;justify-content:center;">
+        <div style="background:var(--cd);border:1px solid var(--bd);border-radius:12px;padding:24px;max-width:380px;margin:20px;text-align:center;">
+            <div style="font-size:15px;font-weight:600;color:var(--ac);margin-bottom:12px;">Restart Required</div>
+            <p style="font-size:13px;color:var(--t2);margin-bottom:20px;">WiFi settings were changed. A restart is needed to apply them.</p>
+            <div style="display:flex;gap:10px;justify-content:center;">
+                <button class="button button-danger" onclick="restartDevice()">Restart Now</button>
+                <button class="button" onclick="closeRestartModal()" style="background:var(--b2);color:var(--tx);">Later</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         function toggleMenu() {
             document.getElementById('sidebar').classList.toggle('open');
@@ -1437,9 +1448,21 @@ void SeaSenseWebServer::handleSettings() {
             }
         });
 
+        let _initWifi = {};
+
+        function closeRestartModal() {
+            document.getElementById('restartModal').style.display = 'none';
+        }
+
         async function loadConfig() {
             try {
                 const config = await fetch('/api/config').then(r => r.json());
+                const status = await fetch('/api/status').then(r => r.json());
+                const hn = document.getElementById('hostnameHint');
+                if (hn && status.wifi && status.wifi.ap_ssid) hn.textContent = status.wifi.ap_ssid;
+
+                // Store initial WiFi values for restart detection
+                _initWifi = { ssid: config.wifi.station_ssid || '', password: config.wifi.station_password || '', ap_password: config.wifi.ap_password || '' };
 
                 // WiFi
                 document.getElementById('wifi-ssid').value = config.wifi.station_ssid || '';
@@ -1545,10 +1568,16 @@ void SeaSenseWebServer::handleSettings() {
                 const result = await response.json();
 
                 if (response.ok) {
-                    const min = parseInt(document.getElementById('sensor-interval-min').value || 0);
-                    const sec = parseInt(document.getElementById('sensor-interval-sec').value || 0);
-                    const intervalStr = min > 0 ? (min + 'm ' + (sec > 0 ? sec + 's' : '')).trim() : sec + 's';
-                    showToast('Saved. Sampling interval: ' + intervalStr + '. Dashboard updated.', 'success');
+                    showToast('Configuration saved.', 'success');
+                    // Check if WiFi credentials changed — these need a restart
+                    const wifiChanged = config.wifi.station_ssid !== _initWifi.ssid
+                        || config.wifi.station_password !== _initWifi.password
+                        || config.wifi.ap_password !== _initWifi.ap_password;
+                    if (wifiChanged) {
+                        document.getElementById('restartModal').style.display = 'flex';
+                    }
+                    // Update stored values so modal doesn't re-trigger on next save
+                    _initWifi = { ssid: config.wifi.station_ssid, password: config.wifi.station_password, ap_password: config.wifi.ap_password };
                 } else {
                     showToast('Error: ' + (result.error || 'Unknown error'), 'error');
                 }
