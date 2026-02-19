@@ -327,11 +327,11 @@ void ConfigManager::setDefaults() {
         _wifi.apPassword = "protectplanet!";
     #endif
 
-    // API defaults from secrets.h
+    // API defaults from secrets.h, fall back to live URL
     #ifdef API_URL
         _api.url = API_URL;
     #else
-        _api.url = "https://test-api.projectseasense.org";
+        _api.url = API_URL_LIVE;
     #endif
 
     #ifdef API_KEY

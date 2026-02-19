@@ -1528,13 +1528,11 @@ void SeaSenseWebServer::handleSettings() {
         <div class="section">
             <h2>API Configuration</h2>
             <div class="form-group">
-                <label>API URL</label>
-                <input type="text" id="api-url" name="api-url">
-                <small>Example: https://test-api.projectseasense.org</small>
-            </div>
-            <div class="form-group">
-                <label>API Key</label>
-                <input type="password" id="api-key" name="api-key">
+                <label>API Environment</label>
+                <select id="api-url" name="api-url">
+                    <option value="https://seasense.projectseasense.org">Live</option>
+                    <option value="https://test-api.projectseasense.org">Test</option>
+                </select>
             </div>
             <div class="form-group">
                 <label>Upload Interval (minutes)</label>
@@ -1679,8 +1677,7 @@ void SeaSenseWebServer::handleSettings() {
                 document.getElementById('wifi-ap-password').value = config.wifi.ap_password || '';
 
                 // API
-                document.getElementById('api-url').value = config.api.url || '';
-                document.getElementById('api-key').value = config.api.api_key || '';
+                document.getElementById('api-url').value = config.api.url || 'https://seasense.projectseasense.org';
                 document.getElementById('api-interval').value = (config.api.upload_interval_ms / 60000) || 5;
                 document.getElementById('api-batch').value = config.api.batch_size || 100;
                 document.getElementById('api-retries').value = config.api.max_retries || 5;
@@ -1747,7 +1744,6 @@ void SeaSenseWebServer::handleSettings() {
                 },
                 api: {
                     url: document.getElementById('api-url').value,
-                    api_key: document.getElementById('api-key').value,
                     upload_interval_ms: parseInt(document.getElementById('api-interval').value) * 60000,
                     batch_size: parseInt(document.getElementById('api-batch').value),
                     max_retries: parseInt(document.getElementById('api-retries').value)
@@ -2192,7 +2188,6 @@ void SeaSenseWebServer::handleApiConfig() {
     ConfigManager::APIConfig api = _configManager->getAPIConfig();
     JsonObject apiObj = doc["api"].to<JsonObject>();
     apiObj["url"] = api.url;
-    apiObj["api_key"] = api.apiKey;
     apiObj["upload_interval_ms"] = api.uploadInterval;
     apiObj["batch_size"] = api.batchSize;
     apiObj["max_retries"] = api.maxRetries;
@@ -2256,11 +2251,10 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
         _configManager->setWiFiConfig(wifi);
     }
 
-    // Update API config
+    // Update API config (preserve API key — set in firmware, not UI)
     if (doc["api"].is<JsonObject>()) {
-        ConfigManager::APIConfig api;
-        api.url = doc["api"]["url"] | "";
-        api.apiKey = doc["api"]["api_key"] | "";
+        ConfigManager::APIConfig api = _configManager->getAPIConfig();
+        api.url = doc["api"]["url"] | api.url;
         api.uploadInterval = doc["api"]["upload_interval_ms"] | 300000;
         api.batchSize = doc["api"]["batch_size"] | 100;
         api.maxRetries = doc["api"]["max_retries"] | 5;

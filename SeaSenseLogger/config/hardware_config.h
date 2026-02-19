@@ -16,6 +16,8 @@
 #define FIRMWARE_VERSION "c600ff0"
 #endif
 #define PARTNER_ID_DEFAULT "projectseasense"
+#define API_URL_LIVE "https://seasense.projectseasense.org"
+#define API_URL_TEST "https://test-api.projectseasense.org"
 
 // ============================================================================
 // I2C Configuration - Atlas Scientific EZO Sensors
