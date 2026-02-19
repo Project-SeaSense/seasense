@@ -448,6 +448,8 @@ void SeaSenseWebServer::handleDashboard() {
             return Math.floor(s / 3600) + 'h ago';
         }
 
+        let _upNextMs = 0, _upFetchedAt = 0;
+        let _upLastHtml = '';
         function updateUploadStatus() {
             const bar = document.getElementById('uploadBar');
             if (!bar) return;
@@ -462,22 +464,30 @@ void SeaSenseWebServer::handleDashboard() {
                     const pending = (u.pending_records != null) ? u.pending_records + ' pending' : '--';
                     const lastMs = u.last_success_ms || 0;
                     const lastStr = (lastMs > 0 && uptimeMs > 0) ? fmtAgo(uptimeMs - lastMs) : 'never';
-                    const nextMs = u.next_upload_ms || 0;
-                    const nextStr = nextMs > 0 ? fmtMs(nextMs) : '--';
-                    let html = '<span class="up-state ' + stateClass + '">' + status + '</span>'
+                    _upNextMs = u.next_upload_ms || 0;
+                    _upFetchedAt = Date.now();
+                    _upLastHtml = '<span class="up-state ' + stateClass + '">' + status + '</span>'
                         + '<span class="up-sep">&middot;</span>'
                         + '<span>' + pending + '</span>'
                         + '<span class="up-sep">&middot;</span>'
-                        + '<span>Last: ' + lastStr + '</span>'
-                        + '<span class="up-sep">&middot;</span>'
-                        + '<span>Next: ' + nextStr + '</span>';
+                        + '<span>Last: ' + lastStr + '</span>';
                     if (u.retry_count > 0) {
-                        html += '<span class="up-sep">&middot;</span>'
+                        _upLastHtml += '<span class="up-sep">&middot;</span>'
                             + '<span style="color:#f87171">Retry #' + u.retry_count + '</span>';
                     }
-                    bar.innerHTML = html;
+                    renderUploadBar();
                 })
                 .catch(() => {});
+        }
+        function renderUploadBar() {
+            const bar = document.getElementById('uploadBar');
+            if (!bar) return;
+            const elapsed = Date.now() - _upFetchedAt;
+            const remaining = Math.max(0, _upNextMs - elapsed);
+            const nextStr = remaining > 0 ? fmtMs(remaining) : '--';
+            bar.innerHTML = _upLastHtml
+                + '<span class="up-sep">&middot;</span>'
+                + '<span>Next: ' + nextStr + '</span>';
         }
 
         function update() {
@@ -580,6 +590,7 @@ void SeaSenseWebServer::handleDashboard() {
         updateUploadStatus();
         setInterval(() => { if (autoUpdate) { update(); updateEnv(); updateMeasurement(); } }, 3000);
         setInterval(updateUploadStatus, 10000);
+        setInterval(renderUploadBar, 1000);
     </script>
 </body>
 </html>
@@ -1237,6 +1248,12 @@ void SeaSenseWebServer::handleData() {
         const PAGE_SIZE = 20;
         let totalRecords = 0;
         let uptimeMs = 0;
+        let _dataUpNextMs = 0, _dataUpFetchedAt = 0;
+        function tickUpNext() {
+            const elapsed = Date.now() - _dataUpFetchedAt;
+            const remaining = Math.max(0, _dataUpNextMs - elapsed);
+            document.getElementById('upNext').textContent = remaining > 0 ? fmtMs(remaining) : '--';
+        }
 
         function toggleMenu() { document.getElementById('sidebar').classList.toggle('open'); document.getElementById('overlay').classList.toggle('show'); }
         function closeMenu()  { document.getElementById('sidebar').classList.remove('open'); document.getElementById('overlay').classList.remove('show'); }
@@ -1309,8 +1326,9 @@ void SeaSenseWebServer::handleData() {
 
                     const lastMs = u.last_success_ms || 0;
                     document.getElementById('upLast').textContent = (lastMs > 0 && uptimeMs > 0) ? fmtAgo(uptimeMs - lastMs) : 'never';
-                    const nextMs = u.next_upload_ms || 0;
-                    document.getElementById('upNext').textContent = nextMs > 0 ? fmtMs(nextMs) : '--';
+                    _dataUpNextMs = u.next_upload_ms || 0;
+                    _dataUpFetchedAt = Date.now();
+                    tickUpNext();
                 })
                 .catch(() => {});
             // Get storage stats separately
@@ -1429,6 +1447,7 @@ void SeaSenseWebServer::handleData() {
         loadHistory();
         loadRecords();
         setInterval(loadStats, 15000);
+        setInterval(tickUpNext, 1000);
         setInterval(function() { if (currentPage === 0) loadRecords(); }, 30000);
     </script>
 </body>
