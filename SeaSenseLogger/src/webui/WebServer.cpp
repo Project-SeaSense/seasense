@@ -1175,8 +1175,8 @@ void SeaSenseWebServer::handleData() {
             <div class="card-title">Storage <button class="btn btn-sm btn-outline" onclick="loadStats()">Refresh</button></div>
             <div class="stat-row" id="statsRow">
                 <div class="stat"><div class="stat-label">Records</div><div class="stat-value" id="statRecords">--</div><div class="stat-sub" id="statPending">-- pending upload</div></div>
-                <div class="stat"><div class="stat-label">SPIFFS Used</div><div class="stat-value" id="statSpiffs">--</div><div class="progress-bar"><div class="progress-fill" id="spiffsBar" style="width:0%"></div></div></div>
-                <div class="stat"><div class="stat-label">SD Card</div><div class="stat-value" id="statSD">--</div><div class="progress-bar"><div class="progress-fill" id="sdBar" style="width:0%"></div></div></div>
+                <div class="stat"><div class="stat-label">SPIFFS Used</div><div class="stat-value" style="font-size:14px;padding-top:4px;" id="statSpiffs">--</div><div class="progress-bar"><div class="progress-fill" id="spiffsBar" style="width:0%"></div></div></div>
+                <div class="stat"><div class="stat-label">SD Card</div><div class="stat-value" style="font-size:14px;padding-top:4px;" id="statSD">--</div><div class="progress-bar"><div class="progress-fill" id="sdBar" style="width:0%"></div></div></div>
             </div>
         </div>
 
