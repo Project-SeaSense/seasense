@@ -1,14 +1,18 @@
 # SeaSense Logger
 
-ESP32-based water quality logger for Atlas Scientific EZO sensors. Logs temperature and conductivity with full sensor metadata traceability.
+ESP32-based water quality logger for Atlas Scientific EZO sensors. Logs temperature, conductivity, pH, and dissolved oxygen with full sensor metadata traceability. Supports NMEA2000 for GPS and environmental context from boat instruments.
 
 ## Hardware Requirements
 
-- **ESP32 DevKit** (or compatible)
-- **Atlas Scientific EZO-RTD** - Temperature sensor (I2C address 0x66)
-- **Atlas Scientific EZO-EC** - Conductivity sensor (I2C address 0x64)
+- **ESP32-S3 DevKit** (or compatible)
+- **Atlas Scientific EZO-RTD** - Temperature sensor, I2C 0x66 (optional)
+- **Atlas Scientific EZO-EC** - Conductivity sensor, I2C 0x64 (optional)
+- **Atlas Scientific EZO-pH** - pH sensor, I2C 0x63 (optional)
+- **Atlas Scientific EZO-DO** - Dissolved oxygen sensor, I2C 0x61 (optional)
 - **NEO-6M GPS module** - For self-reliant time and location (UART2)
+- **CAN bus transceiver** - For NMEA2000 network (e.g., SN65HVD230)
 - **SD card module** - For permanent data storage
+- **Pump relay module** - For water flow control during measurements
 - **Power supply** - USB or external 5V
 
 ## Software Requirements
@@ -33,6 +37,8 @@ ESP32-based water quality logger for Atlas Scientific EZO sensors. Logs temperat
      - **ArduinoJson** (v7.x) by Benoit Blanchon
      - **TinyGPSPlus** by Mikal Hart
      - **ESP32-targz** (v1.3.1+) by tobozo — for gzip payload compression
+     - **NMEA2000** by Timo Lappalainen — for NMEA2000 bus communication
+     - **N2kMessages** — NMEA2000 message definitions
 
 4. **Select Board**
    - Tools → Board → ESP32 Arduino → ESP32 Dev Module
@@ -92,45 +98,36 @@ cd SeaSenseLogger
 ./scripts/build.sh s3-octal
 ```
 
-### Enabling NMEA2000
-
-By default NMEA2000 is disabled (`FEATURE_NMEA2000=0`) so builds work without extra libraries.
-
-To enable it:
-
-1. Install required libraries:
-   - `NMEA2000`
-   - `N2kMessages`
-2. Set compile-time flag:
-   - either in `config/hardware_config.h`: `#define FEATURE_NMEA2000 1`
-   - or via CLI/script: `ENABLE_N2K=1 ./scripts/build.sh s3-octal`
-
 ## Current Status
 
 ### Implemented
-- Configuration system with JSON metadata
-- Abstract sensor and storage interfaces
-- EZO sensor base class with I2C ASCII protocol
-- EZO-RTD temperature sensor
-- EZO-EC conductivity sensor with temperature compensation
-- Salinity calculation (simplified PSS-78)
-- Quality assessment framework
-- Dual storage (SPIFFS + SD card) with power-loss protection
+- EZO-RTD temperature sensor with single-point calibration
+- EZO-EC conductivity sensor with temperature compensation and multi-point calibration
+- EZO-pH sensor with 3-point calibration (mid/low/high per Atlas Scientific specs)
+- EZO-DO dissolved oxygen sensor with atmospheric and zero calibration
+- Salinity calculation (simplified PSS-78) from conductivity
+- Quality assessment framework for all sensor types
+- Pump controller with 3-state cycle (flush/measure/idle) and safety cutoff
+- Dual storage (SPIFFS circular buffer + SD card permanent) with power-loss protection
 - GPS module integration (NEO-6M) for self-reliant time and location
-- Web UI for configuration, calibration, and live NMEA2000 environment dashboard
-- API upload with bandwidth management and gzip payload compression
-- NMEA2000 environment data capture (wind, depth, heading, attitude, atmosphere)
-- pH and Dissolved Oxygen sensor type support in API payloads
+- NMEA2000 GPS and environment data capture (wind, depth, heading, attitude, atmosphere)
+- Web UI for real-time monitoring, calibration, configuration, and data management
+- API upload with bandwidth management, gzip compression, and retry with exponential backoff
 - Upload progress tracking (records since last upload)
 - Serial command interface (DUMP, CLEAR, STATUS, TEST)
 - Safe mode boot-loop detection and system health monitoring
+- All sensors degrade gracefully when not present (auto-detected at startup)
 
 ## Features
 
 ### Sensor Capabilities
-- **Temperature**: -126°C to +1254°C, ±0.1°C accuracy
-- **Conductivity**: 0.07 to 500,000 µS/cm, ±1-2% accuracy
-- **Salinity**: Calculated from conductivity and temperature
+All sensors are optional — the system auto-detects connected hardware at startup and operates with whatever is available.
+
+- **Temperature** (EZO-RTD): -126°C to +1254°C, ±0.1°C accuracy
+- **Conductivity** (EZO-EC): 0.07 to 500,000 µS/cm, ±1-2% accuracy
+- **pH** (EZO-pH): 0.001–14.000, ±0.002 accuracy, 3-point calibration
+- **Dissolved Oxygen** (EZO-DO): 0.01–100+ mg/L, ±0.05 mg/L accuracy
+- **Salinity**: Calculated from conductivity and temperature (PSS-78)
 - **Quality tracking**: Each reading assessed for validity and quality
 
 ### Data Management
@@ -143,12 +140,13 @@ To enable it:
 - Bandwidth-conscious cloud upload
 
 ### Web Interface
-- Real-time sensor monitoring dashboard
+- Real-time sensor monitoring dashboard with live readings
+- pH and DO sensor cards auto-appear when connected, show "Not Connected" when absent
 - Live NMEA2000 environment data (wind, depth, heading, atmosphere, attitude)
-- Guided calibration workflow
-- Sensor metadata editing
-- Data viewing and download
-- Upload and system configuration
+- Guided calibration workflow for all four sensor types
+- Pump controller status and configuration
+- Data viewing, download, and upload history
+- Device and network configuration
 
 ## Serial Output
 
@@ -172,27 +170,32 @@ At startup, you'll see:
 
 --- Sensor Reading ---
 Time: 12345678 ms
-GPS: 52.374500° N, 4.889500° E (8 sats, HDOP: 1.2)
+GPS [NEO]: 52.374500° N, 4.889500° E (8 sats, HDOP: 1.2)
 GPS Time: 2024-05-15T10:28:23Z
 Temperature: 18.50 °C [GOOD]
 Conductivity: 42500 µS/cm [GOOD]
 Salinity: 34.52 PSU
+pH: 8.12 pH [GOOD]
+Dissolved Oxygen: 7.85 mg/L [GOOD]
 ```
 
 ## Pin Assignments
 
 See `config/hardware_config.h` for complete pin configuration:
 
-- **I2C**: SDA=21, SCL=22
+- **I2C**: SDA=8, SCL=9 (ESP32-S3 defaults)
 - **GPS**: RX=16, TX=17 (UART2)
 - **SD Card**: CS=5, MOSI=23, MISO=19, SCK=18
 - **Status LED**: GPIO 2
-- **CAN Bus** (future): TX=4, RX=2
+- **Pump Relay**: GPIO 25
+- **CAN Bus** (NMEA2000): TX=4, RX=27
 
 ## Calibration
 
+All calibration is done via the web UI at `/calibrate`. The UI auto-detects which sensors are connected and shows calibration cards only for present sensors.
+
 ### Temperature (EZO-RTD)
-Usually factory calibrated - no field calibration needed.
+Usually factory calibrated - no field calibration needed. Single-point calibration available via web UI if needed.
 
 ### Conductivity (EZO-EC)
 
@@ -207,6 +210,32 @@ Usually factory calibrated - no field calibration needed.
 **Two Point** (±1% accuracy):
 1. Low point: 84 or 12,880 µS/cm solution
 2. High point: 1413 or 80,000 µS/cm solution
+
+### pH (EZO-pH)
+
+Always start with mid-point. Rinse probe between solutions.
+
+**Mid Point** (required first):
+1. Submerge in pH 7.00 buffer
+2. Web UI → Calibrate → Mid Point
+
+**Low Point** (optional, improves accuracy):
+1. Submerge in pH 4.00 buffer
+2. Web UI → Calibrate → Low Point
+
+**High Point** (optional, for full 3-point):
+1. Submerge in pH 10.00 buffer
+2. Web UI → Calibrate → High Point
+
+### Dissolved Oxygen (EZO-DO)
+
+**Atmospheric** (required):
+1. Hold probe in air, ensure membrane is dry
+2. Web UI → Calibrate → Atmospheric
+
+**Zero** (optional, improves low-range accuracy):
+1. Submerge in sodium sulfite (Na2SO3) solution
+2. Web UI → Calibrate → Zero
 
 ## Troubleshooting
 
@@ -231,16 +260,22 @@ Usually factory calibrated - no field calibration needed.
 SeaSenseLogger/
 ├── SeaSenseLogger.ino          # Main entry point
 ├── config/
-│   ├── hardware_config.h       # Pin definitions, I2C, feature flags
+│   ├── hardware_config.h       # Pin definitions, I2C addresses, timing
 │   ├── device_config.h         # JSON device metadata
 │   └── secrets.h               # WiFi, API keys (git-ignored)
+├── scripts/
+│   └── build.sh                # Arduino CLI build helper
 ├── src/
 │   ├── sensors/
 │   │   ├── SensorInterface.h   # Abstract sensor interface
 │   │   ├── EZOSensor.h/.cpp    # Base class for EZO sensors
 │   │   ├── EZO_RTD.h/.cpp      # Temperature sensor
 │   │   ├── EZO_EC.h/.cpp       # Conductivity sensor
-│   │   └── NMEA2000Environment.h/.cpp  # NMEA2000 data capture
+│   │   ├── EZO_pH.h/.cpp       # pH sensor
+│   │   ├── EZO_DO.h/.cpp       # Dissolved oxygen sensor
+│   │   ├── GPSModule.h/.cpp    # NEO-6M GPS
+│   │   ├── NMEA2000GPS.h/.cpp  # NMEA2000 GPS source
+│   │   └── NMEA2000Environment.h/.cpp  # NMEA2000 environment data
 │   ├── storage/
 │   │   ├── StorageInterface.h  # Abstract storage interface
 │   │   ├── SPIFFSStorage.h/.cpp
@@ -249,9 +284,13 @@ SeaSenseLogger/
 │   ├── api/
 │   │   └── APIUploader.h/.cpp  # Cloud upload with gzip compression
 │   ├── calibration/
-│   │   └── CalibrationManager.h/.cpp
+│   │   └── CalibrationManager.h/.cpp  # Guided calibration for all sensors
 │   ├── config/
 │   │   └── ConfigManager.h/.cpp
+│   ├── pump/
+│   │   └── PumpController.h/.cpp  # 3-state pump cycle controller
+│   ├── commands/
+│   │   └── SerialCommands.h/.cpp  # Serial command interface
 │   ├── system/
 │   │   └── SystemHealth.h/.cpp # Boot-loop detection, safe mode
 │   └── webui/
@@ -260,7 +299,11 @@ SeaSenseLogger/
     ├── Makefile                # Native test runner (make test)
     ├── test_config_clamp.cpp
     ├── test_csv_roundtrip.cpp
+    ├── test_gps_nan_guard.cpp
+    ├── test_metadata_batching.cpp
     ├── test_millis_to_utc.cpp
+    ├── test_millis_rollover.cpp
+    ├── test_upload_timing.cpp
     └── test_system_health.cpp
 ```
 
