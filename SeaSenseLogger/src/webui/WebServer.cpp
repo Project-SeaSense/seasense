@@ -12,6 +12,7 @@
 #include "../../config/secrets.h"
 #include "../system/SystemHealth.h"
 #include "../sensors/GPSModule.h"
+#include "../sensors/NMEA2000GPS.h"
 #include "../api/APIUploader.h"
 #include "../sensors/NMEA2000Environment.h"
 #include <ArduinoJson.h>
