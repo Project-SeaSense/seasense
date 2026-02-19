@@ -259,76 +259,65 @@ void SeaSenseWebServer::handleDashboard() {
     <title>Project SeaSense</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #e8f4f8; color: #1a4d5e; }
-
-        /* Header */
-        .header { background: linear-gradient(135deg, #0a4f66 0%, #0e7fa3 100%); color: white; padding: 12px 15px; display: flex; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 100; }
-        .header-left { display: flex; align-items: center; gap: 12px; }
-        .hamburger { background: none; border: none; color: white; font-size: 28px; cursor: pointer; padding: 5px; line-height: 1; font-family: Arial, sans-serif; }
-        .hamburger:hover { opacity: 0.8; }
-        .title { font-size: 18px; font-weight: 600; white-space: nowrap; }
-
-        /* Sidebar */
-        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 201; pointer-events: auto; }
-        .sidebar.open { left: 0; }
-        .sidebar-header { background: #0a4f66; color: white; padding: 15px; font-weight: 600; }
-        .sidebar-nav { list-style: none; }
-        .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; transition: background 0.2s; }
-        .sidebar-nav a:hover { background: #e8f4f8; }
-        .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
-        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; pointer-events: auto; cursor: pointer; }
-        .overlay.show { display: block; }
-
-        /* Main content */
-        .container { padding: 15px; max-width: 600px; margin: 0 auto; }
-
-        /* Sensors */
-        .sensors-grid { display: grid; gap: 12px; }
-        .sensor-card { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); border-left: 4px solid #0e7fa3; }
-        .sensor-name { font-size: 14px; font-weight: 600; color: #0a4f66; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
-        .sensor-value { font-size: 32px; font-weight: 700; color: #1a4d5e; line-height: 1.2; }
-        .sensor-unit { font-size: 16px; font-weight: 400; color: #666; margin-left: 4px; }
-        .sensor-meta { margin-top: 8px; font-size: 12px; color: #888; }
-
-        /* Environment section */
-        .section-title { font-size: 13px; font-weight: 600; color: #0a4f66; text-transform: uppercase; letter-spacing: 1px; margin: 20px 0 10px; padding-bottom: 6px; border-bottom: 2px solid #d0e8f0; }
-        .env-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .env-card { background: white; border-radius: 8px; padding: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); border-left: 4px solid #2d8659; }
-        .env-card.stale { opacity: 0.4; }
-        .env-label { font-size: 11px; font-weight: 600; color: #2d6b4a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-        .env-value { font-size: 22px; font-weight: 700; color: #1a4d5e; line-height: 1.2; }
-        .env-unit { font-size: 12px; font-weight: 400; color: #666; margin-left: 3px; }
-        .env-none { text-align: center; padding: 15px; color: #aaa; font-size: 13px; grid-column: 1 / -1; }
-
-        /* Loading state */
-        .loading-pulse { animation: pulse 1.5s ease-in-out infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-
-        /* Status message */
-        .status-msg { text-align: center; padding: 30px; color: #888; font-size: 14px; }
-
-        /* Measurement control bar */
-        .measure-bar { display: flex; align-items: center; justify-content: space-between; background: white; border-radius: 8px; padding: 10px 15px; margin: 10px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
-        .countdown { font-size: 13px; color: #0a4f66; font-weight: 600; font-variant-numeric: tabular-nums; }
-        .toggle-btn { padding: 7px 14px; border: none; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; background: #e0e0e0; color: #555; transition: all 0.2s; }
-        .toggle-btn.active { background: #0e7fa3; color: white; }
-
-        /* Upload status bar */
-        .upload-bar { background: white; border-radius: 8px; padding: 8px 15px; margin: 0 0 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); font-size: 12px; color: #888; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 34px; }
-        .up-state { font-weight: 700; }
-        .up-state.ok { color: #2e7d32; }
-        .up-state.err { color: #c62828; }
-        .up-state.busy { color: #e65100; }
-        .up-nostore { color: #e65100; font-weight: 600; font-style: italic; }
-        .up-sep { color: #ccc; }
+        :root { --bg:#060a13; --sf:#0c1221; --cd:#111a2e; --bd:#1a2744; --b2:#243352; --ac:#22d3ee; --a2:#2dd4bf; --ag:rgba(34,211,238,0.12); --tx:#e2e8f0; --t2:#94a3b8; --t3:#475569; --ok:#34d399; --wn:#fbbf24; --er:#f87171 }
+        * { margin:0; padding:0; box-sizing:border-box }
+        body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--sf); color:var(--tx); -webkit-font-smoothing:antialiased; min-height:100vh }
+        .header { background:var(--bg); padding:0 16px; height:52px; display:flex; align-items:center; border-bottom:1px solid var(--bd); position:sticky; top:0; z-index:100; box-shadow:0 4px 24px rgba(0,0,0,0.3); position:relative }
+        .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
+        .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
+        .hamburger:hover { color:var(--ac); background:var(--ag) }
+        .title { font-size:14px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:var(--ac) }
+        .sidebar { position:fixed; left:-260px; top:0; width:260px; height:100%; background:var(--bg); border-right:1px solid var(--bd); transition:left 0.3s ease; z-index:201; pointer-events:auto }
+        .sidebar.open { left:0 }
+        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:700; color:var(--ac); font-size:11px; letter-spacing:4px; text-transform:uppercase; background:var(--bg) }
+        .sidebar-nav { list-style:none; padding:8px 0 }
+        .sidebar-nav a { display:block; padding:12px 20px; color:var(--t2); text-decoration:none; font-size:14px; font-weight:500; transition:all 0.2s; border-left:2px solid transparent; border-bottom:1px solid rgba(26,39,68,0.5) }
+        .sidebar-nav a:hover { color:var(--tx); background:rgba(34,211,238,0.05) }
+        .sidebar-nav a.active { color:var(--ac); border-left-color:var(--ac); background:rgba(34,211,238,0.08); font-weight:600 }
+        .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none; z-index:200; pointer-events:auto; cursor:pointer; backdrop-filter:blur(2px) }
+        .overlay.show { display:block }
+        .container { padding:16px; max-width:640px; margin:0 auto }
+        .sensors-grid { display:grid; gap:12px }
+        .sensor-card { background:var(--cd); border:1px solid var(--bd); border-radius:12px; padding:16px 20px; position:relative; overflow:hidden; transition:border-color 0.3s }
+        .sensor-card:hover { border-color:var(--b2) }
+        .sensor-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--ac) }
+        .sensor-name { font-size:11px; font-weight:600; color:var(--t2); text-transform:uppercase; letter-spacing:1.5px; margin-bottom:8px }
+        .sensor-value { font-size:36px; font-weight:700; color:var(--tx); font-family:'SF Mono',ui-monospace,'Cascadia Code',Consolas,monospace; font-variant-numeric:tabular-nums; line-height:1.2; text-shadow:0 0 30px rgba(34,211,238,0.12) }
+        .sensor-unit { font-size:14px; font-weight:400; color:var(--t2); margin-left:4px }
+        .sensor-meta { margin-top:8px; font-size:11px; color:var(--t3) }
+        .section-title { font-size:11px; font-weight:600; color:var(--t3); text-transform:uppercase; letter-spacing:2px; margin:24px 0 12px; display:flex; align-items:center; gap:12px; padding-bottom:0; border-bottom:none }
+        .section-title::after { content:''; flex:1; height:1px; background:var(--bd) }
+        .env-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px }
+        .env-card { background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:12px 14px; transition:border-color 0.3s; position:relative; overflow:hidden }
+        .env-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--a2) }
+        .env-card:hover { border-color:var(--b2) }
+        .env-card.stale { opacity:0.3 }
+        .env-label { font-size:10px; font-weight:600; color:var(--a2); text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; opacity:0.8 }
+        .env-value { font-size:20px; font-weight:700; color:var(--tx); font-family:'SF Mono',ui-monospace,Consolas,monospace; font-variant-numeric:tabular-nums; line-height:1.2 }
+        .env-unit { font-size:11px; color:var(--t2); margin-left:2px; font-weight:400 }
+        .env-none { text-align:center; padding:20px; color:var(--t3); font-size:13px; grid-column:1/-1 }
+        .loading-pulse { animation:pulse 2s ease-in-out infinite }
+        @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
+        .status-msg { text-align:center; padding:30px; color:var(--t3); font-size:13px }
+        .measure-bar { display:flex; align-items:center; justify-content:space-between; background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:10px 16px; margin:10px 0 }
+        .countdown { font-size:13px; color:var(--ac); font-weight:600; font-variant-numeric:tabular-nums; font-family:'SF Mono',ui-monospace,Consolas,monospace }
+        .toggle-btn { padding:6px 14px; border:1px solid var(--b2); border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; background:var(--bg); color:var(--t2); transition:all 0.25s }
+        .toggle-btn:hover { border-color:var(--ac); color:var(--ac) }
+        .toggle-btn.active { background:rgba(34,211,238,0.15); border-color:var(--ac); color:var(--ac); box-shadow:0 0 12px rgba(34,211,238,0.2) }
+        .upload-bar { background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:8px 16px; margin:0 0 16px; font-size:12px; color:var(--t2); display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:34px }
+        .up-state { font-weight:700; font-family:ui-monospace,Consolas,monospace; font-size:11px; letter-spacing:0.5px }
+        .up-state.ok { color:var(--ok) }
+        .up-state.err { color:var(--er) }
+        .up-state.busy { color:var(--wn) }
+        .up-sep { color:var(--t3) }
+        .up-nostore { color:var(--wn); font-weight:600; font-style:italic }
     </style>
 </head>
 <body>
     <div class="overlay" id="overlay" onclick="closeMenu()"></div>
 
     <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">Menu</div>
+        <div class="sidebar-header">SEASENSE</div>
         <ul class="sidebar-nav">
             <li><a href="/dashboard" class="active">Dashboard</a></li>
             <li><a href="/settings">Settings</a></li>
@@ -339,7 +328,7 @@ void SeaSenseWebServer::handleDashboard() {
 
     <div class="header">
         <button class="hamburger" onclick="toggleMenu()">&#9776;</button>
-        <div class="title">Project SeaSense</div>
+        <div class="title">SEASENSE</div>
     </div>
 
     <div class="container">
@@ -481,7 +470,7 @@ void SeaSenseWebServer::handleDashboard() {
                         + '<span>Next: ' + nextStr + '</span>';
                     if (u.retry_count > 0) {
                         html += '<span class="up-sep">&middot;</span>'
-                            + '<span style="color:#c62828">Retry #' + u.retry_count + '</span>';
+                            + '<span style="color:#f87171">Retry #' + u.retry_count + '</span>';
                     }
                     bar.innerHTML = html;
                 })
@@ -590,74 +579,60 @@ void SeaSenseWebServer::handleCalibrate() {
     <title>Calibration - Project SeaSense</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #e8f4f8; color: #1a4d5e; }
-
-        /* Header */
-        .header { background: linear-gradient(135deg, #0a4f66 0%, #0e7fa3 100%); color: white; padding: 12px 15px; display: flex; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 100; }
-        .header-left { display: flex; align-items: center; gap: 12px; }
-        .hamburger { background: none; border: none; color: white; font-size: 28px; cursor: pointer; padding: 5px; line-height: 1; font-family: Arial, sans-serif; }
-        .hamburger:hover { opacity: 0.8; }
-        .title { font-size: 18px; font-weight: 600; white-space: nowrap; }
-
-        /* Sidebar */
-        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 201; pointer-events: auto; }
-        .sidebar.open { left: 0; }
-        .sidebar-header { background: #0a4f66; color: white; padding: 15px; font-weight: 600; }
-        .sidebar-nav { list-style: none; }
-        .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; transition: background 0.2s; }
-        .sidebar-nav a:hover { background: #e8f4f8; }
-        .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
-        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; pointer-events: auto; cursor: pointer; }
-        .overlay.show { display: block; }
-
-        /* Main content */
-        .container { padding: 15px; max-width: 600px; margin: 0 auto; }
-
-        /* Cards */
-        .cal-card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); border-left: 4px solid #0e7fa3; }
-        .cal-header { font-size: 16px; font-weight: 600; color: #0a4f66; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .cal-info { background: #e8f4f8; padding: 12px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; color: #1a4d5e; }
-        .cal-section { margin: 15px 0; }
-        .cal-section-title { font-size: 14px; font-weight: 600; color: #0a4f66; margin-bottom: 10px; }
-
-        /* Form elements */
-        .form-group { margin: 12px 0; }
-        .form-group label { display: block; font-size: 13px; font-weight: 600; color: #1a4d5e; margin-bottom: 5px; }
-        .form-group input, .form-group select { width: 100%; padding: 10px; border: 2px solid #d0e8f0; border-radius: 4px; font-size: 14px; transition: border 0.2s; }
-        .form-group input:focus, .form-group select:focus { outline: none; border-color: #0e7fa3; }
-        .form-group small { display: block; margin-top: 5px; font-size: 12px; color: #888; }
-
-        /* Buttons */
-        .btn-group { display: flex; gap: 10px; margin-top: 15px; }
-        .btn { padding: 10px 20px; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; flex: 1; }
-        .btn-primary { background: #0e7fa3; color: white; }
-        .btn-primary:hover { background: #0a4f66; }
-        .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
-        .btn-secondary { background: #e0e0e0; color: #333; }
-        .btn-secondary:hover { background: #d0d0d0; }
-        .btn-danger { background: #f44336; color: white; flex: none; }
-        .btn-danger:hover { background: #c62828; }
-        .btn-sm { padding: 6px 12px; font-size: 12px; flex: none; }
-
-        /* Status messages */
-        .alert { padding: 12px; border-radius: 4px; margin: 15px 0; font-size: 13px; }
-        .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .alert-info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
-        .hidden { display: none; }
-
-        /* Status badge */
-        .status-current { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-left: 10px; }
-        .status-calibrated { background: #4CAF50; color: white; }
-        .status-not-calibrated { background: #F44336; color: white; }
+        :root { --bg:#060a13; --sf:#0c1221; --cd:#111a2e; --bd:#1a2744; --b2:#243352; --ac:#22d3ee; --a2:#2dd4bf; --ag:rgba(34,211,238,0.12); --tx:#e2e8f0; --t2:#94a3b8; --t3:#475569; --ok:#34d399; --wn:#fbbf24; --er:#f87171 }
+        * { margin:0; padding:0; box-sizing:border-box }
+        body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--sf); color:var(--tx); -webkit-font-smoothing:antialiased; min-height:100vh }
+        .header { background:var(--bg); padding:0 16px; height:52px; display:flex; align-items:center; border-bottom:1px solid var(--bd); position:sticky; top:0; z-index:100; box-shadow:0 4px 24px rgba(0,0,0,0.3); position:relative }
+        .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
+        .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
+        .hamburger:hover { color:var(--ac); background:var(--ag) }
+        .title { font-size:14px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:var(--ac) }
+        .sidebar { position:fixed; left:-260px; top:0; width:260px; height:100%; background:var(--bg); border-right:1px solid var(--bd); transition:left 0.3s ease; z-index:201; pointer-events:auto }
+        .sidebar.open { left:0 }
+        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:700; color:var(--ac); font-size:11px; letter-spacing:4px; text-transform:uppercase; background:var(--bg) }
+        .sidebar-nav { list-style:none; padding:8px 0 }
+        .sidebar-nav a { display:block; padding:12px 20px; color:var(--t2); text-decoration:none; font-size:14px; font-weight:500; transition:all 0.2s; border-left:2px solid transparent; border-bottom:1px solid rgba(26,39,68,0.5) }
+        .sidebar-nav a:hover { color:var(--tx); background:rgba(34,211,238,0.05) }
+        .sidebar-nav a.active { color:var(--ac); border-left-color:var(--ac); background:rgba(34,211,238,0.08); font-weight:600 }
+        .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none; z-index:200; pointer-events:auto; cursor:pointer; backdrop-filter:blur(2px) }
+        .overlay.show { display:block }
+        .container { padding:16px; max-width:640px; margin:0 auto }
+        .cal-card { background:var(--cd); border:1px solid var(--bd); border-radius:12px; padding:20px; margin-bottom:15px; position:relative; overflow:hidden }
+        .cal-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--ac) }
+        .cal-header { font-size:14px; font-weight:600; color:var(--ac); margin-bottom:15px; text-transform:uppercase; letter-spacing:1px }
+        .cal-info { background:rgba(34,211,238,0.05); border:1px solid var(--bd); padding:12px; border-radius:8px; margin-bottom:15px; font-size:13px; color:var(--t2) }
+        .cal-section { margin:15px 0 }
+        .cal-section-title { font-size:12px; font-weight:600; color:var(--t2); margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px }
+        .form-group { margin:12px 0 }
+        .form-group label { display:block; font-size:13px; font-weight:600; color:var(--t2); margin-bottom:5px }
+        .form-group input, .form-group select { width:100%; padding:10px; border:1px solid var(--bd); border-radius:8px; font-size:14px; transition:all 0.2s; background:var(--bg); color:var(--tx) }
+        .form-group input:focus, .form-group select:focus { outline:none; border-color:var(--ac); box-shadow:0 0 0 3px var(--ag) }
+        .form-group small { display:block; margin-top:5px; font-size:12px; color:var(--t3) }
+        .btn-group { display:flex; gap:10px; margin-top:15px }
+        .btn { padding:10px 20px; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; transition:all 0.2s; flex:1 }
+        .btn-primary { background:var(--ac); color:var(--bg) }
+        .btn-primary:hover { background:#06b6d4; box-shadow:0 0 16px rgba(34,211,238,0.3) }
+        .btn-primary:disabled { background:var(--t3); cursor:not-allowed; box-shadow:none }
+        .btn-secondary { background:var(--b2); color:var(--tx) }
+        .btn-secondary:hover { background:var(--bd) }
+        .btn-danger { background:var(--er); color:white; flex:none }
+        .btn-danger:hover { background:#ef4444 }
+        .btn-sm { padding:6px 12px; font-size:12px; flex:none }
+        .alert { padding:12px; border-radius:8px; margin:15px 0; font-size:13px; border:1px solid }
+        .alert-success { background:rgba(52,211,153,0.1); color:var(--ok); border-color:rgba(52,211,153,0.3) }
+        .alert-error { background:rgba(248,113,113,0.1); color:var(--er); border-color:rgba(248,113,113,0.3) }
+        .alert-info { background:rgba(34,211,238,0.1); color:var(--ac); border-color:rgba(34,211,238,0.3) }
+        .hidden { display:none }
+        .status-current { display:inline-block; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600; margin-left:10px; letter-spacing:0.5px }
+        .status-calibrated { background:rgba(52,211,153,0.15); color:var(--ok); border:1px solid rgba(52,211,153,0.3) }
+        .status-not-calibrated { background:rgba(248,113,113,0.15); color:var(--er); border:1px solid rgba(248,113,113,0.3) }
     </style>
 </head>
 <body>
     <div class="overlay" id="overlay" onclick="closeMenu()"></div>
 
     <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">Menu</div>
+        <div class="sidebar-header">SEASENSE</div>
         <ul class="sidebar-nav">
             <li><a href="/dashboard">Dashboard</a></li>
             <li><a href="/settings">Settings</a></li>
@@ -668,7 +643,7 @@ void SeaSenseWebServer::handleCalibrate() {
 
     <div class="header">
         <button class="hamburger" onclick="toggleMenu()">&#9776;</button>
-        <div class="title">Project SeaSense</div>
+        <div class="title">SEASENSE</div>
     </div>
 
     <div class="container">
@@ -684,7 +659,7 @@ void SeaSenseWebServer::handleCalibrate() {
 
             <div class="cal-section">
                 <div class="cal-section-title">Current Reading</div>
-                <div style="font-size: 24px; font-weight: 700; color: #0a4f66; margin: 10px 0;">
+                <div style="font-size:24px; font-weight:700; color:var(--ac); margin:10px 0; font-family:'SF Mono',ui-monospace,Consolas,monospace;">
                     <span id="tempReading">--</span> &deg;C
                 </div>
             </div>
@@ -719,7 +694,7 @@ void SeaSenseWebServer::handleCalibrate() {
 
             <div class="cal-section">
                 <div class="cal-section-title">Current Reading</div>
-                <div style="font-size: 24px; font-weight: 700; color: #0a4f66; margin: 10px 0;">
+                <div style="font-size:24px; font-weight:700; color:var(--ac); margin:10px 0; font-family:'SF Mono',ui-monospace,Consolas,monospace;">
                     <span id="ecReading">--</span> &micro;S/cm
                 </div>
             </div>
@@ -908,74 +883,76 @@ void SeaSenseWebServer::handleData() {
     <title>Data - Project SeaSense</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #e8f4f8; color: #1a4d5e; }
-        .header { background: linear-gradient(135deg, #0a4f66 0%, #0e7fa3 100%); color: white; padding: 12px 15px; display: flex; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 100; }
-        .hamburger { background: none; border: none; color: white; font-size: 28px; cursor: pointer; padding: 5px; line-height: 1; }
-        .hamburger:hover { opacity: 0.8; }
-        .title { font-size: 18px; font-weight: 600; margin-left: 12px; }
-        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 201; }
-        .sidebar.open { left: 0; }
-        .sidebar-header { background: #0a4f66; color: white; padding: 15px; font-weight: 600; }
-        .sidebar-nav { list-style: none; }
-        .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; }
-        .sidebar-nav a:hover { background: #e8f4f8; }
-        .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
-        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; cursor: pointer; }
-        .overlay.show { display: block; }
-        .container { padding: 15px; max-width: 700px; margin: 0 auto; }
-        .card { background: white; border-radius: 8px; padding: 16px; margin-bottom: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
-        .card-title { font-size: 13px; font-weight: 700; color: #0a4f66; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
-        .stat-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
-        .stat { flex: 1; min-width: 100px; }
-        .stat-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
-        .stat-value { font-size: 20px; font-weight: 700; color: #1a4d5e; }
-        .stat-sub { font-size: 11px; color: #aaa; }
-        .progress-bar { height: 6px; background: #e0e8f0; border-radius: 3px; margin: 4px 0 8px; overflow: hidden; }
-        .progress-fill { height: 100%; background: #0e7fa3; border-radius: 3px; transition: width 0.4s; }
-        .progress-fill.warn { background: #ff9800; }
-        .progress-fill.danger { background: #f44336; }
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
-        .badge-ok { background: #e8f5e9; color: #2e7d32; }
-        .badge-err { background: #ffebee; color: #c62828; }
-        .badge-idle { background: #f5f5f5; color: #666; }
-        .badge-busy { background: #fff3e0; color: #e65100; }
-        .btn { padding: 8px 16px; border: none; border-radius: 5px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-        .btn-primary { background: #0e7fa3; color: white; }
-        .btn-primary:hover { background: #0a4f66; }
-        .btn-primary:disabled { background: #b0c8d4; cursor: not-allowed; }
-        .btn-danger { background: #f44336; color: white; }
-        .btn-danger:hover { background: #c62828; }
-        .btn-sm { padding: 5px 10px; font-size: 12px; }
-        .btn-outline { background: white; border: 1.5px solid #0e7fa3; color: #0e7fa3; }
-        .btn-outline:hover { background: #e8f4f8; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { text-align: left; padding: 6px 8px; border-bottom: 2px solid #d0e8f0; font-size: 11px; text-transform: uppercase; color: #888; letter-spacing: 0.5px; }
-        td { padding: 7px 8px; border-bottom: 1px solid #f0f0f0; }
-        tr:last-child td { border-bottom: none; }
-        tr:hover td { background: #f8fbfd; }
-        .empty-row { text-align: center; color: #bbb; padding: 20px; font-size: 13px; }
-        .pagination { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 10px; }
-        .page-info { font-size: 12px; color: #888; }
-        .danger-zone { border: 2px solid #ffcdd2; background: #fff8f8; }
-        .danger-zone .card-title { color: #c62828; }
-        .confirm-box { display: none; background: #ffebee; border-radius: 6px; padding: 12px; margin-top: 10px; font-size: 13px; color: #c62828; }
-        .confirm-box.show { display: block; }
-        .confirm-actions { display: flex; gap: 8px; margin-top: 10px; }
-        .alert { padding: 10px 14px; border-radius: 5px; font-size: 13px; margin-bottom: 10px; display: none; }
-        .alert.show { display: block; }
-        .alert-success { background: #e8f5e9; color: #2e7d32; }
-        .alert-error { background: #ffebee; color: #c62828; }
-        .type-temp { color: #e65100; }
-        .type-ec   { color: #1565c0; }
-        .type-ph   { color: #558b2f; }
-        .type-do   { color: #6a1b9a; }
+        :root { --bg:#060a13; --sf:#0c1221; --cd:#111a2e; --bd:#1a2744; --b2:#243352; --ac:#22d3ee; --a2:#2dd4bf; --ag:rgba(34,211,238,0.12); --tx:#e2e8f0; --t2:#94a3b8; --t3:#475569; --ok:#34d399; --wn:#fbbf24; --er:#f87171 }
+        * { margin:0; padding:0; box-sizing:border-box }
+        body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--sf); color:var(--tx); -webkit-font-smoothing:antialiased; min-height:100vh }
+        .header { background:var(--bg); padding:0 16px; height:52px; display:flex; align-items:center; border-bottom:1px solid var(--bd); position:sticky; top:0; z-index:100; box-shadow:0 4px 24px rgba(0,0,0,0.3); position:relative }
+        .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
+        .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
+        .hamburger:hover { color:var(--ac); background:var(--ag) }
+        .title { font-size:14px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:var(--ac) }
+        .sidebar { position:fixed; left:-260px; top:0; width:260px; height:100%; background:var(--bg); border-right:1px solid var(--bd); transition:left 0.3s ease; z-index:201; pointer-events:auto }
+        .sidebar.open { left:0 }
+        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:700; color:var(--ac); font-size:11px; letter-spacing:4px; text-transform:uppercase; background:var(--bg) }
+        .sidebar-nav { list-style:none; padding:8px 0 }
+        .sidebar-nav a { display:block; padding:12px 20px; color:var(--t2); text-decoration:none; font-size:14px; font-weight:500; transition:all 0.2s; border-left:2px solid transparent; border-bottom:1px solid rgba(26,39,68,0.5) }
+        .sidebar-nav a:hover { color:var(--tx); background:rgba(34,211,238,0.05) }
+        .sidebar-nav a.active { color:var(--ac); border-left-color:var(--ac); background:rgba(34,211,238,0.08); font-weight:600 }
+        .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none; z-index:200; pointer-events:auto; cursor:pointer; backdrop-filter:blur(2px) }
+        .overlay.show { display:block }
+        .container { padding:16px; max-width:700px; margin:0 auto }
+        .card { background:var(--cd); border:1px solid var(--bd); border-radius:12px; padding:16px; margin-bottom:14px }
+        .card-title { font-size:11px; font-weight:700; color:var(--ac); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between }
+        .stat-row { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:10px }
+        .stat { flex:1; min-width:100px }
+        .stat-label { font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:0.5px }
+        .stat-value { font-size:20px; font-weight:700; color:var(--tx); font-family:'SF Mono',ui-monospace,Consolas,monospace; font-variant-numeric:tabular-nums }
+        .stat-sub { font-size:11px; color:var(--t3) }
+        .progress-bar { height:4px; background:var(--bd); border-radius:2px; margin:6px 0 8px; overflow:hidden }
+        .progress-fill { height:100%; background:var(--ac); border-radius:2px; transition:width 0.4s }
+        .progress-fill.warn { background:var(--wn) }
+        .progress-fill.danger { background:var(--er) }
+        .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700 }
+        .badge-ok { background:rgba(52,211,153,0.15); color:var(--ok) }
+        .badge-err { background:rgba(248,113,113,0.15); color:var(--er) }
+        .badge-idle { background:rgba(148,163,184,0.1); color:var(--t2) }
+        .badge-busy { background:rgba(251,191,36,0.15); color:var(--wn) }
+        .btn { padding:8px 16px; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.2s }
+        .btn-primary { background:var(--ac); color:var(--bg) }
+        .btn-primary:hover { background:#06b6d4; box-shadow:0 0 16px rgba(34,211,238,0.3) }
+        .btn-primary:disabled { background:var(--t3); color:var(--sf); cursor:not-allowed }
+        .btn-danger { background:var(--er); color:white }
+        .btn-danger:hover { background:#ef4444 }
+        .btn-sm { padding:5px 10px; font-size:12px }
+        .btn-outline { background:transparent; border:1px solid var(--b2); color:var(--t2) }
+        .btn-outline:hover { border-color:var(--ac); color:var(--ac); background:var(--ag) }
+        table { width:100%; border-collapse:collapse; font-size:13px }
+        th { text-align:left; padding:6px 8px; border-bottom:1px solid var(--bd); font-size:10px; text-transform:uppercase; color:var(--t3); letter-spacing:0.5px }
+        td { padding:7px 8px; border-bottom:1px solid rgba(26,39,68,0.5) }
+        tr:last-child td { border-bottom:none }
+        tr:hover td { background:rgba(34,211,238,0.03) }
+        .empty-row { text-align:center; color:var(--t3); padding:20px; font-size:13px }
+        .pagination { display:flex; align-items:center; gap:8px; justify-content:flex-end; margin-top:10px }
+        .page-info { font-size:12px; color:var(--t3) }
+        .danger-zone { border:1px solid rgba(248,113,113,0.3); background:rgba(248,113,113,0.04) }
+        .danger-zone .card-title { color:var(--er) }
+        .confirm-box { display:none; background:rgba(248,113,113,0.08); border:1px solid rgba(248,113,113,0.3); border-radius:8px; padding:12px; margin-top:10px; font-size:13px; color:var(--er) }
+        .confirm-box.show { display:block }
+        .confirm-actions { display:flex; gap:8px; margin-top:10px }
+        .alert { padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:10px; display:none; border:1px solid }
+        .alert.show { display:block }
+        .alert-success { background:rgba(52,211,153,0.1); color:var(--ok); border-color:rgba(52,211,153,0.3) }
+        .alert-error { background:rgba(248,113,113,0.1); color:var(--er); border-color:rgba(248,113,113,0.3) }
+        .type-temp { color:#f97316 }
+        .type-ec { color:var(--ac) }
+        .type-ph { color:var(--ok) }
+        .type-do { color:#a78bfa }
     </style>
 </head>
 <body>
     <div class="overlay" id="overlay" onclick="closeMenu()"></div>
     <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">Menu</div>
+        <div class="sidebar-header">SEASENSE</div>
         <ul class="sidebar-nav">
             <li><a href="/dashboard">Dashboard</a></li>
             <li><a href="/settings">Settings</a></li>
@@ -985,7 +962,7 @@ void SeaSenseWebServer::handleData() {
     </div>
     <div class="header">
         <button class="hamburger" onclick="toggleMenu()">&#9776;</button>
-        <div class="title">Data &amp; Uploads</div>
+        <div class="title">SEASENSE</div>
     </div>
 
     <div class="container">
@@ -1005,10 +982,10 @@ void SeaSenseWebServer::handleData() {
         <div class="card">
             <div class="card-title">Upload Control</div>
             <div class="stat-row">
-                <div class="stat"><div class="stat-label">Status</div><div class="stat-value" style="font-size:15px;padding-top:3px;" id="upStatus"><span class="badge badge-idle">--</span></div></div>
+                <div class="stat"><div class="stat-label">Status</div><div class="stat-value" style="font-size:15px;padding-top:3px;color:var(--tx);" id="upStatus"><span class="badge badge-idle">--</span></div></div>
                 <div class="stat"><div class="stat-label">Pending</div><div class="stat-value" id="upPending">--</div><div class="stat-sub">records</div></div>
-                <div class="stat"><div class="stat-label">Last Upload</div><div class="stat-value" style="font-size:14px;padding-top:4px;" id="upLast">--</div></div>
-                <div class="stat"><div class="stat-label">Next Upload</div><div class="stat-value" style="font-size:14px;padding-top:4px;" id="upNext">--</div></div>
+                <div class="stat"><div class="stat-label">Last Upload</div><div class="stat-value" style="font-size:14px;padding-top:4px;color:var(--tx);" id="upLast">--</div></div>
+                <div class="stat"><div class="stat-label">Next Upload</div><div class="stat-value" style="font-size:14px;padding-top:4px;color:var(--tx);" id="upNext">--</div></div>
                 <div class="stat"><div class="stat-label">Session Bandwidth</div><div class="stat-value" id="upBandwidth">--</div><div class="stat-sub">this session</div></div>
             </div>
             <button class="btn btn-primary" id="forceBtn" onclick="forceUpload()">Force Upload Now</button>
@@ -1040,7 +1017,7 @@ void SeaSenseWebServer::handleData() {
         <!-- Danger Zone -->
         <div class="card danger-zone">
             <div class="card-title">Danger Zone</div>
-            <p style="font-size:13px;color:#555;margin-bottom:12px;">Permanently delete all stored sensor records from SPIFFS and SD card. This cannot be undone.</p>
+            <p style="font-size:13px;color:var(--t2);margin-bottom:12px;">Permanently delete all stored sensor records from SPIFFS and SD card. This cannot be undone.</p>
             <button class="btn btn-danger" onclick="showFlushConfirm()">Flush All Data</button>
             <div class="confirm-box" id="confirmBox">
                 <strong>Are you sure?</strong> This will delete all <span id="confirmCount">--</span> records permanently.
@@ -1186,10 +1163,10 @@ void SeaSenseWebServer::handleData() {
                                 const s = Math.floor((r.millis || 0) / 1000);
                                 timeStr = 'Boot +' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
                             }
-                            return '<tr><td style="font-size:11px;color:#888;">' + timeStr + '</td>'
+                            return '<tr><td style="font-size:11px;color:#94a3b8;">' + timeStr + '</td>'
                                 + '<td class="' + tc + '">' + r.type + '</td>'
-                                + '<td>' + fmtValue(r.value, r.type) + ' <span style="color:#aaa;font-size:11px;">' + r.unit + '</span></td>'
-                                + '<td style="font-size:11px;color:#888;">' + (r.quality||'--') + '</td></tr>';
+                                + '<td>' + fmtValue(r.value, r.type) + ' <span style="color:#475569;font-size:11px;">' + r.unit + '</span></td>'
+                                + '<td style="font-size:11px;color:#94a3b8;">' + (r.quality||'--') + '</td></tr>';
                         }).join('');
                     }
                     const maxPage = Math.floor((d.total - 1) / PAGE_SIZE);
@@ -1256,61 +1233,57 @@ void SeaSenseWebServer::handleSettings() {
     <title>Settings - SeaSense Logger</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #e8f4f8; color: #1a4d5e; }
-
-        /* Header */
-        .header { background: linear-gradient(135deg, #0a4f66 0%, #0e7fa3 100%); color: white; padding: 12px 15px; display: flex; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 100; }
-        .hamburger { background: none; border: none; color: white; font-size: 28px; cursor: pointer; padding: 5px; line-height: 1; font-family: Arial, sans-serif; }
-        .hamburger:hover { opacity: 0.8; }
-        .title { font-size: 18px; font-weight: 600; white-space: nowrap; }
-
-        /* Sidebar */
-        .sidebar { position: fixed; left: -250px; top: 0; width: 250px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); transition: left 0.3s; z-index: 201; pointer-events: auto; }
-        .sidebar.open { left: 0; }
-        .sidebar-header { background: #0a4f66; color: white; padding: 15px; font-weight: 600; }
-        .sidebar-nav { list-style: none; }
-        .sidebar-nav a { display: block; padding: 12px 20px; color: #1a4d5e; text-decoration: none; border-bottom: 1px solid #e0e0e0; transition: background 0.2s; }
-        .sidebar-nav a:hover { background: #e8f4f8; }
-        .sidebar-nav a.active { background: #d0e8f0; font-weight: 600; }
-        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 200; pointer-events: auto; cursor: pointer; }
-        .overlay.show { display: block; }
-
-        /* Main content */
-        .container { padding: 15px; max-width: 600px; margin: 0 auto; }
-
-        /* Sections */
-        .section { background: white; padding: 20px; margin: 15px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); border-left: 4px solid #0e7fa3; }
-        .section h2 { margin-top: 0; color: #0a4f66; border-bottom: 2px solid #0e7fa3; padding-bottom: 10px; font-size: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-        .form-group { margin: 15px 0; }
-        .form-group label { display: block; font-weight: 600; margin-bottom: 5px; color: #1a4d5e; font-size: 13px; }
-        .form-group input, .form-group select { width: 100%; padding: 10px; border: 2px solid #d0e8f0; border-radius: 4px; box-sizing: border-box; font-size: 14px; transition: border 0.2s; }
-        .form-group input:focus, .form-group select:focus { outline: none; border-color: #0e7fa3; }
-        .form-group input[type="checkbox"] { width: auto; }
-        .form-group small { color: #888; font-size: 12px; display: block; margin-top: 5px; }
-
-        /* Buttons */
-        .button { background: #0e7fa3; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; margin: 5px; transition: all 0.2s; }
-        .button:hover { background: #0a4f66; }
-        .button-danger { background: #d32f2f; }
-        .button-danger:hover { background: #b71c1c; }
-        .button-warning { background: #f57c00; }
-        .button-warning:hover { background: #e65100; }
-
-        /* Toast notifications */
-        .toast { position: fixed; top: 70px; right: 20px; padding: 15px 20px; border-radius: 4px; color: white; display: none; z-index: 1000; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-        .toast-success { background: #4CAF50; }
-        .toast-error { background: #F44336; }
-        .toast-info { background: #0e7fa3; }
-
-        .actions { text-align: center; margin-top: 20px; }
+        :root { --bg:#060a13; --sf:#0c1221; --cd:#111a2e; --bd:#1a2744; --b2:#243352; --ac:#22d3ee; --a2:#2dd4bf; --ag:rgba(34,211,238,0.12); --tx:#e2e8f0; --t2:#94a3b8; --t3:#475569; --ok:#34d399; --wn:#fbbf24; --er:#f87171 }
+        * { margin:0; padding:0; box-sizing:border-box }
+        body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--sf); color:var(--tx); -webkit-font-smoothing:antialiased; min-height:100vh }
+        .header { background:var(--bg); padding:0 16px; height:52px; display:flex; align-items:center; border-bottom:1px solid var(--bd); position:sticky; top:0; z-index:100; box-shadow:0 4px 24px rgba(0,0,0,0.3); position:relative }
+        .header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--ac),transparent); opacity:0.4 }
+        .hamburger { background:none; border:none; color:var(--t2); font-size:22px; cursor:pointer; padding:8px; margin-right:12px; line-height:1; border-radius:6px; transition:all 0.2s; font-family:Arial,sans-serif }
+        .hamburger:hover { color:var(--ac); background:var(--ag) }
+        .title { font-size:14px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:var(--ac) }
+        .sidebar { position:fixed; left:-260px; top:0; width:260px; height:100%; background:var(--bg); border-right:1px solid var(--bd); transition:left 0.3s ease; z-index:201; pointer-events:auto }
+        .sidebar.open { left:0 }
+        .sidebar-header { padding:20px; border-bottom:1px solid var(--bd); font-weight:700; color:var(--ac); font-size:11px; letter-spacing:4px; text-transform:uppercase; background:var(--bg) }
+        .sidebar-nav { list-style:none; padding:8px 0 }
+        .sidebar-nav a { display:block; padding:12px 20px; color:var(--t2); text-decoration:none; font-size:14px; font-weight:500; transition:all 0.2s; border-left:2px solid transparent; border-bottom:1px solid rgba(26,39,68,0.5) }
+        .sidebar-nav a:hover { color:var(--tx); background:rgba(34,211,238,0.05) }
+        .sidebar-nav a.active { color:var(--ac); border-left-color:var(--ac); background:rgba(34,211,238,0.08); font-weight:600 }
+        .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none; z-index:200; pointer-events:auto; cursor:pointer; backdrop-filter:blur(2px) }
+        .overlay.show { display:block }
+        .container { padding:16px; max-width:640px; margin:0 auto }
+        .section { background:var(--cd); padding:20px; margin:15px 0; border-radius:12px; border:1px solid var(--bd); position:relative; overflow:hidden }
+        .section::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--ac) }
+        .section h2 { margin-top:0; color:var(--ac); border-bottom:1px solid var(--bd); padding-bottom:10px; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1.5px }
+        .section h3 { color:var(--t2); font-size:13px; font-weight:600; margin-top:18px; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px }
+        .form-group { margin:15px 0 }
+        .form-group label { display:block; font-weight:600; margin-bottom:5px; color:var(--t2); font-size:13px }
+        .form-group input, .form-group select { width:100%; padding:10px; border:1px solid var(--bd); border-radius:8px; font-size:14px; transition:all 0.2s; background:var(--bg); color:var(--tx) }
+        .form-group input:focus, .form-group select:focus { outline:none; border-color:var(--ac); box-shadow:0 0 0 3px var(--ag) }
+        .form-group input[type="checkbox"] { width:auto }
+        .form-group small { color:var(--t3); font-size:12px; display:block; margin-top:5px }
+        .button { background:var(--ac); color:var(--bg); padding:10px 20px; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; margin:5px; transition:all 0.2s }
+        .button:hover { background:#06b6d4; box-shadow:0 0 16px rgba(34,211,238,0.3) }
+        .button-danger { background:var(--er); color:white }
+        .button-danger:hover { background:#ef4444; box-shadow:0 0 16px rgba(248,113,113,0.3) }
+        .button-warning { background:var(--wn); color:var(--bg) }
+        .button-warning:hover { background:#f59e0b; box-shadow:0 0 16px rgba(251,191,36,0.3) }
+        .toast { position:fixed; top:60px; right:20px; padding:12px 20px; border-radius:8px; display:none; z-index:1000; box-shadow:0 8px 24px rgba(0,0,0,0.4); font-size:13px; max-width:350px; border:1px solid; backdrop-filter:blur(12px) }
+        .toast-success { background:rgba(52,211,153,0.15); color:var(--ok); border-color:rgba(52,211,153,0.3) }
+        .toast-error { background:rgba(248,113,113,0.15); color:var(--er); border-color:rgba(248,113,113,0.3) }
+        .toast-info { background:rgba(34,211,238,0.15); color:var(--ac); border-color:rgba(34,211,238,0.3) }
+        .actions { text-align:center; margin-top:20px }
+        .btn { padding:6px 12px; border:none; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; transition:all 0.2s }
+        .btn-sm { padding:5px 10px; font-size:11px; background:var(--b2); color:var(--tx); border:none; border-radius:6px }
+        .btn-sm:hover { background:var(--bd) }
+        .btn-danger { background:rgba(248,113,113,0.2); color:var(--er) }
+        .btn-danger:hover { background:rgba(248,113,113,0.3) }
     </style>
 </head>
 <body>
     <div class="overlay" id="overlay" onclick="closeMenu()"></div>
 
     <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">Menu</div>
+        <div class="sidebar-header">SEASENSE</div>
         <ul class="sidebar-nav">
             <li><a href="/dashboard">Dashboard</a></li>
             <li><a href="/settings" class="active">Settings</a></li>
@@ -1321,7 +1294,7 @@ void SeaSenseWebServer::handleSettings() {
 
     <div class="header">
         <button class="hamburger" onclick="toggleMenu()">&#9776;</button>
-        <div class="title">Project SeaSense</div>
+        <div class="title">SEASENSE</div>
     </div>
 
     <div id="toast" class="toast"></div>
@@ -1378,12 +1351,12 @@ void SeaSenseWebServer::handleSettings() {
                 <label>Sensor Reading Interval</label>
                 <div style="display:flex;gap:10px;align-items:center;">
                     <div style="display:flex;align-items:center;gap:4px;">
-                        <input type="number" id="sensor-interval-min" min="0" max="1439" step="1" value="15" style="width:70px;">
-                        <span style="font-size:13px;color:#666;">min</span>
+                        <input type="number" id="sensor-interval-min" min="0" max="1439" step="1" value="15" style="width:70px;background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:8px;">
+                        <span style="font-size:13px;color:var(--t2);">min</span>
                     </div>
                     <div style="display:flex;align-items:center;gap:4px;">
-                        <input type="number" id="sensor-interval-sec" min="0" max="59" step="1" value="0" style="width:60px;">
-                        <span style="font-size:13px;color:#666;">sec</span>
+                        <input type="number" id="sensor-interval-sec" min="0" max="59" step="1" value="0" style="width:60px;background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:8px;">
+                        <span style="font-size:13px;color:var(--t2);">sec</span>
                     </div>
                 </div>
                 <small id="interval-hint">How often to pump and read sensors. Default: 15 min.</small>
@@ -1413,9 +1386,9 @@ void SeaSenseWebServer::handleSettings() {
                 <label>Device GUID</label>
                 <div style="display:flex;gap:8px;align-items:center;">
                     <input type="text" id="device-guid" name="device-guid" style="flex:1;">
-                    <button type="button" class="btn btn-sm" onclick="showRegenConfirm()" style="white-space:nowrap;">Generate New</button>
+                    <button type="button" class="btn btn-sm" onclick="showRegenConfirm()" style="white-space:nowrap;background:var(--b2);color:var(--tx);border:none;border-radius:6px;padding:6px 12px;cursor:pointer;">Generate New</button>
                 </div>
-                <div id="regenConfirm" style="display:none;margin-top:8px;padding:10px;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;font-size:13px;">
+                <div id="regenConfirm" style="display:none;margin-top:8px;padding:10px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:8px;font-size:13px;color:var(--wn);">
                     Generating a new GUID will change the device identity. Any existing data linked to the old GUID will be orphaned. Are you sure?
                     <div style="margin-top:8px;display:flex;gap:8px;">
                         <button type="button" class="btn btn-danger btn-sm" onclick="confirmRegen()">Yes, Generate New GUID</button>
@@ -1630,7 +1603,7 @@ void SeaSenseWebServer::handleSettings() {
                 await fetch('/api/system/restart', {method: 'POST'});
                 showToast('Device restarting... Reconnect in 30 seconds.', 'info');
                 setTimeout(() => {
-                    document.body.innerHTML = '<div style="text-align:center;padding:50px;"><h2>Device Restarting...</h2><p>Please wait 30 seconds and refresh the page.</p></div>';
+                    document.body.innerHTML = '<div style="text-align:center;padding:50px;color:#e2e8f0;"><h2 style="color:#22d3ee;">Device Restarting...</h2><p style="color:#94a3b8;">Please wait 30 seconds and refresh the page.</p></div>';
                 }, 1000);
             } catch (e) {
                 showToast('Restart command sent', 'info');
