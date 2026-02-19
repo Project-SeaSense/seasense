@@ -11,6 +11,7 @@
 const char* SPIFFSStorage::DATA_FILE = "/data.csv";
 const char* SPIFFSStorage::METADATA_FILE = "/metadata.json";
 const char* SPIFFSStorage::TEMP_FILE = "/data.tmp";
+const char* SPIFFSStorage::BACKUP_FILE = "/data.bak";
 
 // ============================================================================
 // Constructor / Destructor
@@ -19,7 +20,8 @@ const char* SPIFFSStorage::TEMP_FILE = "/data.tmp";
 SPIFFSStorage::SPIFFSStorage(uint16_t maxRecords)
     : _maxRecords(maxRecords),
       _mounted(false),
-      _cachedRecordCount(0)
+      _cachedRecordCount(0),
+      _metadataDirtyCount(0)
 {
     _metadata.lastUploadedMillis = 0;
     _metadata.totalRecordsWritten = 0;
@@ -56,6 +58,24 @@ bool SPIFFSStorage::begin() {
 
     _mounted = true;
     DEBUG_STORAGE_PRINTLN("SPIFFS mounted successfully");
+
+    // Crash recovery: handle orphaned temp/backup files from interrupted trim
+    if (SPIFFS.exists(BACKUP_FILE)) {
+        if (SPIFFS.exists(DATA_FILE)) {
+            // New data file is in place, remove backup
+            SPIFFS.remove(BACKUP_FILE);
+            DEBUG_STORAGE_PRINTLN("Removed orphaned backup file");
+        } else {
+            // Trim was interrupted before new file was in place, restore backup
+            SPIFFS.rename(BACKUP_FILE, DATA_FILE);
+            DEBUG_STORAGE_PRINTLN("Restored data from backup file");
+        }
+    }
+    if (SPIFFS.exists(TEMP_FILE)) {
+        // Temp file from interrupted trim — remove it
+        SPIFFS.remove(TEMP_FILE);
+        DEBUG_STORAGE_PRINTLN("Removed orphaned temp file");
+    }
 
     // Load metadata
     if (!loadMetadata()) {
@@ -109,9 +129,13 @@ bool SPIFFSStorage::writeRecord(const DataRecord& record) {
     file.flush();
     file.close();
 
-    // Update metadata
+    // Update metadata (batched saves to reduce flash wear)
     _metadata.totalRecordsWritten++;
-    saveMetadata();
+    _metadataDirtyCount++;
+    if (_metadataDirtyCount >= METADATA_SAVE_INTERVAL) {
+        saveMetadata();
+        _metadataDirtyCount = 0;
+    }
 
     DEBUG_STORAGE_PRINT("Written record: ");
     DEBUG_STORAGE_PRINTLN(csvLine);
@@ -325,7 +349,8 @@ unsigned long SPIFFSStorage::getLastUploadedMillis() const {
 
 bool SPIFFSStorage::setLastUploadedMillis(unsigned long millis) {
     _metadata.lastUploadedMillis = millis;
-    _metadata.recordsAtLastUpload = countRecords();
+    _metadata.recordsAtLastUpload = _cachedRecordCount;  // O(1) instead of O(n) file scan
+    _metadataDirtyCount = 0;  // Force save on upload boundary
     return saveMetadata();
 }
 
@@ -453,8 +478,10 @@ bool SPIFFSStorage::trimOldRecords() {
     dst.close();
     src.close();
 
-    SPIFFS.remove(DATA_FILE);
+    // Crash-safe rename order: backup old, install new, remove backup
+    SPIFFS.rename(DATA_FILE, BACKUP_FILE);
     SPIFFS.rename(TEMP_FILE, DATA_FILE);
+    SPIFFS.remove(BACKUP_FILE);
 
     _cachedRecordCount = _maxRecords;
 

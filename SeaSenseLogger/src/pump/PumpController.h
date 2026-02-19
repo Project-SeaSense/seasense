@@ -44,9 +44,9 @@ struct PumpConfig {
     uint8_t measurementCount;         // 1 default
     uint16_t measurementIntervalMs;   // 2000ms default
     uint16_t pumpStopDelayMs;         // 500ms default
-    uint16_t cooldownMs;              // 55000ms default
+    uint32_t cooldownMs;              // 55000ms default
     unsigned long cycleIntervalMs;    // 60000ms (1 minute) default
-    uint16_t maxPumpOnTimeMs;         // 30000ms safety
+    uint32_t maxPumpOnTimeMs;         // 30000ms safety
     uint8_t relayPin;                 // GPIO 25
     bool enabled;                     // true default
 

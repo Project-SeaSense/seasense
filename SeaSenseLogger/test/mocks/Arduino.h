@@ -94,6 +94,7 @@ public:
     char operator[](unsigned int idx) const { return _str[idx]; }
 
     unsigned int length() const { return (unsigned int)_str.length(); }
+    bool isEmpty() const { return _str.empty(); }
     const char* c_str() const { return _str.c_str(); }
 
     String substring(unsigned int from, unsigned int to) const {

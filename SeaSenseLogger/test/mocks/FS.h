@@ -9,12 +9,13 @@
 
 class MockFile {
 public:
-    operator bool() const { return false; }
+    bool _valid = true;
+    operator bool() const { return _valid; }
     bool available() { return false; }
     String readStringUntil(char) { return String(); }
-    size_t println(const String&) { return 0; }
-    size_t println(const char*) { return 0; }
-    size_t print(const String&) { return 0; }
+    size_t println(const String&) { return 1; }
+    size_t println(const char*) { return 1; }
+    size_t print(const String&) { return 1; }
     // Required by ArduinoJson
     int read() { return -1; }
     size_t write(uint8_t) { return 1; }

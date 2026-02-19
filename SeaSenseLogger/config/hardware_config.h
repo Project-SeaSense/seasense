@@ -153,6 +153,8 @@
 #define I2C_BUS_RESET_THRESHOLD 8         // Consecutive sensor fails before bus reset
 #define EZO_HARD_TIMEOUT_MS 3000          // Absolute max wait for any EZO command
 #define API_CONNECT_TIMEOUT_MS 5000       // HTTP connect timeout (DNS + TCP)
+#define WEB_SERVER_TASK_STACK_SIZE 16384  // Stack for Core 0 web server task
+#define CONTINUOUS_MODE_TIMEOUT_MS 1800000UL  // 30 min auto-revert from continuous mode
 
 // ============================================================================
 // Debug Configuration

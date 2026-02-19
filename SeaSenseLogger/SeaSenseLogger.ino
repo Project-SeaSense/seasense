@@ -116,11 +116,20 @@ unsigned long sensorSamplingIntervalMs = 900000;  // Default 15 minutes
 // Continuous measurement mode (toggled via web UI; pump never runs in this mode)
 bool continuousMeasurementMode = false;
 
-// Next scheduled sensor read timestamp; starts at 0 so first read fires immediately
-unsigned long nextSensorReadAt = 0;
+// Timestamp of last continuous-mode read (elapsed-time pattern, rollover-safe)
+unsigned long lastSensorReadAt = 0;
 
-// Saved normal-mode schedule — restored when exiting continuous mode
-unsigned long savedNextSensorReadAt = 0;
+// Saved normal-mode anchor — restored when exiting continuous mode
+unsigned long savedLastSensorReadAt = 0;
+
+// When continuous mode was entered (for auto-timeout)
+unsigned long continuousModeStartedAt = 0;
+
+// Spinlock for shared timing globals accessed from both cores
+portMUX_TYPE g_timerMux = portMUX_INITIALIZER_UNLOCKED;
+
+// Mutex for I2C bus access (web sensor reads vs loop reads)
+SemaphoreHandle_t g_i2cMutex = NULL;
 
 // Runtime GPS source selection (from ConfigManager)
 bool useNMEA2000GPS = false;  // false = onboard GPS, true = NMEA2000 network
@@ -521,7 +530,7 @@ void setup() {
     }
 
     // Pin web server to Core 0 so sensor/upload work on Core 1 never blocks the UI
-    xTaskCreatePinnedToCore(webServerTask, "WebServer", 8192, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(webServerTask, "WebServer", WEB_SERVER_TASK_STACK_SIZE, NULL, 1, NULL, 0);
     Serial.println("[WIFI] Web server task pinned to Core 0");
 
     // Initialize API uploader
@@ -571,7 +580,11 @@ void setup() {
     Serial.print("[GPS] GPS source: ");
     Serial.println(useNMEA2000GPS ? "NMEA2000 Network" : "Onboard GPS");
 
-    // Initialize pump controller (relay pin setup, start first cycle immediately)
+    // Create I2C mutex for thread-safe sensor access (Core 0 web vs Core 1 loop)
+    g_i2cMutex = xSemaphoreCreateMutex();
+
+    // Initialize pump controller with saved config, then start first cycle
+    pumpController.setConfig(configManager.getPumpConfig());
     pumpController.begin();
     pumpController.startPump();  // Begin first pump cycle without waiting for cycleIntervalMs
 
@@ -658,6 +671,16 @@ void loop() {
         pumpController.update();
     }
 
+    // Auto-revert continuous mode after timeout (safety net)
+    if (continuousMeasurementMode && (now - continuousModeStartedAt >= CONTINUOUS_MODE_TIMEOUT_MS)) {
+        Serial.println("[MODE] Continuous mode auto-timeout, reverting to normal");
+        continuousMeasurementMode = false;
+        portENTER_CRITICAL(&g_timerMux);
+        lastSensorReadAt = now;
+        portEXIT_CRITICAL(&g_timerMux);
+        pumpController.resume();
+    }
+
     // Determine whether to read sensors and whether to persist the results.
     // Three modes:
     //   1. Continuous (display-only): 2s timer, no storage writes
@@ -667,8 +690,14 @@ void loop() {
     bool saveToStorage = false;
 
     if (continuousMeasurementMode) {
-        if (now >= nextSensorReadAt) {
-            nextSensorReadAt = now + 2000UL;
+        unsigned long lastRead;
+        portENTER_CRITICAL(&g_timerMux);
+        lastRead = lastSensorReadAt;
+        portEXIT_CRITICAL(&g_timerMux);
+        if (now - lastRead >= 2000UL) {
+            portENTER_CRITICAL(&g_timerMux);
+            lastSensorReadAt = now;
+            portEXIT_CRITICAL(&g_timerMux);
             doSensorRead = true;
         }
     } else if (pumpController.isEnabled()) {
@@ -677,9 +706,15 @@ void loop() {
             saveToStorage = true;
         }
     } else {
-        // Fallback: timer-based reads when pump is disabled
-        if (now >= nextSensorReadAt) {
-            nextSensorReadAt = now + sensorSamplingIntervalMs;
+        // Fallback: timer-based reads when pump is disabled (rollover-safe)
+        unsigned long lastRead;
+        portENTER_CRITICAL(&g_timerMux);
+        lastRead = lastSensorReadAt;
+        portEXIT_CRITICAL(&g_timerMux);
+        if (now - lastRead >= sensorSamplingIntervalMs) {
+            portENTER_CRITICAL(&g_timerMux);
+            lastSensorReadAt = now;
+            portEXIT_CRITICAL(&g_timerMux);
             doSensorRead = true;
             saveToStorage = true;
         }
@@ -736,6 +771,13 @@ void loop() {
         static uint8_t consecutiveSensorFails = 0;
         uint8_t sensorFailsThisCycle = 0;
 
+        // GPS NaN guard helper
+        const bool gpsValid = activeGPSHasValidFix()
+            && !isnan(gpsData.latitude) && !isnan(gpsData.longitude);
+
+        // Acquire I2C mutex for sensor reads (prevents collision with web server)
+        bool i2cLocked = (g_i2cMutex != NULL) && xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(2000));
+
         // Read temperature
         if (tempSensor.isEnabled() && tempSensor.read()) {
             SensorData tempData = tempSensor.getData();
@@ -758,7 +800,7 @@ void loop() {
 
             // Create DataRecord with GPS + environmental data
             DataRecord record = sensorDataToRecord(tempData, getSystemTimeUTC());
-            if (activeGPSHasValidFix()) {
+            if (gpsValid) {
                 record.latitude = gpsData.latitude;
                 record.longitude = gpsData.longitude;
                 record.altitude = gpsData.altitude;
@@ -802,7 +844,7 @@ void loop() {
 
             // Create DataRecord with GPS + environmental data
             DataRecord ecRecord = sensorDataToRecord(ecData, getSystemTimeUTC());
-            if (activeGPSHasValidFix()) {
+            if (gpsValid) {
                 ecRecord.latitude = gpsData.latitude;
                 ecRecord.longitude = gpsData.longitude;
                 ecRecord.altitude = gpsData.altitude;
@@ -840,7 +882,7 @@ void loop() {
 
             // Create DataRecord with GPS + environmental data
             DataRecord phRecord = sensorDataToRecord(phData, getSystemTimeUTC());
-            if (activeGPSHasValidFix()) {
+            if (gpsValid) {
                 phRecord.latitude = gpsData.latitude;
                 phRecord.longitude = gpsData.longitude;
                 phRecord.altitude = gpsData.altitude;
@@ -861,13 +903,12 @@ void loop() {
             systemHealth.recordError(ErrorType::SENSOR);
         }
 
-        // Read dissolved oxygen
+        // Read dissolved oxygen (set salinity compensation BEFORE read)
+        if (doSensor.isEnabled()) {
+            doSensor.setSalinityCompensation(ecSensor.getSalinity());
+        }
         if (doSensor.isEnabled() && doSensor.read()) {
             SensorData doData = doSensor.getData();
-
-            // Set salinity compensation for DO sensor
-            float salinity = ecSensor.getSalinity();
-            doSensor.setSalinityCompensation(salinity);
 
             Serial.print("Dissolved Oxygen: ");
             Serial.print(doData.value, 2);
@@ -882,7 +923,7 @@ void loop() {
 
             // Create DataRecord with GPS + environmental data
             DataRecord doRecord = sensorDataToRecord(doData, getSystemTimeUTC());
-            if (activeGPSHasValidFix()) {
+            if (gpsValid) {
                 doRecord.latitude = gpsData.latitude;
                 doRecord.longitude = gpsData.longitude;
                 doRecord.altitude = gpsData.altitude;
@@ -901,6 +942,11 @@ void loop() {
             Serial.println("Dissolved Oxygen: READ FAILED");
             sensorFailsThisCycle++;
             systemHealth.recordError(ErrorType::SENSOR);
+        }
+
+        // Release I2C mutex after all sensor reads
+        if (i2cLocked) {
+            xSemaphoreGive(g_i2cMutex);
         }
 
         Serial.println("----------------------");

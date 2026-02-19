@@ -117,6 +117,13 @@ private:
     // Initialized from countRecords() once in begin(), then kept current.
     uint32_t _cachedRecordCount;
 
+    // Metadata batching: save to flash every N writes to reduce wear
+    static const uint16_t METADATA_SAVE_INTERVAL = 50;
+    uint16_t _metadataDirtyCount;
+
+    // Crash-safe trim: backup file for atomic rename
+    static const char* BACKUP_FILE;  // "/data.bak"
+
     // Trim hysteresis: only trim when this many records over the limit,
     // so trim runs every ~TRIM_HYSTERESIS writes instead of every write.
     static const uint16_t TRIM_HYSTERESIS = 50;

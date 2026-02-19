@@ -251,9 +251,7 @@ void SeaSenseWebServer::handleRoot() {
 }
 
 void SeaSenseWebServer::handleDashboard() {
-    // For now, send simple HTML
-    // TODO: Serve from SPIFFS
-    String html = R"HTML(
+    static const char PAGE[] PROGMEM = R"HTML(
 <!DOCTYPE html>
 <html>
 <head>
@@ -580,11 +578,11 @@ void SeaSenseWebServer::handleDashboard() {
 </html>
 )HTML";
 
-    _server->send(200, "text/html", html);
+    _server->send_P(200, "text/html", PAGE);
 }
 
 void SeaSenseWebServer::handleCalibrate() {
-    String html = R"HTML(
+    static const char PAGE[] PROGMEM = R"HTML(
 <!DOCTYPE html>
 <html>
 <head>
@@ -898,11 +896,11 @@ void SeaSenseWebServer::handleCalibrate() {
 </html>
 )HTML";
 
-    _server->send(200, "text/html", html);
+    _server->send_P(200, "text/html", PAGE);
 }
 
 void SeaSenseWebServer::handleData() {
-    String html = R"HTML(
+    static const char PAGE[] PROGMEM = R"HTML(
 <!DOCTYPE html>
 <html>
 <head>
@@ -1246,11 +1244,11 @@ void SeaSenseWebServer::handleData() {
 </body>
 </html>
 )HTML";
-    _server->send(200, "text/html", html);
+    _server->send_P(200, "text/html", PAGE);
 }
 
 void SeaSenseWebServer::handleSettings() {
-    String html = R"HTML(
+    static const char PAGE[] PROGMEM = R"HTML(
 <!DOCTYPE html>
 <html>
 <head>
@@ -1654,7 +1652,7 @@ void SeaSenseWebServer::handleSettings() {
 </html>
 )HTML";
 
-    _server->send(200, "text/html", html);
+    _server->send_P(200, "text/html", PAGE);
 }
 
 void SeaSenseWebServer::handleNotFound() {
@@ -1688,6 +1686,14 @@ void SeaSenseWebServer::handleApiSensorRead() {
         return;
     }
 
+    // Acquire I2C mutex to prevent collision with loop() sensor reads
+    extern SemaphoreHandle_t g_i2cMutex;
+    bool locked = (g_i2cMutex != NULL) && xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(500));
+    if (!locked) {
+        sendError("I2C bus busy, try again", 503);
+        return;
+    }
+
     // Force read both sensors
     bool tempSuccess = false;
     bool ecSuccess = false;
@@ -1705,6 +1711,8 @@ void SeaSenseWebServer::handleApiSensorRead() {
     if (_ecSensor && _ecSensor->isEnabled()) {
         ecSuccess = _ecSensor->read();
     }
+
+    xSemaphoreGive(g_i2cMutex);
 
     sendJSON("{\"success\":true,\"temperature\":" + String(tempSuccess ? "true" : "false") + ",\"conductivity\":" + String(ecSuccess ? "true" : "false") + "}");
 }
@@ -2031,9 +2039,12 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
 
         // Apply immediately: update globals so dashboard countdown reflects new interval
         extern unsigned long sensorSamplingIntervalMs;
-        extern unsigned long nextSensorReadAt;
+        extern unsigned long lastSensorReadAt;
+        extern portMUX_TYPE g_timerMux;
         sensorSamplingIntervalMs = sampling.sensorIntervalMs;
-        nextSensorReadAt = millis() + sampling.sensorIntervalMs;  // reschedule from now
+        portENTER_CRITICAL(&g_timerMux);
+        lastSensorReadAt = millis();  // reschedule from now
+        portEXIT_CRITICAL(&g_timerMux);
     }
 
     // Update GPS config
@@ -2278,9 +2289,23 @@ void SeaSenseWebServer::handleApiPumpControl() {
         sendJSON("{\"success\":true,\"message\":\"Pump resumed\"}");
     } else if (action == "enable") {
         _pumpController->setEnabled(true);
+        // Persist enabled state to config
+        if (_configManager) {
+            PumpConfig pc = _configManager->getPumpConfig();
+            pc.enabled = true;
+            _configManager->setPumpConfig(pc);
+            _configManager->save();
+        }
         sendJSON("{\"success\":true,\"message\":\"Pump controller enabled\"}");
     } else if (action == "disable") {
         _pumpController->setEnabled(false);
+        // Persist disabled state to config
+        if (_configManager) {
+            PumpConfig pc = _configManager->getPumpConfig();
+            pc.enabled = false;
+            _configManager->setPumpConfig(pc);
+            _configManager->save();
+        }
         sendJSON("{\"success\":true,\"message\":\"Pump controller disabled\"}");
     } else {
         sendError("Unknown action: " + action, 400);
@@ -2365,9 +2390,12 @@ void SeaSenseWebServer::handleApiPumpConfigUpdate() {
 
     _configManager->setPumpConfig(config);
 
+    // Apply config to running PumpController immediately
+    _pumpController->setConfig(config);
+
     // Save to SPIFFS
     if (_configManager->save()) {
-        sendJSON("{\"success\":true,\"message\":\"Pump configuration saved\"}");
+        sendJSON("{\"success\":true,\"message\":\"Pump configuration saved and applied\"}");
     } else {
         sendError("Failed to save pump configuration", 500);
     }
@@ -2375,24 +2403,31 @@ void SeaSenseWebServer::handleApiPumpConfigUpdate() {
 
 void SeaSenseWebServer::handleApiMeasurement() {
     extern bool continuousMeasurementMode;
-    extern unsigned long nextSensorReadAt;
-    extern unsigned long savedNextSensorReadAt;
+    extern unsigned long lastSensorReadAt;
+    extern unsigned long savedLastSensorReadAt;
     extern unsigned long sensorSamplingIntervalMs;
+    extern unsigned long continuousModeStartedAt;
+    extern portMUX_TYPE g_timerMux;
 
     if (_server->method() == HTTP_POST) {
         JsonDocument req;
         if (deserializeJson(req, _server->arg("plain")) == DeserializationError::Ok) {
             String mode = req["mode"] | "";
             if (mode == "continuous" && !continuousMeasurementMode) {
-                savedNextSensorReadAt = nextSensorReadAt;
+                portENTER_CRITICAL(&g_timerMux);
+                savedLastSensorReadAt = lastSensorReadAt;
                 continuousMeasurementMode = true;
-                nextSensorReadAt = 0;  // fire first continuous read immediately
+                lastSensorReadAt = 0;  // fire first continuous read immediately
+                continuousModeStartedAt = millis();
+                portEXIT_CRITICAL(&g_timerMux);
                 // Pause pump so relay doesn't fire during display-only mode
                 if (_pumpController) _pumpController->pause();
             } else if (mode == "normal" && continuousMeasurementMode) {
+                portENTER_CRITICAL(&g_timerMux);
                 continuousMeasurementMode = false;
                 // Reschedule timer for pump-disabled fallback (avoid immediate write on exit)
-                nextSensorReadAt = millis() + sensorSamplingIntervalMs;
+                lastSensorReadAt = millis();
+                portEXIT_CRITICAL(&g_timerMux);
                 // Resume pump — it will wait for cycleIntervalMs before next cycle
                 if (_pumpController) _pumpController->resume();
             }
@@ -2404,8 +2439,12 @@ void SeaSenseWebServer::handleApiMeasurement() {
     if (!continuousMeasurementMode && _pumpController && _pumpController->isEnabled()) {
         remaining = _pumpController->getTimeUntilNextMeasurementMs();
     } else {
-        long r = (long)nextSensorReadAt - (long)now;
-        remaining = (unsigned long)(r < 0 ? 0 : r);
+        portENTER_CRITICAL(&g_timerMux);
+        unsigned long lastRead = lastSensorReadAt;
+        portEXIT_CRITICAL(&g_timerMux);
+        unsigned long interval = continuousMeasurementMode ? 2000UL : sensorSamplingIntervalMs;
+        unsigned long elapsed = now - lastRead;
+        remaining = (elapsed >= interval) ? 0 : (interval - elapsed);
     }
 
     JsonDocument resp;

@@ -151,7 +151,8 @@ private:
     // State
     UploadStatus _status;
     unsigned long _lastUploadTime;
-    unsigned long _nextUploadTime;
+    unsigned long _lastScheduledTime;   // millis() anchor for elapsed-time pattern
+    unsigned long _currentIntervalMs;   // active interval (normal or retry backoff)
     uint8_t _retryCount;
     bool _timeSynced;
     time_t _bootTimeEpoch;  // Epoch time when ESP32 booted

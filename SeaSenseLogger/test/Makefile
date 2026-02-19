@@ -18,7 +18,11 @@ BUILDDIR = build
 TESTS = $(BUILDDIR)/test_config_clamp \
         $(BUILDDIR)/test_system_health \
         $(BUILDDIR)/test_csv_roundtrip \
-        $(BUILDDIR)/test_millis_to_utc
+        $(BUILDDIR)/test_millis_to_utc \
+        $(BUILDDIR)/test_millis_rollover \
+        $(BUILDDIR)/test_upload_timing \
+        $(BUILDDIR)/test_metadata_batching \
+        $(BUILDDIR)/test_gps_nan_guard
 
 .PHONY: all test clean
 
@@ -56,6 +60,22 @@ $(BUILDDIR)/test_csv_roundtrip: test_csv_roundtrip.cpp $(SRCDIR)/src/storage/SPI
 
 # millisToUTC tests (standalone — logic extracted to avoid APIUploader dependency chain)
 $(BUILDDIR)/test_millis_to_utc: test_millis_to_utc.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+
+# millis() rollover safety tests (standalone — pure unsigned arithmetic)
+$(BUILDDIR)/test_millis_rollover: test_millis_rollover.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+
+# APIUploader timing tests (standalone — extracted timing state machine)
+$(BUILDDIR)/test_upload_timing: test_upload_timing.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+
+# SPIFFSStorage metadata batching tests
+$(BUILDDIR)/test_metadata_batching: test_metadata_batching.cpp $(SRCDIR)/src/storage/SPIFFSStorage.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
+
+# GPS NaN guard tests (standalone — extracted filtering predicate)
+$(BUILDDIR)/test_gps_nan_guard: test_gps_nan_guard.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
 
 clean:

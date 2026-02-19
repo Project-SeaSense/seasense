@@ -28,7 +28,8 @@ APIUploader::APIUploader(StorageManager* storage)
     : _storage(storage),
       _status(UploadStatus::IDLE),
       _lastUploadTime(0),
-      _nextUploadTime(0),
+      _lastScheduledTime(0),
+      _currentIntervalMs(0),
       _retryCount(0),
       _timeSynced(false),
       _bootTimeEpoch(0),
@@ -37,6 +38,7 @@ APIUploader::APIUploader(StorageManager* storage)
       _totalBytesSent(0),
       _lastPayloadBytes(0)
 {
+    memset(_uploadHistory, 0, sizeof(_uploadHistory));
 }
 
 // ============================================================================
@@ -71,8 +73,9 @@ bool APIUploader::begin(const UploadConfig& config) {
         Serial.println("[API] No WiFi connection, NTP sync skipped");
     }
 
-    // Schedule first upload
-    _nextUploadTime = millis() + _config.intervalMs;
+    // Schedule first upload (elapsed-time pattern, rollover-safe)
+    _lastScheduledTime = millis();
+    _currentIntervalMs = _config.intervalMs;
 
     return true;
 }
@@ -84,8 +87,8 @@ void APIUploader::process() {
 
     unsigned long now = millis();
 
-    // Check if it's time for next upload
-    if (now < _nextUploadTime) {
+    // Check if it's time for next upload (elapsed-time pattern, rollover-safe)
+    if (now - _lastScheduledTime < _currentIntervalMs) {
         return;
     }
 
@@ -118,7 +121,8 @@ void APIUploader::process() {
     if (records.empty()) {
         _status = UploadStatus::ERROR_NO_DATA;
         DEBUG_API_PRINTLN("No new data to upload");
-        _nextUploadTime = now + _config.intervalMs;
+        _lastScheduledTime = now;
+        _currentIntervalMs = _config.intervalMs;
         return;
     }
 
@@ -160,9 +164,10 @@ void APIUploader::process() {
         Serial.print(records.size());
         Serial.println(" records uploaded");
 
-        // Reset retry and schedule next upload
+        // Reset retry and schedule next upload (elapsed-time pattern)
         resetRetry();
-        _nextUploadTime = now + _config.intervalMs;
+        _lastScheduledTime = now;
+        _currentIntervalMs = _config.intervalMs;
     } else {
         _status = UploadStatus::ERROR_API;
         Serial.println("[API] Upload failed");
@@ -201,14 +206,16 @@ uint32_t APIUploader::getPendingRecords() const {
 
 unsigned long APIUploader::getTimeUntilNext() const {
     unsigned long now = millis();
-    if (now >= _nextUploadTime) {
+    unsigned long elapsed = now - _lastScheduledTime;
+    if (elapsed >= _currentIntervalMs) {
         return 0;
     }
-    return _nextUploadTime - now;
+    return _currentIntervalMs - elapsed;
 }
 
 void APIUploader::forceUpload() {
-    _nextUploadTime = millis();
+    _lastScheduledTime = 0;
+    _currentIntervalMs = 0;
     Serial.println("[API] Forced upload scheduled");
 }
 
@@ -317,8 +324,9 @@ String APIUploader::buildPayload(const std::vector<DataRecord>& records) const {
         String utcTime = record.timestampUTC.length() > 0 ? record.timestampUTC : millisToUTC(record.millis);
         dp["timestamp_utc"] = utcTime;
 
-        // GPS location data (if available)
-        if (record.latitude != 0.0 || record.longitude != 0.0) {
+        // GPS location data (if available and not NaN)
+        if (!isnan(record.latitude) && !isnan(record.longitude)
+            && (record.latitude != 0.0 || record.longitude != 0.0)) {
             dp["latitude"] = record.latitude;
             dp["longitude"] = record.longitude;
             dp["altitude"] = record.altitude;
@@ -435,11 +443,12 @@ bool APIUploader::uploadPayload(const String& payload) {
 }
 
 void APIUploader::scheduleRetry() {
-    // Gentle retry with exponential backoff
+    // Gentle retry with exponential backoff (elapsed-time pattern)
     uint8_t intervalIndex = min(_retryCount, (uint8_t)(MAX_RETRY_INTERVALS - 1));
     unsigned long retryDelay = RETRY_INTERVALS[intervalIndex];
 
-    _nextUploadTime = millis() + retryDelay;
+    _lastScheduledTime = millis();
+    _currentIntervalMs = retryDelay;
     _retryCount++;
 
     DEBUG_API_PRINT("Retry scheduled in ");
