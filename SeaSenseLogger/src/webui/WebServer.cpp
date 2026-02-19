@@ -1568,25 +1568,6 @@ void SeaSenseWebServer::handleSettings() {
             </div>
         </div>
 
-        <!-- GPS Source -->
-        <div class="section">
-            <h2>GPS Source</h2>
-            <div class="form-group">
-                <label>Position &amp; Time Source</label>
-                <select id="gps-source" name="gps-source">
-                    <option value="onboard">Onboard GPS (NEO-6M)</option>
-                    <option value="nmea2000">NMEA2000 Network</option>
-                </select>
-                <small>Select NMEA2000 if the device is installed in the bilge without sky visibility. Requires a GPS chartplotter on the NMEA2000 bus.</small>
-            </div>
-            <div class="form-group">
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" id="gps-fallback" name="gps-fallback" style="width:auto;margin:0;">
-                    Fall back to onboard GPS if NMEA2000 has no fix
-                </label>
-            </div>
-        </div>
-
         <!-- Device Configuration -->
         <div class="section">
             <h2>Device Configuration</h2>
@@ -1696,11 +1677,6 @@ void SeaSenseWebServer::handleSettings() {
                 }
 
                 // GPS source
-                if (config.gps) {
-                    document.getElementById('gps-source').value = config.gps.use_nmea2000 ? 'nmea2000' : 'onboard';
-                    document.getElementById('gps-fallback').checked = config.gps.fallback_to_onboard !== false;
-                }
-
                 // Device
                 document.getElementById('device-guid').value = config.device.device_guid || '';
                 document.getElementById('partner-id').value = config.device.partner_id || '';
@@ -1741,10 +1717,6 @@ void SeaSenseWebServer::handleSettings() {
                 sampling: {
                     sensor_interval_ms: (parseInt(document.getElementById('sensor-interval-min').value || 0) * 60
                         + parseInt(document.getElementById('sensor-interval-sec').value || 0)) * 1000
-                },
-                gps: {
-                    use_nmea2000: document.getElementById('gps-source').value === 'nmea2000',
-                    fallback_to_onboard: document.getElementById('gps-fallback').checked
                 },
                 device: {
                     device_guid: document.getElementById('device-guid').value,
@@ -2172,12 +2144,6 @@ void SeaSenseWebServer::handleApiConfig() {
         samplingObj["min_sampling_ms"] = max(minMs, 5000UL);
     }
 
-    // GPS config
-    ConfigManager::GPSConfig gpsConfig = _configManager->getGPSConfig();
-    JsonObject gpsObj = doc["gps"].to<JsonObject>();
-    gpsObj["use_nmea2000"] = gpsConfig.useNMEA2000;
-    gpsObj["fallback_to_onboard"] = gpsConfig.fallbackToOnboard;
-
     // Device config
     ConfigManager::DeviceConfig device = _configManager->getDeviceConfig();
     JsonObject deviceObj = doc["device"].to<JsonObject>();
@@ -2251,17 +2217,6 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
         portEXIT_CRITICAL(&g_timerMux);
     }
 
-    // Update GPS config
-    if (doc["gps"].is<JsonObject>()) {
-        ConfigManager::GPSConfig gps;
-        gps.useNMEA2000 = doc["gps"]["use_nmea2000"] | false;
-        gps.fallbackToOnboard = doc["gps"]["fallback_to_onboard"] | true;
-        _configManager->setGPSConfig(gps);
-        // Update global flag so main loop uses new source immediately
-        extern bool useNMEA2000GPS;
-        useNMEA2000GPS = gps.useNMEA2000;
-    }
-
     // Update device config
     if (doc["device"].is<JsonObject>()) {
         ConfigManager::DeviceConfig device;
@@ -2330,9 +2285,9 @@ void SeaSenseWebServer::handleApiStatus() {
     // GPS status (via extern globals from main sketch)
     extern bool activeGPSHasValidFix();
     extern GPSData activeGPSGetData();
-    extern bool useNMEA2000GPS;
+    extern NMEA2000GPS n2kGPS;
     doc["gps"]["has_fix"] = activeGPSHasValidFix();
-    doc["gps"]["source"] = useNMEA2000GPS ? "nmea2000" : "onboard";
+    doc["gps"]["source"] = n2kGPS.hasValidFix() ? "nmea2000" : "onboard";
     if (activeGPSHasValidFix()) {
         GPSData gd = activeGPSGetData();
         doc["gps"]["satellites"] = gd.satellites;

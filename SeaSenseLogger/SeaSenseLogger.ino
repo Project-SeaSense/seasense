@@ -118,9 +118,6 @@ portMUX_TYPE g_timerMux = portMUX_INITIALIZER_UNLOCKED;
 // Mutex for I2C bus access (web sensor reads vs loop reads)
 SemaphoreHandle_t g_i2cMutex = NULL;
 
-// Runtime GPS source selection (from ConfigManager)
-bool useNMEA2000GPS = false;  // false = onboard GPS, true = NMEA2000 network
-
 // System epoch for calibration age checks (updated from GPS when fix available)
 time_t g_systemEpoch = 0;
 
@@ -301,32 +298,19 @@ bool isSensorEnabled(const String& sensorType) {
 // GPS Source Selection Helpers
 // ============================================================================
 
+// GPS source: prefer NMEA2000 network, fall back to onboard NEO-6M
 bool activeGPSHasValidFix() {
-    ConfigManager::GPSConfig gpsCfg = configManager.getGPSConfig();
-    if (gpsCfg.useNMEA2000) {
-        if (n2kGPS.hasValidFix()) return true;
-        if (gpsCfg.fallbackToOnboard) return gps.hasValidFix();
-        return false;
-    }
+    if (n2kGPS.hasValidFix()) return true;
     return gps.hasValidFix();
 }
 
 GPSData activeGPSGetData() {
-    ConfigManager::GPSConfig gpsCfg = configManager.getGPSConfig();
-    if (gpsCfg.useNMEA2000) {
-        if (n2kGPS.hasValidFix()) return n2kGPS.getData();
-        if (gpsCfg.fallbackToOnboard) return gps.getData();
-    }
+    if (n2kGPS.hasValidFix()) return n2kGPS.getData();
     return gps.getData();
 }
 
 String activeGPSGetTimeUTC() {
-    ConfigManager::GPSConfig gpsCfg = configManager.getGPSConfig();
-    if (gpsCfg.useNMEA2000) {
-        if (n2kGPS.hasValidFix()) return n2kGPS.getTimeUTC();
-        if (gpsCfg.fallbackToOnboard) return gps.getTimeUTC();
-        return "";
-    }
+    if (n2kGPS.hasValidFix()) return n2kGPS.getTimeUTC();
     return gps.getTimeUTC();
 }
 
@@ -543,11 +527,6 @@ void setup() {
         Serial.println("[WARNING] NMEA2000 GPS init failed (CAN bus unavailable?)");
     }
 
-    // Load GPS source preference
-    useNMEA2000GPS = configManager.getGPSConfig().useNMEA2000;
-    Serial.print("[GPS] GPS source: ");
-    Serial.println(useNMEA2000GPS ? "NMEA2000 Network" : "Onboard GPS");
-
     // Create I2C mutex for thread-safe sensor access (Core 0 web vs Core 1 loop)
     g_i2cMutex = xSemaphoreCreateMutex();
 
@@ -669,9 +648,9 @@ void loop() {
         Serial.print(now);
         Serial.println(" ms");
 
-        // Get GPS data from active source (onboard or NMEA2000)
+        // Get GPS data from active source (NMEA2000 preferred, onboard fallback)
         GPSData gpsData = activeGPSGetData();
-        const bool gpsFromN2K = useNMEA2000GPS;
+        const bool gpsFromN2K = n2kGPS.hasValidFix();
         if (activeGPSHasValidFix()) {
             Serial.print("GPS [");
             Serial.print(gpsFromN2K ? "N2K" : "NEO");
@@ -688,10 +667,8 @@ void loop() {
             Serial.print("GPS Time: ");
             Serial.println(activeGPSGetTimeUTC());
         } else {
-            Serial.print("GPS [");
-            Serial.print(gpsFromN2K ? "N2K" : "NEO");
-            Serial.print("]: ");
-            Serial.println(gpsFromN2K ? n2kGPS.getStatusString() : gps.getStatusString());
+            Serial.print("GPS: ");
+            Serial.println(gps.getStatusString());
         }
 
         // Snapshot NMEA2000 environmental data from boat instruments
