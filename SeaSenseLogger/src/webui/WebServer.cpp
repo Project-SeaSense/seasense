@@ -1592,21 +1592,11 @@ void SeaSenseWebServer::handleSettings() {
             <h2>Device Configuration</h2>
             <div class="form-group">
                 <label>Device GUID</label>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <input type="text" id="device-guid" name="device-guid" style="flex:1;">
-                    <button type="button" class="btn btn-sm" onclick="showRegenConfirm()" style="white-space:nowrap;background:var(--b2);color:var(--tx);border:none;border-radius:6px;padding:6px 12px;cursor:pointer;">Generate New</button>
-                </div>
-                <div id="regenConfirm" style="display:none;margin-top:8px;padding:10px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:8px;font-size:13px;color:var(--wn);">
-                    Generating a new GUID will change the device identity. Any existing data linked to the old GUID will be orphaned. Are you sure?
-                    <div style="margin-top:8px;display:flex;gap:8px;">
-                        <button type="button" class="btn btn-danger btn-sm" onclick="confirmRegen()">Yes, Generate New GUID</button>
-                        <button type="button" class="btn btn-sm" onclick="cancelRegen()">Cancel</button>
-                    </div>
-                </div>
+                <input type="text" id="device-guid" name="device-guid" readonly>
             </div>
             <div class="form-group">
                 <label>Partner ID</label>
-                <input type="text" id="partner-id" name="partner-id">
+                <input type="text" id="partner-id" name="partner-id" readonly>
             </div>
             <div class="form-group">
                 <label>Firmware Version</label>
@@ -1785,28 +1775,6 @@ void SeaSenseWebServer::handleSettings() {
                     _initWifi = { ssid: config.wifi.station_ssid, password: config.wifi.station_password, ap_password: config.wifi.ap_password };
                 } else {
                     showToast('Error: ' + (result.error || 'Unknown error'), 'error');
-                }
-            } catch (e) {
-                showToast('Network error: ' + e.message, 'error');
-            }
-        }
-
-        function showRegenConfirm() {
-            document.getElementById('regenConfirm').style.display = 'block';
-        }
-        function cancelRegen() {
-            document.getElementById('regenConfirm').style.display = 'none';
-        }
-        async function confirmRegen() {
-            cancelRegen();
-            try {
-                const response = await fetch('/api/device/regenerate-guid', {method: 'POST'});
-                const result = await response.json();
-                if (response.ok && result.device_guid) {
-                    document.getElementById('device-guid').value = result.device_guid;
-                    showToast('New GUID generated and saved', 'success');
-                } else {
-                    showToast('Error generating GUID', 'error');
                 }
             } catch (e) {
                 showToast('Network error: ' + e.message, 'error');
