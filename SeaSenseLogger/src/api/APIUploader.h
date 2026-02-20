@@ -176,7 +176,10 @@ private:
     time_t _bootTimeEpoch;  // Epoch time when ESP32 booted
     String _lastError;      // Descriptive last error message
 
-    // Upload history
+    // Upload history (in-memory only — resets on reboot)
+    // TODO: Persist last 10 upload records to SPIFFS/NVS so history survives
+    //       reboots. Also persist last_success_ms so dashboard "Last upload"
+    //       doesn't show "never" after a reboot when uploads happened recently.
     UploadRecord _uploadHistory[UPLOAD_HISTORY_SIZE];
     uint8_t _historyCount;      // valid entries (0..10)
     uint8_t _historyHead;       // index where next entry will be written

@@ -66,6 +66,9 @@ public:
         String deployDate;      // ISO8601 - auto-set on first boot, persisted
         String purchaseDate;    // ISO8601 - set via web UI / API
         float depthCm;          // Sensor depth below waterline in cm
+        // TODO: Add Web UI settings page for depthCm, purchaseDate, and deployDate
+        //       (currently only deployDate is auto-stamped on first GPS fix;
+        //        purchaseDate and depthCm have no UI to set them)
     };
 
     /**

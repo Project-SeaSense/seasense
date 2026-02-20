@@ -376,6 +376,9 @@ void SeaSenseWebServer::handleDashboard() {
             <span class="up-sep">&middot;</span>
             <span>Next: <span id="uploadNextSpan">--</span></span>
         </div>
+        <!-- TODO: Dashboard should show last known sensor values on load instead
+             of "Loading sensor data..." — read most recent record from storage
+             on initial page load so values are visible before the next live read -->
         <div class="sensors-grid" id="sensors">
             <div class="status-msg">Loading sensor data...</div>
         </div>
@@ -1390,6 +1393,9 @@ void SeaSenseWebServer::handleData() {
                 .catch(() => { document.getElementById('historyBody').innerHTML = '<tr><td colspan="5" class="empty-row">Error loading history</td></tr>'; });
         }
 
+        // TODO: Stored records table stays on "Loading..." if /api/data/records
+        //       request is slow or returns empty. Add error handling / timeout
+        //       message, and investigate why records may appear empty after reboot.
         function loadRecords() {
             const tbody = document.getElementById('recordsBody');
             tbody.innerHTML = '<tr><td colspan="4" class="empty-row">Loading...</td></tr>';
@@ -1428,6 +1434,13 @@ void SeaSenseWebServer::handleData() {
             loadRecords();
         }
 
+        // TODO: Force upload should poll status/history until upload completes
+        //       (currently fires a single 3s timeout — misses slow uploads).
+        //       Replace setTimeout with a poll loop that checks upload status
+        //       every 2s until status changes from "Uploading" to success/error,
+        //       then refresh stats + history once.
+        // TODO: Upload history table should auto-refresh periodically (e.g. every
+        //       10-15s) so users see new entries without manual page reload.
         function forceUpload() {
             const btn = document.getElementById('forceBtn');
             btn.disabled = true; btn.textContent = 'Scheduling...';
@@ -1616,6 +1629,12 @@ void SeaSenseWebServer::handleSettings() {
             </div>
 
         </div>
+
+        <!-- TODO: Add Deployment section with editable fields for:
+             - Sensor depth (cm) below waterline
+             - Purchase date (date picker)
+             - Deploy date (date picker, or show auto-stamped value as readonly)
+             Save via /api/settings with deployment.depth_cm, deployment.purchase_date -->
 
         <!-- Device Configuration -->
         <div class="section">
