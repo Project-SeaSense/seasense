@@ -125,15 +125,12 @@ void APIUploader::process() {
     // Query data from storage — use record count to skip already-uploaded records.
     // millis()-based filtering breaks across reboots since millis() resets to 0.
     _status = UploadStatus::QUERYING_DATA;
+    extern SystemHealth systemHealth;
     StorageStats stats = _storage->getStats();
     uint32_t alreadyUploaded = stats.totalRecords - stats.recordsSinceUpload;
 
-    // Read all records, then slice off the un-uploaded tail
-    std::vector<DataRecord> allRecords = _storage->readRecords(0, stats.totalRecords);
-    std::vector<DataRecord> records;
-    for (uint32_t i = alreadyUploaded; i < allRecords.size() && records.size() < _config.batchSize; i++) {
-        records.push_back(allRecords[i]);
-    }
+    // Read only the batch we need, skipping already-uploaded records in storage
+    std::vector<DataRecord> records = _storage->readRecords(0, _config.batchSize, alreadyUploaded);
 
     if (records.empty()) {
         _status = UploadStatus::ERROR_NO_DATA;
@@ -150,8 +147,14 @@ void APIUploader::process() {
     Serial.print(stats.recordsSinceUpload);
     Serial.println(" pending records...");
 
+    // Feed watchdog before building payload
+    systemHealth.feedWatchdog();
+
     // Build payload
     String payload = buildPayload(records);
+
+    // Feed watchdog before uploading
+    systemHealth.feedWatchdog();
 
     // Upload to API
     _status = UploadStatus::UPLOADING;

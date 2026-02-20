@@ -35,7 +35,8 @@ public:
     virtual bool writeRecord(const DataRecord& record) override;
     virtual std::vector<DataRecord> readRecords(
         unsigned long startMillis = 0,
-        uint16_t maxRecords = 100
+        uint16_t maxRecords = 100,
+        uint32_t skipRecords = 0
     ) override;
     virtual StorageStats getStats() const override;
     virtual StorageStatus getStatus() const override;

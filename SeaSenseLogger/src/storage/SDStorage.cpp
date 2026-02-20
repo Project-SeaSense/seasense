@@ -4,6 +4,7 @@
 
 #include "SDStorage.h"
 #include "../../config/hardware_config.h"
+#include "../system/SystemHealth.h"
 #include <ArduinoJson.h>
 
 // File paths
@@ -98,7 +99,8 @@ bool SDStorage::writeRecord(const DataRecord& record) {
 
 std::vector<DataRecord> SDStorage::readRecords(
     unsigned long startMillis,
-    uint16_t maxRecords
+    uint16_t maxRecords,
+    uint32_t skipRecords
 ) {
     std::vector<DataRecord> records;
 
@@ -117,7 +119,17 @@ std::vector<DataRecord> SDStorage::readRecords(
         file.readStringUntil('\n');
     }
 
+    // Skip already-processed records (e.g. already-uploaded prefix)
+    extern SystemHealth systemHealth;
+    for (uint32_t i = 0; i < skipRecords && file.available(); i++) {
+        file.readStringUntil('\n');
+        if ((i & 99) == 99) {  // every 100 lines
+            systemHealth.feedWatchdog();
+        }
+    }
+
     // Read records
+    uint32_t parsed = 0;
     while (file.available() && records.size() < maxRecords) {
         String line = file.readStringUntil('\n');
         line.trim();
@@ -130,6 +142,9 @@ std::vector<DataRecord> SDStorage::readRecords(
             if (startMillis == 0 || record.millis >= startMillis) {
                 records.push_back(record);
             }
+        }
+        if ((++parsed & 49) == 49) {  // every 50 records
+            systemHealth.feedWatchdog();
         }
     }
 

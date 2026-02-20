@@ -12,7 +12,11 @@
 
 #define private public  // Access private members
 #include "test_framework.h"
+#include "../src/system/SystemHealth.h"
 #include "../src/storage/SPIFFSStorage.h"
+
+// Global SystemHealth instance (referenced by SPIFFSStorage via extern)
+SystemHealth systemHealth;
 
 // Helper: create a minimal test record
 static DataRecord makeRecord(unsigned long ms) {
@@ -242,6 +246,55 @@ void test_total_bytes_uploaded() {
     TEST_PASS();
 }
 
+// Test: readRecords with skipRecords compiles and integrates with upload tracking
+void test_readRecords_skipRecords_param() {
+    SPIFFSStorage storage(1000);
+    storage._mounted = true;
+    storage._cachedRecordCount = 0;
+
+    // Write 20 records
+    for (int i = 0; i < 20; i++) {
+        storage.writeRecord(makeRecord(i * 1000));
+    }
+
+    // Mark all 20 as uploaded
+    storage.setLastUploadedMillis(19000);
+    ASSERT_EQ((uint32_t)0, storage.getStats().recordsSinceUpload);
+
+    // Write 5 more (these are pending)
+    for (int i = 0; i < 5; i++) {
+        storage.writeRecord(makeRecord(20000 + i * 1000));
+    }
+
+    StorageStats stats = storage.getStats();
+    ASSERT_EQ((uint32_t)25, stats.totalRecords);
+    ASSERT_EQ((uint32_t)5, stats.recordsSinceUpload);
+
+    // Compute alreadyUploaded the same way APIUploader does
+    uint32_t alreadyUploaded = stats.totalRecords - stats.recordsSinceUpload;
+    ASSERT_EQ((uint32_t)20, alreadyUploaded);
+
+    // readRecords with skip (mock SPIFFS returns empty, but call must compile)
+    std::vector<DataRecord> records = storage.readRecords(0, 50, alreadyUploaded);
+    // Mock file is empty, so 0 records returned — that's expected
+    ASSERT_EQ((size_t)0, records.size());
+
+    TEST_PASS();
+}
+
+// Test: readRecords without skip still works (default param = 0)
+void test_readRecords_default_skipRecords() {
+    SPIFFSStorage storage(1000);
+    storage._mounted = true;
+    storage._cachedRecordCount = 0;
+
+    // readRecords with default skipRecords (backward compatible)
+    std::vector<DataRecord> records = storage.readRecords(0, 100);
+    ASSERT_EQ((size_t)0, records.size());
+
+    TEST_PASS();
+}
+
 int main() {
     TEST_SUITE("Upload Tracking (SPIFFSStorage)");
 
@@ -253,6 +306,8 @@ int main() {
     RUN_TEST(trim_past_upload_marker);
     RUN_TEST(no_false_pending_after_upload);
     RUN_TEST(total_bytes_uploaded);
+    RUN_TEST(readRecords_skipRecords_param);
+    RUN_TEST(readRecords_default_skipRecords);
 
     TEST_SUMMARY();
 }

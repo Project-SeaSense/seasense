@@ -796,6 +796,8 @@ void loop() {
             systemHealth.recordError(ErrorType::SENSOR);
         }
 
+        systemHealth.feedWatchdog();
+
         // Read conductivity
         g_loopStage = "sensor:ec";
         systemHealth.feedWatchdog();
@@ -840,6 +842,8 @@ void loop() {
             systemHealth.recordError(ErrorType::SENSOR);
         }
 
+        systemHealth.feedWatchdog();
+
         // Read pH
         g_loopStage = "sensor:ph";
         systemHealth.feedWatchdog();
@@ -877,6 +881,8 @@ void loop() {
             sensorFailsThisCycle++;
             systemHealth.recordError(ErrorType::SENSOR);
         }
+
+        systemHealth.feedWatchdog();
 
         // Read dissolved oxygen (set salinity compensation BEFORE read)
         g_loopStage = "sensor:do";
@@ -954,9 +960,15 @@ void loop() {
         }
     }
 
+    // Feed watchdog before upload path (resets budget after sensor reads)
+    systemHealth.feedWatchdog();
+
     // Process API upload (non-blocking)
     g_loopStage = "upload:process";
     apiUploader.process();
+
+    // Feed watchdog before calibration
+    systemHealth.feedWatchdog();
 
     // Update calibration state machine
     g_loopStage = "calibration:update";

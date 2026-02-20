@@ -4,6 +4,7 @@
 
 #include "SerialCommands.h"
 #include "../webui/WebServer.h"
+#include "../system/SystemHealth.h"
 #include <Wire.h>
 
 // ============================================================================
@@ -160,6 +161,7 @@ void SerialCommands::cmdClear() {
     unsigned long startTime = millis();
     String confirmation = "";
 
+    extern SystemHealth systemHealth;
     while (millis() - startTime < 10000) {
         if (Serial.available()) {
             char c = Serial.read();
@@ -168,6 +170,8 @@ void SerialCommands::cmdClear() {
             }
             confirmation += c;
         }
+        systemHealth.feedWatchdog();
+        delay(10);
     }
 
     confirmation.trim();

@@ -140,12 +140,13 @@ bool StorageManager::writeRecord(const DataRecord& record) {
 
 std::vector<DataRecord> StorageManager::readRecords(
     unsigned long startMillis,
-    uint16_t maxRecords
+    uint16_t maxRecords,
+    uint32_t skipRecords
 ) {
     // Read from primary storage
     IStorage* primary = getPrimaryStorage();
     if (primary) {
-        return primary->readRecords(startMillis, maxRecords);
+        return primary->readRecords(startMillis, maxRecords, skipRecords);
     }
 
     // No storage available

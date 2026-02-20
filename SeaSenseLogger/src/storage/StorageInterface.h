@@ -121,11 +121,13 @@ public:
      * Read records from storage
      * @param startMillis Start time (millis()) - read records after this time
      * @param maxRecords Maximum number of records to read
+     * @param skipRecords Number of records to skip from the start (for pagination)
      * @return Vector of DataRecord structures
      */
     virtual std::vector<DataRecord> readRecords(
         unsigned long startMillis = 0,
-        uint16_t maxRecords = 100
+        uint16_t maxRecords = 100,
+        uint32_t skipRecords = 0
     ) = 0;
 
     /**

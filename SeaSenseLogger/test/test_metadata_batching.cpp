@@ -10,7 +10,11 @@
 
 #define private public  // Access private _metadataDirtyCount, _cachedRecordCount, etc.
 #include "test_framework.h"
+#include "../src/system/SystemHealth.h"
 #include "../src/storage/SPIFFSStorage.h"
+
+// Global SystemHealth instance (referenced by SPIFFSStorage via extern)
+SystemHealth systemHealth;
 
 // Track saveMetadata calls by wrapping the behavior
 static int g_saveMetadataCalls = 0;

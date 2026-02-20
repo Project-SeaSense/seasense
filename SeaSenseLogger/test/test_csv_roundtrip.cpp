@@ -7,7 +7,11 @@
 
 #define private public  // Access private parseCSVLine/recordToCSV
 #include "test_framework.h"
+#include "../src/system/SystemHealth.h"
 #include "../src/storage/SPIFFSStorage.h"
+
+// Global SystemHealth instance (referenced by SPIFFSStorage via extern)
+SystemHealth systemHealth;
 
 // Helper: create a fully populated test record
 static DataRecord makeTestRecord() {

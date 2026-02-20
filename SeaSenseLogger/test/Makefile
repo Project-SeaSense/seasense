@@ -56,7 +56,7 @@ $(BUILDDIR)/test_system_health: test_system_health.cpp $(SRCDIR)/src/system/Syst
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
 
 # CSV round-trip tests (SPIFFSStorage parseCSVLine/recordToCSV)
-$(BUILDDIR)/test_csv_roundtrip: test_csv_roundtrip.cpp $(SRCDIR)/src/storage/SPIFFSStorage.cpp | $(BUILDDIR)
+$(BUILDDIR)/test_csv_roundtrip: test_csv_roundtrip.cpp $(SRCDIR)/src/storage/SPIFFSStorage.cpp $(SRCDIR)/src/system/SystemHealth.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
 
 # millisToUTC tests (standalone — logic extracted to avoid APIUploader dependency chain)
@@ -72,11 +72,11 @@ $(BUILDDIR)/test_upload_timing: test_upload_timing.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
 
 # SPIFFSStorage metadata batching tests
-$(BUILDDIR)/test_metadata_batching: test_metadata_batching.cpp $(SRCDIR)/src/storage/SPIFFSStorage.cpp | $(BUILDDIR)
+$(BUILDDIR)/test_metadata_batching: test_metadata_batching.cpp $(SRCDIR)/src/storage/SPIFFSStorage.cpp $(SRCDIR)/src/system/SystemHealth.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
 
 # Upload tracking tests (SPIFFSStorage record-count based upload progress)
-$(BUILDDIR)/test_upload_tracking: test_upload_tracking.cpp $(SRCDIR)/src/storage/SPIFFSStorage.cpp | $(BUILDDIR)
+$(BUILDDIR)/test_upload_tracking: test_upload_tracking.cpp $(SRCDIR)/src/storage/SPIFFSStorage.cpp $(SRCDIR)/src/system/SystemHealth.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
 
 # GPS NaN guard tests (standalone — extracted filtering predicate)

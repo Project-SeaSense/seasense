@@ -4,6 +4,7 @@
 
 #include "EZOSensor.h"
 #include "../../config/hardware_config.h"
+#include "../system/SystemHealth.h"
 #include <ArduinoJson.h>
 
 // External function declarations (implemented in main .ino file)
@@ -276,11 +277,18 @@ EZOResponseCode EZOSensor::sendCommand(
     unsigned long deadline = millis() + hardTimeout;
     unsigned long waitUntil = millis() + waitTime;
 
+    extern SystemHealth systemHealth;
+    unsigned long lastFeed = millis();
     while (millis() < waitUntil) {
         delay(10);
         if (millis() > deadline) {
             DEBUG_SENSOR_PRINTLN("Hard timeout exceeded!");
             return EZOResponseCode::ERROR;
+        }
+        // Feed watchdog every ~500ms during sensor wait
+        if (millis() - lastFeed >= 500) {
+            systemHealth.feedWatchdog();
+            lastFeed = millis();
         }
     }
 
