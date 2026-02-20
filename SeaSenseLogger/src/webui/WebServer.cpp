@@ -1630,6 +1630,18 @@ void SeaSenseWebServer::handleSettings() {
 
         </div>
 
+        <!-- NMEA2000 Output -->
+        <div class="section">
+            <h2>NMEA2000 Output</h2>
+            <div class="form-group">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" id="nmea-output-enabled" name="nmea-output-enabled" style="width:auto;margin:0;">
+                    Enable outbound NMEA2000 PGN output
+                </label>
+                <small>Default is off. Keep disabled unless outbound PGNs are needed.</small>
+            </div>
+        </div>
+
         <!-- TODO: Add Deployment section with editable fields for:
              - Sensor depth (cm) below waterline
              - Purchase date (date picker)
@@ -1748,6 +1760,9 @@ void SeaSenseWebServer::handleSettings() {
                     }
                 }
 
+                // NMEA output
+                document.getElementById('nmea-output-enabled').checked = !!(config.gps && config.gps.nmea_output_enabled);
+
                 // Device
                 document.getElementById('device-guid').value = config.device.device_guid || '';
                 document.getElementById('partner-id').value = config.device.partner_id || '';
@@ -1789,6 +1804,9 @@ void SeaSenseWebServer::handleSettings() {
                     sensor_interval_ms: (parseInt(document.getElementById('sensor-interval-min').value || 0) * 60
                         + parseInt(document.getElementById('sensor-interval-sec').value || 0)) * 1000,
                     skip_if_stationary: document.getElementById('skip-if-stationary').checked
+                },
+                gps: {
+                    nmea_output_enabled: document.getElementById('nmea-output-enabled').checked
                 },
                 device: {
                     device_guid: document.getElementById('device-guid').value,
@@ -2230,6 +2248,13 @@ void SeaSenseWebServer::handleApiConfig() {
     samplingObj["skip_if_stationary"] = sampling.skipIfStationary;
     samplingObj["stationary_delta_meters"] = sampling.stationaryDeltaMeters;
 
+    // GPS / NMEA config
+    ConfigManager::GPSConfig gps = _configManager->getGPSConfig();
+    JsonObject gpsObj = doc["gps"].to<JsonObject>();
+    gpsObj["use_nmea2000"] = gps.useNMEA2000;
+    gpsObj["fallback_to_onboard"] = gps.fallbackToOnboard;
+    gpsObj["nmea_output_enabled"] = gps.nmeaOutputEnabled;
+
     // Minimum sampling interval = full pump cycle duration (calculated from current pump config)
     {
         PumpConfig pc = _configManager->getPumpConfig();
@@ -2315,6 +2340,19 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
         portENTER_CRITICAL(&g_timerMux);
         lastSensorReadAt = millis();  // reschedule from now
         portEXIT_CRITICAL(&g_timerMux);
+    }
+
+    // Update GPS / NMEA config
+    if (doc["gps"].is<JsonObject>()) {
+        ConfigManager::GPSConfig gps = _configManager->getGPSConfig();
+        gps.useNMEA2000 = doc["gps"]["use_nmea2000"] | gps.useNMEA2000;
+        gps.fallbackToOnboard = doc["gps"]["fallback_to_onboard"] | gps.fallbackToOnboard;
+        gps.nmeaOutputEnabled = doc["gps"]["nmea_output_enabled"] | false;
+        _configManager->setGPSConfig(gps);
+
+        // Apply immediately for runtime NMEA output gate
+        extern bool nmeaOutputEnabled;
+        nmeaOutputEnabled = gps.nmeaOutputEnabled;
     }
 
     // Update device config

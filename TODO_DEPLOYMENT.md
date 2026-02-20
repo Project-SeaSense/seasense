@@ -2,26 +2,31 @@
 
 Doel: one-shot deployment die blijft draaien zonder fysieke toegang.
 
+## Status legenda
+- [x] klaar
+- [~] deels klaar / nog valideren
+- [ ] open
+
 ## P0 — Moet vóór uitvaren
 
-- [ ] **Watchdog + self-recovery pad**
-  - [ ] Task watchdog op hoofdloop
-  - [ ] Bij vastloper: subsystem reset (I2C/WiFi/SD) → pas dan reboot
+- [x] **Watchdog + self-recovery pad**
+  - [x] Task watchdog op hoofdloop
+  - [~] Bij vastloper: subsystem reset (I2C/WiFi/SD) → pas dan reboot
 
-- [ ] **Harde timeouts op externe operaties**
-  - [ ] Sensor reads timeout
-  - [ ] SD write timeout/foutafhandeling
-  - [ ] API upload timeout + niet-blokkerend gedrag
+- [~] **Harde timeouts op externe operaties**
+  - [x] Sensor reads timeout
+  - [~] SD write timeout/foutafhandeling
+  - [x] API upload timeout + niet-blokkerend gedrag
 
-- [ ] **Storage failover bewezen**
-  - [ ] Runtime test: SD eruit → blijft meten/loggen (SPIFFS fallback)
+- [ ] **Storage failover bewezen (runtime test)**
+  - [ ] SD eruit → blijft meten/loggen (SPIFFS fallback)
   - [ ] SD terugplaatsen → herstel zonder crash
 
 - [ ] **Power resilience bewezen**
   - [ ] Cold boot x20 (PASS)
   - [ ] Power dip/reset x20 (PASS)
 
-- [ ] **Offline buffering + recovery**
+- [ ] **Offline buffering + recovery bewezen**
   - [ ] 12h zonder netwerk bufferen
   - [ ] Na reconnect gecontroleerd uploaden zonder dataverlies
 
@@ -32,23 +37,23 @@ Doel: one-shot deployment die blijft draaien zonder fysieke toegang.
 
 ## P1 — Sterk aanbevolen
 
-- [ ] **Health telemetry toevoegen**
-  - [ ] Uptime
-  - [ ] Reboot reason
-  - [ ] Queue depth
-  - [ ] Free heap
-  - [ ] Storage status
-  - [ ] GPS status
+- [x] **Health telemetry aanwezig**
+  - [x] Uptime
+  - [x] Reboot reason
+  - [x] Queue depth / pending records
+  - [x] Free heap
+  - [x] Storage status
+  - [x] GPS status
 
-- [ ] **Persistente fouttellers**
-  - [ ] SD failures
-  - [ ] API failures
-  - [ ] Sensor read failures per sensor
+- [x] **Persistente fouttellers**
+  - [x] SD failures
+  - [x] API failures
+  - [x] Sensor read failures
 
-- [ ] **Config sanity checks**
-  - [ ] sample interval grenzen
-  - [ ] sensor enable flags validatie
-  - [ ] API config validatie
+- [x] **Config sanity checks**
+  - [x] sample interval grenzen
+  - [x] sensor enable flags validatie
+  - [x] API config validatie
 
 - [ ] **Flash-marge verbeteren op standaard S3**
   - [ ] Doel: < 90% flash usage
@@ -65,16 +70,11 @@ Doel: one-shot deployment die blijft draaien zonder fysieke toegang.
 - [ ] Remote safe mode
 - [ ] Dagelijkse health summary
 
-## Test/Go-No-Go afvinken
+## Open issues nu (prioriteit)
 
-- [ ] Cold boot x20 PASS
-- [ ] Power dip/reset x20 PASS
-- [ ] SD failover PASS
-- [ ] 12h offline buffer/recovery PASS
-- [ ] GPS absent/present overgang PASS
-- [ ] 24h soak PASS
-- [ ] API failure/backoff PASS
-- [ ] Sensor fault injectie PASS
+1. Exception/panic reboot-loop oorzaak isoleren (serial panic backtrace + decode)
+2. Upload pad valideren op echte target (force upload + history + last_error)
+3. Runtime failover test (SD/network) uitvoeren met logging
 
 ## Release administratie
 

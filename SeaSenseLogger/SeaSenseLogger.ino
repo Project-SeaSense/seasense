@@ -110,6 +110,7 @@ bool configLoaded = false;
 unsigned long sensorSamplingIntervalMs = 900000;  // Default 15 minutes
 bool skipMeasurementIfStationary = false;
 float stationaryDeltaMeters = 100.0f;
+bool nmeaOutputEnabled = false;  // outbound PGN emission gate (default off)
 
 // Last persisted measurement position (for movement gating)
 bool hasLastMeasurementGPS = false;
@@ -491,6 +492,12 @@ void setup() {
     Serial.println(" seconds");
     Serial.print("[CONFIG] Skip stationary cycles: ");
     Serial.println(skipMeasurementIfStationary ? "enabled" : "disabled");
+
+    // Load GPS/NMEA output config
+    ConfigManager::GPSConfig gpsCfg = configManager.getGPSConfig();
+    nmeaOutputEnabled = gpsCfg.nmeaOutputEnabled;
+    Serial.print("[CONFIG] NMEA2000 outbound PGN output: ");
+    Serial.println(nmeaOutputEnabled ? "enabled" : "disabled");
 
     // Initialize storage
     if (!storage.begin()) {
@@ -944,7 +951,10 @@ void loop() {
             consecutiveSensorFails = 0;
         }
 
-        // TODO: Generate NMEA2000 PGNs
+        // TODO: Generate NMEA2000 PGNs (when enabled)
+        if (nmeaOutputEnabled) {
+            // TODO: emit outbound NMEA2000 PGNs
+        }
 
         // Notify pump that all sensors have been read this cycle
         if (saveToStorage) {

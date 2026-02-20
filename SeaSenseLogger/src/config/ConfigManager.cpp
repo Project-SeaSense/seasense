@@ -227,6 +227,7 @@ bool ConfigManager::loadFromFile() {
         JsonObject gps = doc["gps"];
         _gps.useNMEA2000 = gps["use_nmea2000"] | false;
         _gps.fallbackToOnboard = gps["fallback_to_onboard"] | true;
+        _gps.nmeaOutputEnabled = gps["nmea_output_enabled"] | false;
     }
 
     // Load deployment metadata
@@ -285,6 +286,7 @@ bool ConfigManager::saveToFile() {
     JsonObject gps = doc["gps"].to<JsonObject>();
     gps["use_nmea2000"] = _gps.useNMEA2000;
     gps["fallback_to_onboard"] = _gps.fallbackToOnboard;
+    gps["nmea_output_enabled"] = _gps.nmeaOutputEnabled;
 
     // Deployment metadata
     JsonObject dep = doc["deployment"].to<JsonObject>();
@@ -370,6 +372,7 @@ void ConfigManager::setDefaults() {
     // GPS defaults - use onboard GPS, fall back if NMEA2000 has no fix
     _gps.useNMEA2000 = false;
     _gps.fallbackToOnboard = true;
+    _gps.nmeaOutputEnabled = false;  // default off
 
     // Deployment defaults - empty until set
     _deployment.deployDate = "";

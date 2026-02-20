@@ -55,8 +55,9 @@ public:
      * GPS source configuration
      */
     struct GPSConfig {
-        bool useNMEA2000;       // false = onboard GPS, true = NMEA2000 network
-        bool fallbackToOnboard; // fall back to onboard GPS if NMEA2000 has no fix
+        bool useNMEA2000;        // false = onboard GPS, true = NMEA2000 network
+        bool fallbackToOnboard;  // fall back to onboard GPS if NMEA2000 has no fix
+        bool nmeaOutputEnabled;  // emit outbound NMEA2000 PGNs
     };
 
     /**
