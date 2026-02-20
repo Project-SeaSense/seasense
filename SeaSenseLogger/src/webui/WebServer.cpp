@@ -2107,9 +2107,11 @@ void SeaSenseWebServer::handleApiDataRecords() {
     StorageStats stats = _storage->getStats();
     uint32_t total = stats.totalRecords;
 
-    // Read the full SPIFFS buffer (capped at 200 to avoid OOM) so we can
-    // serve the most-recent records from the tail, regardless of page number.
-    std::vector<DataRecord> recs = _storage->readRecords(0, 200);
+    // Read the full SPIFFS circular buffer so we can serve the most-recent
+    // records from the tail, regardless of page number.
+    // NOTE: Limiting this to 200 caused "recent data missing" once total>200,
+    // because only the oldest records were loaded.
+    std::vector<DataRecord> recs = _storage->readRecords(0, SPIFFS_CIRCULAR_BUFFER_SIZE);
 
     JsonDocument doc;
     doc["total"]  = total;
