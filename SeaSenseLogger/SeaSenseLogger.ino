@@ -493,9 +493,9 @@ void setup() {
     Serial.print("[CONFIG] Skip stationary cycles: ");
     Serial.println(skipMeasurementIfStationary ? "enabled" : "disabled");
 
-    // Load GPS/NMEA output config
-    ConfigManager::GPSConfig gpsCfg = configManager.getGPSConfig();
-    nmeaOutputEnabled = gpsCfg.nmeaOutputEnabled;
+    // Load NMEA output config
+    ConfigManager::NMEAConfig nmeaCfg = configManager.getNMEAConfig();
+    nmeaOutputEnabled = nmeaCfg.outputEnabled;
     Serial.print("[CONFIG] NMEA2000 outbound PGN output: ");
     Serial.println(nmeaOutputEnabled ? "enabled" : "disabled");
 

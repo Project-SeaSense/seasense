@@ -57,7 +57,13 @@ public:
     struct GPSConfig {
         bool useNMEA2000;        // false = onboard GPS, true = NMEA2000 network
         bool fallbackToOnboard;  // fall back to onboard GPS if NMEA2000 has no fix
-        bool nmeaOutputEnabled;  // emit outbound NMEA2000 PGNs
+    };
+
+    /**
+     * NMEA output configuration (separate from GPS source config)
+     */
+    struct NMEAConfig {
+        bool outputEnabled;      // emit outbound NMEA2000 PGNs
     };
 
     /**
@@ -168,6 +174,18 @@ public:
     void setGPSConfig(const GPSConfig& config);
 
     /**
+     * Get NMEA output configuration
+     * @return NMEAConfig struct
+     */
+    NMEAConfig getNMEAConfig() const;
+
+    /**
+     * Set NMEA output configuration
+     * @param config NMEAConfig struct
+     */
+    void setNMEAConfig(const NMEAConfig& config);
+
+    /**
      * Get deployment metadata
      * @return DeploymentConfig struct
      */
@@ -202,6 +220,7 @@ private:
     PumpConfig _pump;
     SamplingConfig _sampling;
     GPSConfig _gps;
+    NMEAConfig _nmea;
     DeploymentConfig _deployment;
 
     /**

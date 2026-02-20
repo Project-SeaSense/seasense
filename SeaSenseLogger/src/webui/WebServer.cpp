@@ -1761,7 +1761,10 @@ void SeaSenseWebServer::handleSettings() {
                 }
 
                 // NMEA output
-                document.getElementById('nmea-output-enabled').checked = !!(config.gps && config.gps.nmea_output_enabled);
+                document.getElementById('nmea-output-enabled').checked = !!(
+                    (config.nmea && config.nmea.output_enabled)
+                    || (config.gps && config.gps.nmea_output_enabled) // backward-compat
+                );
 
                 // Device
                 document.getElementById('device-guid').value = config.device.device_guid || '';
@@ -1805,8 +1808,8 @@ void SeaSenseWebServer::handleSettings() {
                         + parseInt(document.getElementById('sensor-interval-sec').value || 0)) * 1000,
                     skip_if_stationary: document.getElementById('skip-if-stationary').checked
                 },
-                gps: {
-                    nmea_output_enabled: document.getElementById('nmea-output-enabled').checked
+                nmea: {
+                    output_enabled: document.getElementById('nmea-output-enabled').checked
                 },
                 device: {
                     device_guid: document.getElementById('device-guid').value,
@@ -2248,12 +2251,16 @@ void SeaSenseWebServer::handleApiConfig() {
     samplingObj["skip_if_stationary"] = sampling.skipIfStationary;
     samplingObj["stationary_delta_meters"] = sampling.stationaryDeltaMeters;
 
-    // GPS / NMEA config
+    // GPS config
     ConfigManager::GPSConfig gps = _configManager->getGPSConfig();
     JsonObject gpsObj = doc["gps"].to<JsonObject>();
     gpsObj["use_nmea2000"] = gps.useNMEA2000;
     gpsObj["fallback_to_onboard"] = gps.fallbackToOnboard;
-    gpsObj["nmea_output_enabled"] = gps.nmeaOutputEnabled;
+
+    // NMEA output config
+    ConfigManager::NMEAConfig nmea = _configManager->getNMEAConfig();
+    JsonObject nmeaObj = doc["nmea"].to<JsonObject>();
+    nmeaObj["output_enabled"] = nmea.outputEnabled;
 
     // Minimum sampling interval = full pump cycle duration (calculated from current pump config)
     {
@@ -2342,17 +2349,33 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
         portEXIT_CRITICAL(&g_timerMux);
     }
 
-    // Update GPS / NMEA config
+    // Update GPS config
     if (doc["gps"].is<JsonObject>()) {
         ConfigManager::GPSConfig gps = _configManager->getGPSConfig();
         gps.useNMEA2000 = doc["gps"]["use_nmea2000"] | gps.useNMEA2000;
         gps.fallbackToOnboard = doc["gps"]["fallback_to_onboard"] | gps.fallbackToOnboard;
-        gps.nmeaOutputEnabled = doc["gps"]["nmea_output_enabled"] | false;
         _configManager->setGPSConfig(gps);
+    }
 
-        // Apply immediately for runtime NMEA output gate
-        extern bool nmeaOutputEnabled;
-        nmeaOutputEnabled = gps.nmeaOutputEnabled;
+    // Update NMEA output config (preferred path: nmea.output_enabled).
+    // Backward-compat: still accept gps.nmea_output_enabled if provided.
+    {
+        ConfigManager::NMEAConfig nmea = _configManager->getNMEAConfig();
+        bool hasValue = false;
+        if (doc["nmea"].is<JsonObject>()) {
+            nmea.outputEnabled = doc["nmea"]["output_enabled"] | false;
+            hasValue = true;
+        } else if (doc["gps"].is<JsonObject>() && !doc["gps"]["nmea_output_enabled"].isNull()) {
+            nmea.outputEnabled = doc["gps"]["nmea_output_enabled"] | false;
+            hasValue = true;
+        }
+
+        if (hasValue) {
+            _configManager->setNMEAConfig(nmea);
+            // Apply immediately for runtime NMEA output gate
+            extern bool nmeaOutputEnabled;
+            nmeaOutputEnabled = nmea.outputEnabled;
+        }
     }
 
     // Update device config
