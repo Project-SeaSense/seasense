@@ -37,7 +37,10 @@ APIUploader::APIUploader(StorageManager* storage)
       _historyCount(0),
       _historyHead(0),
       _totalBytesSent(0),
-      _lastPayloadBytes(0)
+      _lastPayloadBytes(0),
+      _lastAttemptTime(0),
+      _lastError(""),
+      _forcePending(false)
 {
     memset(_uploadHistory, 0, sizeof(_uploadHistory));
 }
@@ -88,12 +91,15 @@ void APIUploader::process() {
 
     unsigned long now = millis();
 
-    // Check if it's time for next upload (elapsed-time pattern, rollover-safe)
-    if (now - _lastScheduledTime < _currentIntervalMs) {
+    // Check if it's time for next upload (elapsed-time pattern, rollover-safe),
+    // unless a forced upload was queued from the web UI.
+    if (!_forcePending && (now - _lastScheduledTime < _currentIntervalMs)) {
         return;
     }
 
     DEBUG_API_PRINTLN("Processing upload cycle...");
+    _lastAttemptTime = now;
+    _forcePending = false;
 
     // Check WiFi connection
     if (!isWiFiConnected()) {
@@ -131,6 +137,7 @@ void APIUploader::process() {
 
     if (records.empty()) {
         _status = UploadStatus::ERROR_NO_DATA;
+        _lastError = "No new data";
         DEBUG_API_PRINTLN("No new data to upload");
         _lastScheduledTime = now;
         _currentIntervalMs = _config.intervalMs;
@@ -229,9 +236,10 @@ unsigned long APIUploader::getTimeUntilNext() const {
 }
 
 void APIUploader::forceUpload() {
+    _forcePending = true;
     _lastScheduledTime = 0;
     _currentIntervalMs = 0;
-    Serial.println("[API] Forced upload scheduled");
+    Serial.println("[API] Forced upload queued");
 }
 
 // ============================================================================

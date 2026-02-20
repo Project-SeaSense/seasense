@@ -2380,6 +2380,9 @@ void SeaSenseWebServer::handleApiStatus() {
     doc["upload"]["status"] = apiUploader.getStatusString();
     doc["upload"]["pending_records"] = apiUploader.getPendingRecords();
     doc["upload"]["last_success_ms"] = apiUploader.getLastUploadTime();
+    doc["upload"]["last_attempt_ms"] = apiUploader.getLastAttemptTime();
+    doc["upload"]["last_error"] = apiUploader.getLastError();
+    doc["upload"]["force_pending"] = apiUploader.isForcePending();
     doc["upload"]["retry_count"] = apiUploader.getRetryCount();
     doc["upload"]["next_upload_ms"] = apiUploader.getTimeUntilNext();
     doc["upload"]["total_bytes_uploaded"] = _storage->getTotalBytesUploaded();

@@ -156,6 +156,15 @@ public:
      */
     unsigned long getTotalBytesSent() const { return _totalBytesSent; }
 
+    /** Last upload attempt start time (millis), success or fail */
+    unsigned long getLastAttemptTime() const { return _lastAttemptTime; }
+
+    /** Human-readable reason for latest upload failure (empty if none) */
+    String getLastError() const { return _lastError; }
+
+    /** True when a forced upload has been queued and not yet processed */
+    bool isForcePending() const { return _forcePending; }
+
 private:
     StorageManager* _storage;
     UploadConfig _config;
@@ -176,6 +185,9 @@ private:
     uint8_t _historyHead;       // index where next entry will be written
     unsigned long _totalBytesSent;  // session total wire bytes
     size_t _lastPayloadBytes;   // set by uploadPayload(), consumed by process()
+    unsigned long _lastAttemptTime; // millis() of latest attempt (success or fail)
+    String _lastError;          // last failure reason
+    bool _forcePending;         // force-upload request queued
 
     /**
      * Check if WiFi is connected
