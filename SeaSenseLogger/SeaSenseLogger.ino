@@ -128,6 +128,11 @@ SemaphoreHandle_t g_i2cMutex = NULL;
 // System epoch for calibration age checks (updated from GPS when fix available)
 time_t g_systemEpoch = 0;
 
+// Breadcrumbs for runtime diagnostics (/api/status)
+volatile unsigned long g_lastLoopStartMs = 0;
+volatile unsigned long g_maxLoopGapMs = 0;
+const char* g_loopStage = "boot";
+
 // ============================================================================
 // Device Configuration Functions
 // ============================================================================
@@ -608,12 +613,19 @@ float distanceMeters(float lat1, float lon1, float lat2, float lon2) {
 }
 
 void loop() {
+    unsigned long now = millis();
+    if (g_lastLoopStartMs != 0) {
+        unsigned long gap = now - g_lastLoopStartMs;
+        if (gap > g_maxLoopGapMs) g_maxLoopGapMs = gap;
+    }
+    g_lastLoopStartMs = now;
+
     // Feed watchdog first — if anything below hangs, WDT will reboot
+    g_loopStage = "loop:start";
     systemHealth.feedWatchdog();
 
-    unsigned long now = millis();
-
     // Update GPS sources (must be called frequently)
+    g_loopStage = "gps:update";
     gps.update();
     n2kGPS.update();
 
@@ -637,6 +649,7 @@ void loop() {
     }
 
     // Advance pump state machine
+    g_loopStage = "pump:update";
     pumpController.update();
 
     // Determine whether to read sensors and whether to persist the results.
@@ -667,6 +680,7 @@ void loop() {
     }
 
     if (doSensorRead) {
+        g_loopStage = "sensors:cycle";
         // Blink LED to show activity
         digitalWrite(LED_PIN, HIGH);
 
@@ -740,6 +754,8 @@ void loop() {
             bool i2cLocked = (g_i2cMutex != NULL) && xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(2000));
 
         // Read temperature
+        g_loopStage = "sensor:temp";
+        systemHealth.feedWatchdog();
         if (tempSensor.isEnabled() && tempSensor.read()) {
             SensorData tempData = tempSensor.getData();
 
@@ -781,6 +797,8 @@ void loop() {
         }
 
         // Read conductivity
+        g_loopStage = "sensor:ec";
+        systemHealth.feedWatchdog();
         if (ecSensor.isEnabled() && ecSensor.read()) {
             SensorData ecData = ecSensor.getData();
 
@@ -823,6 +841,8 @@ void loop() {
         }
 
         // Read pH
+        g_loopStage = "sensor:ph";
+        systemHealth.feedWatchdog();
         if (phSensor.isEnabled() && phSensor.read()) {
             SensorData phData = phSensor.getData();
 
@@ -859,6 +879,8 @@ void loop() {
         }
 
         // Read dissolved oxygen (set salinity compensation BEFORE read)
+        g_loopStage = "sensor:do";
+        systemHealth.feedWatchdog();
         if (doSensor.isEnabled()) {
             doSensor.setSalinityCompensation(ecSensor.getSalinity());
         }
@@ -933,11 +955,16 @@ void loop() {
     }
 
     // Process API upload (non-blocking)
+    g_loopStage = "upload:process";
     apiUploader.process();
 
     // Update calibration state machine
+    g_loopStage = "calibration:update";
     calibration.update();
 
     // Handle serial commands
+    g_loopStage = "serial:process";
     serialCommands.process();
+
+    g_loopStage = "loop:idle";
 }

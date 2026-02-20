@@ -2363,6 +2363,14 @@ void SeaSenseWebServer::handleApiStatus() {
     doc["errors"]["api"] = systemHealth.getErrorCount(ErrorType::API);
     doc["errors"]["wifi"] = systemHealth.getErrorCount(ErrorType::WIFI);
 
+    // Loop breadcrumbs (from main loop)
+    extern volatile unsigned long g_lastLoopStartMs;
+    extern volatile unsigned long g_maxLoopGapMs;
+    extern const char* g_loopStage;
+    doc["runtime"]["loop_stage"] = g_loopStage ? g_loopStage : "unknown";
+    doc["runtime"]["last_loop_start_ms"] = (unsigned long)g_lastLoopStartMs;
+    doc["runtime"]["max_loop_gap_ms"] = (unsigned long)g_maxLoopGapMs;
+
     // GPS status (via extern globals from main sketch)
     extern bool activeGPSHasValidFix();
     extern GPSData activeGPSGetData();
