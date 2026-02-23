@@ -350,8 +350,11 @@ void SeaSenseWebServer::handleDashboard() {
         .skel-value { width:120px; height:28px }
         .skel-env-label { width:50px; height:10px; margin-bottom:6px }
         .skel-env-value { width:70px; height:20px }
-        .spark { display:block; width:100%; height:24px; margin-top:6px }
-        .spark-range { font-size:9px; color:var(--t3); text-align:right; margin-top:1px; white-space:nowrap }
+        .sensor-body { display:flex; align-items:flex-end; gap:12px }
+        .sensor-body .sensor-value { flex-shrink:0; min-width:140px }
+        .spark-wrap { flex:1; min-width:0; overflow:hidden }
+        .spark { display:block; width:100%; height:28px }
+        .spark-range { font-size:9px; color:var(--t3); text-align:right; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
         .measure-bar { display:flex; align-items:center; justify-content:space-between; background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:10px 16px; margin:10px 0 }
         .countdown { font-size:13px; color:var(--ac); font-weight:600; font-variant-numeric:tabular-nums; font-family:'SF Mono',ui-monospace,Consolas,monospace }
         .upload-bar { background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:8px 16px; margin:0 0 16px; font-size:12px; color:var(--t2); display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:34px }
@@ -619,12 +622,13 @@ void SeaSenseWebServer::handleDashboard() {
                             const unit = has ? has.unit : '';
 
                             if (key.toLowerCase().includes('salinity')) return;
+                            const spark = sparkSvg(key);
                             html += `<div class="sensor-card">
                                 <div class="sensor-name">${s.type}</div>
-                                <div class="sensor-value">
-                                    ${valueFormatted}<span class="sensor-unit">${unit}</span>
+                                <div class="sensor-body">
+                                    <div class="sensor-value">${valueFormatted}<span class="sensor-unit">${unit}</span></div>
+                                    ${spark ? '<div class="spark-wrap">' + spark + '</div>' : ''}
                                 </div>
-                                ${sparkSvg(key)}
                                 ${s.serial ? `<div class="sensor-meta">Serial: ${s.serial}</div>` : ''}
                             </div>`;
                         });
@@ -706,7 +710,8 @@ void SeaSenseWebServer::handleDashboard() {
                         const r = data.records[i];
                         if (r.value === 0) continue;
                         if (!sparkData[r.type]) sparkData[r.type] = [];
-                        const t = r.time ? new Date(r.time + 'Z').getTime() : Date.now();
+                        let t = Date.now();
+                        if (r.time) { const d = new Date(r.time.endsWith('Z') ? r.time : r.time + 'Z').getTime(); if (isFinite(d)) t = d; }
                         sparkData[r.type].push({v:r.value, t:t});
                     }
                     Object.keys(sparkData).forEach(k => {
