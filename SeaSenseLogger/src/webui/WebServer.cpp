@@ -355,6 +355,9 @@ void SeaSenseWebServer::handleDashboard() {
         .spark-wrap { flex:1; min-width:0; overflow:hidden }
         .spark { display:block; width:100%; height:28px }
         .spark-range { font-size:9px; color:var(--t3); text-align:right; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+        .spark-links { font-size:9px; margin-top:2px; display:flex; gap:6px; justify-content:flex-end }
+        .spark-links a { color:var(--t3); cursor:pointer; text-decoration:none }
+        .spark-links a:hover, .spark-links a.active { color:var(--ac) }
         .measure-bar { display:flex; align-items:center; justify-content:space-between; background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:10px 16px; margin:10px 0 }
         .countdown { font-size:13px; color:var(--ac); font-weight:600; font-variant-numeric:tabular-nums; font-family:'SF Mono',ui-monospace,Consolas,monospace }
         .upload-bar { background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:8px 16px; margin:0 0 16px; font-size:12px; color:var(--t2); display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:34px }
@@ -596,22 +599,69 @@ void SeaSenseWebServer::handleDashboard() {
                 + '</svg>' + sparkRangeLabel(key);
         }
 
+        let sparkRange = 'live';
+        function sparkRangeLinks() {
+            const opts = ['live','1h','24h','7d','30d'];
+            return '<div class="spark-links">' + opts.map(o =>
+                '<a onclick="loadSparkRange(\'' + o + '\')" class="' + (sparkRange === o ? 'active' : '') + '">' + (o === 'live' ? 'Live' : o) + '</a>'
+            ).join('') + '</div>';
+        }
+        const RANGE_MS = {'1h':3600000,'24h':86400000,'7d':604800000,'30d':2592000000};
+        function loadSparkRange(range) {
+            sparkRange = range;
+            if (range === 'live') {
+                Object.keys(sparkData).forEach(k => { sparkData[k] = []; });
+                update();
+                return;
+            }
+            fetch('/api/data/records?limit=500').then(r => r.json()).then(data => {
+                Object.keys(sparkData).forEach(k => { sparkData[k] = []; });
+                if (!data.records) return;
+                const cutoff = Date.now() - RANGE_MS[range];
+                const grouped = {};
+                for (let i = data.records.length - 1; i >= 0; i--) {
+                    const r = data.records[i];
+                    if (r.value === 0) continue;
+                    let t = 0;
+                    if (r.time) { const d = new Date(r.time.endsWith('Z') ? r.time : r.time + 'Z').getTime(); if (isFinite(d)) t = d; }
+                    if (t < cutoff) continue;
+                    if (!grouped[r.type]) grouped[r.type] = [];
+                    grouped[r.type].push({v:r.value, t:t});
+                }
+                Object.keys(grouped).forEach(k => {
+                    let pts = grouped[k];
+                    if (pts.length > 20) {
+                        const sampled = [pts[0]];
+                        const step = (pts.length - 1) / 19;
+                        for (let i = 1; i < 19; i++) sampled.push(pts[Math.round(i * step)]);
+                        sampled.push(pts[pts.length - 1]);
+                        pts = sampled;
+                    }
+                    sparkData[k] = pts;
+                });
+                update();
+            }).catch(() => {});
+        }
+
         function update() {
             fetch('/api/sensors')
                 .then(r => r.json())
                 .then(data => {
                     let html = '';
                     if (data.sensors && data.sensors.length > 0) {
+                        let firstCard = true;
                         data.sensors.forEach(s => {
                             const key = s.type;
                             // Use new value if non-zero, otherwise keep last known
                             if (s.value !== 0) {
                                 lastGood[key] = { value: s.value, unit: s.unit, clamped: s.clamped };
-                                if (!sparkData[key]) sparkData[key] = [];
-                                const arr = sparkData[key];
-                                if (!arr.length || arr[arr.length-1].v !== s.value) {
-                                    arr.push({v:s.value, t:Date.now()});
-                                    if (arr.length > SPARK_MAX) arr.shift();
+                                if (sparkRange === 'live') {
+                                    if (!sparkData[key]) sparkData[key] = [];
+                                    const arr = sparkData[key];
+                                    if (!arr.length || arr[arr.length-1].v !== s.value) {
+                                        arr.push({v:s.value, t:Date.now()});
+                                        if (arr.length > SPARK_MAX) arr.shift();
+                                    }
                                 }
                             }
                             const has = lastGood[key];
@@ -623,11 +673,13 @@ void SeaSenseWebServer::handleDashboard() {
 
                             if (key.toLowerCase().includes('salinity')) return;
                             const spark = sparkSvg(key);
+                            const links = firstCard ? sparkRangeLinks() : '';
+                            firstCard = false;
                             html += `<div class="sensor-card">
                                 <div class="sensor-name">${s.type}</div>
                                 <div class="sensor-body">
                                     <div class="sensor-value">${valueFormatted}<span class="sensor-unit">${unit}</span></div>
-                                    ${spark ? '<div class="spark-wrap">' + spark + '</div>' : ''}
+                                    ${spark ? '<div class="spark-wrap">' + spark + links + '</div>' : (links ? '<div class="spark-wrap">' + links + '</div>' : '')}
                                 </div>
                                 ${s.serial ? `<div class="sensor-meta">Serial: ${s.serial}</div>` : ''}
                             </div>`;
@@ -2502,7 +2554,7 @@ void SeaSenseWebServer::handleApiDataClear() {
 void SeaSenseWebServer::handleApiDataRecords() {
     uint16_t limit = 20;
     uint16_t page  = 0;
-    if (_server->hasArg("limit")) { limit = (uint16_t)_server->arg("limit").toInt(); if (limit > 50) limit = 50; }
+    if (_server->hasArg("limit")) { limit = (uint16_t)_server->arg("limit").toInt(); if (limit > 500) limit = 500; }
     if (_server->hasArg("page"))  { page  = (uint16_t)_server->arg("page").toInt(); }
 
     StorageStats stats = _storage->getStats();
