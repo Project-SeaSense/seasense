@@ -156,6 +156,7 @@ private:
 
     // API - Storage
     void handleApiDataList();
+    void handleApiDataLatest();
     void handleApiDataDownload();
     void handleApiDataClear();
     void handleApiDataRecords();

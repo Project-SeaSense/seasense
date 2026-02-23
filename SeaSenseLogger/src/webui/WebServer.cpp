@@ -78,6 +78,7 @@ bool SeaSenseWebServer::begin() {
     _server->on("/api/calibrate", std::bind(&SeaSenseWebServer::handleApiCalibrate, this));
     _server->on("/api/calibrate/status", std::bind(&SeaSenseWebServer::handleApiCalibrateStatus, this));
     _server->on("/api/data/list", std::bind(&SeaSenseWebServer::handleApiDataList, this));
+    _server->on("/api/data/latest", std::bind(&SeaSenseWebServer::handleApiDataLatest, this));
     _server->on("/api/data/download", std::bind(&SeaSenseWebServer::handleApiDataDownload, this));
     _server->on("/api/data/clear", std::bind(&SeaSenseWebServer::handleApiDataClear, this));
     _server->on("/api/data/records", std::bind(&SeaSenseWebServer::handleApiDataRecords, this));
@@ -376,9 +377,6 @@ void SeaSenseWebServer::handleDashboard() {
             <span class="up-sep">&middot;</span>
             <span>Next: <span id="uploadNextSpan">--</span></span>
         </div>
-        <!-- TODO: Dashboard should show last known sensor values on load instead
-             of "Loading sensor data..." — read most recent record from storage
-             on initial page load so values are visible before the next live read -->
         <div class="sensors-grid" id="sensors">
             <div class="status-msg">Loading sensor data...</div>
         </div>
@@ -616,7 +614,15 @@ void SeaSenseWebServer::handleDashboard() {
                 .catch(() => {});
         }
 
-        update();
+        function loadLatest() {
+            fetch('/api/data/latest').then(r => r.json()).then(data => {
+                if (data.sensors) data.sensors.forEach(s => {
+                    if (s.value !== 0) lastGood[s.type] = { value: s.value, unit: s.unit, clamped: s.clamped };
+                });
+                update();
+            }).catch(() => { update(); });
+        }
+        loadLatest();
         updateEnv();
         updateMeasurement();
         updateUploadStatus();
@@ -1216,7 +1222,7 @@ void SeaSenseWebServer::handleData() {
     <div class="container">
         <!-- Storage Stats -->
         <div class="card">
-            <div class="card-title">Storage <button class="btn btn-sm btn-outline" onclick="loadStats()">Refresh</button></div>
+            <div class="card-title">Storage <span><button class="btn btn-sm btn-outline" onclick="window.location='/api/data/download'">Download CSV</button> <button class="btn btn-sm btn-outline" onclick="loadStats()">Refresh</button></span></div>
             <div class="stat-row" id="statsRow">
                 <div class="stat"><div class="stat-label">Records</div><div class="stat-value" id="statRecords">--</div><div class="stat-sub" id="statPending">-- pending upload</div></div>
                 <div class="stat"><div class="stat-label">SPIFFS Used</div><div class="stat-value" style="font-size:14px;padding-top:4px;" id="statSpiffs">--</div><div class="progress-bar"><div class="progress-fill" id="spiffsBar" style="width:0%"></div></div></div>
@@ -2185,9 +2191,53 @@ void SeaSenseWebServer::handleApiDataList() {
     sendJSON(json);
 }
 
+void SeaSenseWebServer::handleApiDataLatest() {
+    StorageStats stats = _storage->getStats();
+    uint32_t total = stats.totalRecords;
+    if (total == 0) {
+        sendJSON("{\"sensors\":[]}");
+        return;
+    }
+
+    uint32_t skip = total > 20 ? total - 20 : 0;
+    std::vector<DataRecord> recs = _storage->readRecords(0, 20, skip);
+
+    // Collect most recent value per sensor type (iterate in reverse)
+    JsonDocument doc;
+    JsonArray sensors = doc["sensors"].to<JsonArray>();
+    std::vector<String> seen;
+
+    for (int i = (int)recs.size() - 1; i >= 0; i--) {
+        bool found = false;
+        for (const auto& s : seen) { if (s == recs[i].sensorType) { found = true; break; } }
+        if (found) continue;
+        seen.push_back(recs[i].sensorType);
+
+        JsonObject obj = sensors.add<JsonObject>();
+        obj["type"] = recs[i].sensorType;
+        obj["value"] = recs[i].value;
+        obj["unit"] = recs[i].unit;
+        obj["quality"] = recs[i].quality;
+    }
+
+    String json;
+    serializeJson(doc, json);
+    sendJSON(json);
+}
+
 void SeaSenseWebServer::handleApiDataDownload() {
-    // TODO: Implement data download
-    sendError("Not implemented yet");
+    if (!SPIFFS.exists("/data.csv")) {
+        sendError("No data file found", 404);
+        return;
+    }
+    File file = SPIFFS.open("/data.csv", FILE_READ);
+    if (!file) {
+        sendError("Failed to open data file", 500);
+        return;
+    }
+    _server->sendHeader("Content-Disposition", "attachment; filename=\"seasense-data.csv\"");
+    _server->streamFile(file, "text/csv");
+    file.close();
 }
 
 void SeaSenseWebServer::handleApiDataClear() {
