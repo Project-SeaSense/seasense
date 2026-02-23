@@ -1565,6 +1565,8 @@ void SeaSenseWebServer::handleSettings() {
         .form-group label { display:block; font-weight:600; margin-bottom:5px; color:var(--t2); font-size:13px }
         .form-group input, .form-group select { width:100%; padding:10px; border:1px solid var(--bd); border-radius:8px; font-size:14px; transition:all 0.2s; background:var(--bg); color:var(--tx) }
         .form-group input:focus, .form-group select:focus { outline:none; border-color:var(--ac); box-shadow:0 0 0 3px var(--ag) }
+        .form-group input[readonly] { background:var(--sf); color:var(--t3); border-color:var(--bd); cursor:not-allowed; opacity:0.7 }
+        .form-group input[readonly]:focus { border-color:var(--bd); box-shadow:none }
         .form-group input[type="checkbox"] { width:auto }
         .form-group small { color:var(--t3); font-size:12px; display:block; margin-top:5px }
         .btn { padding:10px 20px; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; margin:5px; transition:all 0.2s }

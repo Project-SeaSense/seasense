@@ -652,6 +652,9 @@ void loop() {
         if (ntpNow > 1000000000UL && g_systemEpoch == 0) {
             g_systemEpoch = ntpNow;
             EZOSensor::setSystemEpoch(g_systemEpoch);
+
+            // Also stamp deploy_date from NTP when GPS is unavailable
+            configManager.stampDeployDate(getSystemTimeUTC());
         }
     }
 
