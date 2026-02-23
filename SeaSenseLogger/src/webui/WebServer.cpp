@@ -350,11 +350,8 @@ void SeaSenseWebServer::handleDashboard() {
         .skel-value { width:120px; height:28px }
         .skel-env-label { width:50px; height:10px; margin-bottom:6px }
         .skel-env-value { width:70px; height:20px }
-        .sensor-row { display:flex; align-items:center; gap:12px }
-        .sensor-row .sensor-value { flex-shrink:0 }
-        .spark-wrap { flex:1; min-width:0 }
-        .spark { display:block; width:100%; height:32px }
-        .spark-range { font-size:9px; color:var(--t3); text-align:right; margin-top:2px; white-space:nowrap }
+        .spark { display:block; width:100%; height:24px; margin-top:6px }
+        .spark-range { font-size:9px; color:var(--t3); text-align:right; margin-top:1px; white-space:nowrap }
         .measure-bar { display:flex; align-items:center; justify-content:space-between; background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:10px 16px; margin:10px 0 }
         .countdown { font-size:13px; color:var(--ac); font-weight:600; font-variant-numeric:tabular-nums; font-family:'SF Mono',ui-monospace,Consolas,monospace }
         .upload-bar { background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:8px 16px; margin:0 0 16px; font-size:12px; color:var(--t2); display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:34px }
@@ -563,12 +560,14 @@ void SeaSenseWebServer::handleDashboard() {
             let mn = pts[0].v, mx = pts[0].v;
             for (let i = 1; i < pts.length; i++) { if (pts[i].v < mn) mn = pts[i].v; if (pts[i].v > mx) mx = pts[i].v; }
             const spanMs = pts[pts.length-1].t - pts[0].t;
-            const spanMin = Math.round(spanMs / 60000);
-            let spanStr;
-            if (spanMin < 1) spanStr = '<1 min';
-            else if (spanMin < 60) spanStr = 'last ' + spanMin + ' min';
-            else { const h = Math.floor(spanMin/60); const m = spanMin%60; spanStr = 'last ' + h + 'h' + (m ? ' ' + m + 'm' : ''); }
-            return '<div class="spark-range">' + fmtSensor(key, mn) + ' – ' + fmtSensor(key, mx) + ' · ' + spanStr + '</div>';
+            let spanStr = '';
+            if (spanMs > 0 && isFinite(spanMs)) {
+                const spanMin = Math.round(spanMs / 60000);
+                if (spanMin < 1) spanStr = ' · <1 min';
+                else if (spanMin < 60) spanStr = ' · last ' + spanMin + ' min';
+                else { const h = Math.floor(spanMin/60); const m = spanMin%60; spanStr = ' · last ' + h + 'h' + (m ? ' ' + m + 'm' : ''); }
+            }
+            return '<div class="spark-range">' + fmtSensor(key, mn) + ' – ' + fmtSensor(key, mx) + spanStr + '</div>';
         }
         function sparkSvg(key) {
             const pts = sparkData[key];
@@ -576,7 +575,7 @@ void SeaSenseWebServer::handleDashboard() {
             let mn = pts[0].v, mx = pts[0].v;
             for (let i = 1; i < pts.length; i++) { if (pts[i].v < mn) mn = pts[i].v; if (pts[i].v > mx) mx = pts[i].v; }
             const range = mx - mn || 1;
-            const w = 200, h = 32, pad = 2;
+            const w = 200, h = 24, pad = 2;
             const coords = pts.map((p, i) => {
                 const x = (i / (pts.length - 1)) * w;
                 const y = pad + (1 - (p.v - mn) / range) * (h - 2 * pad);
@@ -619,13 +618,13 @@ void SeaSenseWebServer::handleDashboard() {
                             }
                             const unit = has ? has.unit : '';
 
-                            const spark = sparkSvg(key);
+                            if (key.toLowerCase().includes('salinity')) return;
                             html += `<div class="sensor-card">
                                 <div class="sensor-name">${s.type}</div>
-                                <div class="sensor-row">
-                                    <div class="sensor-value">${valueFormatted}<span class="sensor-unit">${unit}</span></div>
-                                    ${spark ? '<div class="spark-wrap">' + spark + '</div>' : ''}
+                                <div class="sensor-value">
+                                    ${valueFormatted}<span class="sensor-unit">${unit}</span>
                                 </div>
+                                ${sparkSvg(key)}
                                 ${s.serial ? `<div class="sensor-meta">Serial: ${s.serial}</div>` : ''}
                             </div>`;
                         });
