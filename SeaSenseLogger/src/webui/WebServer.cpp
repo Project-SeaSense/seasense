@@ -341,6 +341,13 @@ void SeaSenseWebServer::handleDashboard() {
         .loading-pulse { animation:pulse 2s ease-in-out infinite }
         @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
         .status-msg { text-align:center; padding:30px; color:var(--t3); font-size:13px }
+        .skel { background:var(--bd); border-radius:6px; overflow:hidden; position:relative }
+        .skel::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.04),transparent); animation:shimmer 1.5s infinite }
+        @keyframes shimmer { 0% { transform:translateX(-100%) } 100% { transform:translateX(100%) } }
+        .skel-name { width:80px; height:12px; margin-bottom:10px }
+        .skel-value { width:120px; height:28px }
+        .skel-env-label { width:50px; height:10px; margin-bottom:6px }
+        .skel-env-value { width:70px; height:20px }
         .measure-bar { display:flex; align-items:center; justify-content:space-between; background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:10px 16px; margin:10px 0 }
         .countdown { font-size:13px; color:var(--ac); font-weight:600; font-variant-numeric:tabular-nums; font-family:'SF Mono',ui-monospace,Consolas,monospace }
         .upload-bar { background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:8px 16px; margin:0 0 16px; font-size:12px; color:var(--t2); display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:34px }
@@ -383,15 +390,23 @@ void SeaSenseWebServer::handleDashboard() {
             <span>Next: <span id="uploadNextSpan">--</span></span>
         </div>
         <div class="sensors-grid" id="sensors">
-            <div class="status-msg">Loading sensor data...</div>
+            <div class="sensor-card"><div class="skel skel-name"></div><div class="skel skel-value"></div></div>
+            <div class="sensor-card"><div class="skel skel-name"></div><div class="skel skel-value"></div></div>
+            <div class="sensor-card"><div class="skel skel-name"></div><div class="skel skel-value"></div></div>
         </div>
         <div class="section-title">Navigation</div>
         <div class="env-grid" id="envNav">
-            <div class="env-none">Waiting for data...</div>
+            <div class="env-card"><div class="skel skel-env-label"></div><div class="skel skel-env-value"></div></div>
+            <div class="env-card"><div class="skel skel-env-label"></div><div class="skel skel-env-value"></div></div>
+            <div class="env-card"><div class="skel skel-env-label"></div><div class="skel skel-env-value"></div></div>
+            <div class="env-card"><div class="skel skel-env-label"></div><div class="skel skel-env-value"></div></div>
         </div>
         <div class="section-title">Environment</div>
         <div class="env-grid" id="envData">
-            <div class="env-none">Waiting for data...</div>
+            <div class="env-card"><div class="skel skel-env-label"></div><div class="skel skel-env-value"></div></div>
+            <div class="env-card"><div class="skel skel-env-label"></div><div class="skel skel-env-value"></div></div>
+            <div class="env-card"><div class="skel skel-env-label"></div><div class="skel skel-env-value"></div></div>
+            <div class="env-card"><div class="skel skel-env-label"></div><div class="skel skel-env-value"></div></div>
         </div>
     </div>
 
@@ -518,13 +533,18 @@ void SeaSenseWebServer::handleDashboard() {
         // Track last known good values per sensor type
         const lastGood = {};
 
+        function fmtNum(v, d) {
+            const parts = v.toFixed(d).split('.');
+            parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            return parts.join('.');
+        }
         function fmtSensor(type, value) {
             const t = type.toLowerCase();
-            if (t.includes('temperature')) return value.toFixed(3);
-            if (t.includes('salinity'))    return value.toFixed(2);
-            if (t.includes('ph'))          return value.toFixed(3);
-            if (t.includes('oxygen'))      return value.toFixed(2);
-            return value.toFixed(0);
+            if (t.includes('temperature')) return fmtNum(value, 1);
+            if (t.includes('salinity'))    return fmtNum(value, 2);
+            if (t.includes('ph'))          return fmtNum(value, 2);
+            if (t.includes('oxygen'))      return fmtNum(value, 2);
+            return fmtNum(value, 0);
         }
 
         function update() {
@@ -904,11 +924,11 @@ void SeaSenseWebServer::handleCalibrate() {
                     data.sensors.forEach(s => {
                         const t = s.type.toLowerCase();
                         if (t.includes('temperature')) {
-                            document.getElementById('tempReading').textContent = s.value.toFixed(3);
+                            document.getElementById('tempReading').textContent = s.value.toFixed(1);
                         } else if (t.includes('conductivity')) {
-                            document.getElementById('ecReading').textContent = s.value.toFixed(0);
+                            document.getElementById('ecReading').textContent = s.value.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
                         } else if (t === 'ph') {
-                            document.getElementById('phReading').textContent = s.value.toFixed(3);
+                            document.getElementById('phReading').textContent = s.value.toFixed(2);
                             phPresent = true;
                         } else if (t.includes('oxygen')) {
                             document.getElementById('doReading').textContent = s.value.toFixed(2);
@@ -960,7 +980,7 @@ void SeaSenseWebServer::handleCalibrate() {
             el.classList.add('reading-pulse');
             triggerRead(() => {
                 fetch('/api/sensor/reading?type=temperature').then(r => r.json())
-                    .then(data => { el.textContent = data.value.toFixed(3); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
+                    .then(data => { el.textContent = data.value.toFixed(1); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
                     .catch(() => { el.classList.remove('reading-pulse'); showToast('Error reading temperature sensor', 'error'); });
             });
         }
@@ -970,7 +990,7 @@ void SeaSenseWebServer::handleCalibrate() {
             el.classList.add('reading-pulse');
             triggerRead(() => {
                 fetch('/api/sensor/reading?type=conductivity').then(r => r.json())
-                    .then(data => { el.textContent = data.value.toFixed(0); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
+                    .then(data => { el.textContent = data.value.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ','); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
                     .catch(() => { el.classList.remove('reading-pulse'); showToast('Error reading conductivity sensor', 'error'); });
             });
         }
@@ -980,7 +1000,7 @@ void SeaSenseWebServer::handleCalibrate() {
             el.classList.add('reading-pulse');
             triggerRead(() => {
                 fetch('/api/sensor/reading?type=ph').then(r => r.json())
-                    .then(data => { el.textContent = data.value.toFixed(3); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
+                    .then(data => { el.textContent = data.value.toFixed(2); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
                     .catch(() => { el.classList.remove('reading-pulse'); showToast('Error reading pH sensor', 'error'); });
             });
         }
@@ -1345,9 +1365,14 @@ void SeaSenseWebServer::handleData() {
         }
         function fmtValue(v, t) {
             t = (t||'').toLowerCase();
-            if (t.includes('temp')) return v.toFixed(3);
-            if (t.includes('salin')) return v.toFixed(2);
-            return v.toFixed(0);
+            let d = 0;
+            if (t.includes('temp')) d = 1;
+            else if (t.includes('salin')) d = 2;
+            else if (t.includes('ph')) d = 2;
+            else if (t.includes('oxy')) d = 2;
+            const parts = v.toFixed(d).split('.');
+            parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            return parts.join('.');
         }
         function showToast(msg, type) {
             const toast = document.getElementById('toast');
