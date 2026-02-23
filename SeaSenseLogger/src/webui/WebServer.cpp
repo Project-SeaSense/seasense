@@ -919,52 +919,51 @@ void SeaSenseWebServer::handleCalibrate() {
             setTimeout(() => el.classList.remove('reading-pulse'), 800);
         }
 
+        function triggerRead(then) {
+            fetch('/api/sensor/read', { method: 'POST' })
+                .then(r => r.json())
+                .then(then)
+                .catch(() => {});
+        }
+
         function readTemp() {
             const el = document.getElementById('tempReading');
             el.classList.add('reading-pulse');
-            fetch('/api/sensor/reading?type=temperature')
-                .then(r => r.json())
-                .then(data => {
-                    el.textContent = data.value.toFixed(3);
-                    setTimeout(() => el.classList.remove('reading-pulse'), 800);
-                })
-                .catch(err => { el.classList.remove('reading-pulse'); showToast('Error reading temperature sensor', 'error'); });
+            triggerRead(() => {
+                fetch('/api/sensor/reading?type=temperature').then(r => r.json())
+                    .then(data => { el.textContent = data.value.toFixed(3); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
+                    .catch(() => { el.classList.remove('reading-pulse'); showToast('Error reading temperature sensor', 'error'); });
+            });
         }
 
         function readEC() {
             const el = document.getElementById('ecReading');
             el.classList.add('reading-pulse');
-            fetch('/api/sensor/reading?type=conductivity')
-                .then(r => r.json())
-                .then(data => {
-                    el.textContent = data.value.toFixed(0);
-                    setTimeout(() => el.classList.remove('reading-pulse'), 800);
-                })
-                .catch(err => { el.classList.remove('reading-pulse'); showToast('Error reading conductivity sensor', 'error'); });
+            triggerRead(() => {
+                fetch('/api/sensor/reading?type=conductivity').then(r => r.json())
+                    .then(data => { el.textContent = data.value.toFixed(0); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
+                    .catch(() => { el.classList.remove('reading-pulse'); showToast('Error reading conductivity sensor', 'error'); });
+            });
         }
 
         function readPH() {
             const el = document.getElementById('phReading');
             el.classList.add('reading-pulse');
-            fetch('/api/sensor/reading?type=ph')
-                .then(r => r.json())
-                .then(data => {
-                    el.textContent = data.value.toFixed(3);
-                    setTimeout(() => el.classList.remove('reading-pulse'), 800);
-                })
-                .catch(err => { el.classList.remove('reading-pulse'); showToast('Error reading pH sensor', 'error'); });
+            triggerRead(() => {
+                fetch('/api/sensor/reading?type=ph').then(r => r.json())
+                    .then(data => { el.textContent = data.value.toFixed(3); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
+                    .catch(() => { el.classList.remove('reading-pulse'); showToast('Error reading pH sensor', 'error'); });
+            });
         }
 
         function readDO() {
             const el = document.getElementById('doReading');
             el.classList.add('reading-pulse');
-            fetch('/api/sensor/reading?type=dissolved_oxygen')
-                .then(r => r.json())
-                .then(data => {
-                    el.textContent = data.value.toFixed(2);
-                    setTimeout(() => el.classList.remove('reading-pulse'), 800);
-                })
-                .catch(err => { el.classList.remove('reading-pulse'); showToast('Error reading DO sensor', 'error'); });
+            triggerRead(() => {
+                fetch('/api/sensor/reading?type=dissolved_oxygen').then(r => r.json())
+                    .then(data => { el.textContent = data.value.toFixed(2); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
+                    .catch(() => { el.classList.remove('reading-pulse'); showToast('Error reading DO sensor', 'error'); });
+            });
         }
 
         updateReadings();
