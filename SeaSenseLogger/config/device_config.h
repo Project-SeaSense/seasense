@@ -66,7 +66,7 @@ const char DEVICE_CONFIG_JSON[] PROGMEM = R"JSON({
     },
     {
       "name": "Atlas EZO-DO",
-      "type": "DissolvedOxygen",
+      "type": "Dissolved Oxygen",
       "manufacturer": "Atlas Scientific",
       "model": "EZO-DO",
       "serial_number": "DO-00000",

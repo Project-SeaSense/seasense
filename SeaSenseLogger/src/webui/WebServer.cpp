@@ -761,8 +761,11 @@ void SeaSenseWebServer::handleCalibrate() {
 
             <div class="cal-section">
                 <div class="cal-section-title">Current Reading</div>
-                <div style="font-size:24px; font-weight:700; color:var(--ac); margin:10px 0; font-family:'SF Mono',ui-monospace,Consolas,monospace;">
-                    <span id="tempReading">--</span> &deg;C
+                <div style="display:flex; align-items:center; gap:12px; margin:10px 0;">
+                    <div style="font-size:24px; font-weight:700; color:var(--ac); font-family:'SF Mono',ui-monospace,Consolas,monospace;">
+                        <span id="tempReading">--</span> &deg;C
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="readTemp()">Read</button>
                 </div>
             </div>
 
@@ -780,7 +783,6 @@ void SeaSenseWebServer::handleCalibrate() {
             </div>
 
             <div class="btn-group">
-                <button class="btn btn-secondary" onclick="readTemp()">Read Sensor</button>
                 <button class="btn btn-primary" onclick="calibrateTemp(this)">Calibrate</button>
             </div>
             <div class="cal-history" id="tempHistory"></div>
@@ -797,8 +799,11 @@ void SeaSenseWebServer::handleCalibrate() {
 
             <div class="cal-section">
                 <div class="cal-section-title">Current Reading</div>
-                <div style="font-size:24px; font-weight:700; color:var(--ac); margin:10px 0; font-family:'SF Mono',ui-monospace,Consolas,monospace;">
-                    <span id="ecReading">--</span> &micro;S/cm
+                <div style="display:flex; align-items:center; gap:12px; margin:10px 0;">
+                    <div style="font-size:24px; font-weight:700; color:var(--ac); font-family:'SF Mono',ui-monospace,Consolas,monospace;">
+                        <span id="ecReading">--</span> &micro;S/cm
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="readEC()">Read</button>
                 </div>
             </div>
 
@@ -820,7 +825,6 @@ void SeaSenseWebServer::handleCalibrate() {
             </div>
 
             <div class="btn-group">
-                <button class="btn btn-secondary" onclick="readEC()">Read Sensor</button>
                 <button class="btn btn-primary" onclick="calibrateEC(this)">Calibrate</button>
             </div>
             <div class="cal-history" id="ecHistory"></div>
@@ -836,8 +840,11 @@ void SeaSenseWebServer::handleCalibrate() {
 
             <div class="cal-section">
                 <div class="cal-section-title">Current Reading</div>
-                <div style="font-size:24px; font-weight:700; color:var(--ac); margin:10px 0; font-family:'SF Mono',ui-monospace,Consolas,monospace;">
-                    <span id="phReading">--</span> pH
+                <div style="display:flex; align-items:center; gap:12px; margin:10px 0;">
+                    <div style="font-size:24px; font-weight:700; color:var(--ac); font-family:'SF Mono',ui-monospace,Consolas,monospace;">
+                        <span id="phReading">--</span> pH
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="readPH()">Read</button>
                 </div>
             </div>
 
@@ -858,7 +865,6 @@ void SeaSenseWebServer::handleCalibrate() {
             </div>
 
             <div class="btn-group">
-                <button class="btn btn-secondary" onclick="readPH()">Read Sensor</button>
                 <button class="btn btn-primary" onclick="calibratePH(this)">Calibrate</button>
             </div>
             <div class="cal-history" id="phHistory"></div>
@@ -874,8 +880,11 @@ void SeaSenseWebServer::handleCalibrate() {
 
             <div class="cal-section">
                 <div class="cal-section-title">Current Reading</div>
-                <div style="font-size:24px; font-weight:700; color:var(--ac); margin:10px 0; font-family:'SF Mono',ui-monospace,Consolas,monospace;">
-                    <span id="doReading">--</span> mg/L
+                <div style="display:flex; align-items:center; gap:12px; margin:10px 0;">
+                    <div style="font-size:24px; font-weight:700; color:var(--ac); font-family:'SF Mono',ui-monospace,Consolas,monospace;">
+                        <span id="doReading">--</span> mg/L
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="readDO()">Read</button>
                 </div>
             </div>
 
@@ -889,7 +898,6 @@ void SeaSenseWebServer::handleCalibrate() {
             </div>
 
             <div class="btn-group">
-                <button class="btn btn-secondary" onclick="readDO()">Read Sensor</button>
                 <button class="btn btn-primary" onclick="calibrateDO(this)">Calibrate</button>
             </div>
             <div class="cal-history" id="doHistory"></div>
@@ -1165,13 +1173,17 @@ void SeaSenseWebServer::handleCalibrate() {
                 };
                 for (const [key, cfg] of Object.entries(labels)) {
                     const s = data.sensors[key];
+                    if (!s) continue;
                     const el = document.getElementById(cfg.el);
                     if (!el) continue;
-                    if (!s || s.points < 0) {
-                        // Sensor not responding — handled by updateReadings offline logic
-                        continue;
-                    }
-                    if (s.points === 0) {
+                    // Update badge from probe Cal,? response
+                    if (s.points < 0) {
+                        // Cal,? failed — derive from history if available
+                        if (s.history && s.history.length > 0) {
+                            el.textContent = 'Calibrated';
+                            el.className = 'status-current status-calibrated';
+                        }
+                    } else if (s.points === 0) {
                         el.textContent = 'Not Calibrated';
                         el.className = 'status-current status-not-calibrated';
                     } else if (s.points >= cfg.max) {
