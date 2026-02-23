@@ -37,7 +37,6 @@ SeaSenseWebServer::SeaSenseWebServer(EZO_RTD* tempSensor, EZO_EC* ecSensor, Stor
       _server(nullptr),
       _dnsServer(nullptr)
 {
-    _apSSID = generateAPSSID();
 }
 
 SeaSenseWebServer::~SeaSenseWebServer() {
@@ -51,6 +50,9 @@ SeaSenseWebServer::~SeaSenseWebServer() {
 
 bool SeaSenseWebServer::begin() {
     DEBUG_WIFI_PRINTLN("Initializing web server...");
+
+    // Generate AP SSID from device GUID (last 4 hex chars for uniqueness)
+    _apSSID = generateAPSSID();
 
     // Start Access Point mode
     if (!startAP()) {
@@ -265,12 +267,15 @@ void SeaSenseWebServer::checkWiFiReconnect() {
 }
 
 String SeaSenseWebServer::generateAPSSID() {
-    uint8_t mac[6];
-    WiFi.macAddress(mac);
-    char ssid[32];
-    snprintf(ssid, sizeof(ssid), "%s%02X%02X",
-             WIFI_AP_SSID_PREFIX, mac[4], mac[5]);
-    return String(ssid);
+    String suffix = "0000";
+    if (_configManager) {
+        String guid = _configManager->getDeviceConfig().deviceGUID;
+        if (guid.length() >= 4) {
+            suffix = guid.substring(guid.length() - 4);
+            suffix.toUpperCase();
+        }
+    }
+    return String(WIFI_AP_SSID_PREFIX) + suffix;
 }
 
 // ============================================================================
@@ -1622,7 +1627,7 @@ void SeaSenseWebServer::handleSettings() {
             <div class="form-group">
                 <label>AP Password</label>
                 <input type="password" id="wifi-ap-password" name="wifi-ap-password">
-                <small>Password for SeaSense-XXXX access point</small>
+                <small>Password for <strong id="apSsidHint"></strong> access point</small>
             </div>
         </div>
 
@@ -1780,8 +1785,11 @@ void SeaSenseWebServer::handleSettings() {
             try {
                 const config = await fetch('/api/config').then(r => r.json());
                 const status = await fetch('/api/status').then(r => r.json());
+                const apSsid = (status.wifi && status.wifi.ap_ssid) || '';
                 const hn = document.getElementById('hostnameHint');
-                if (hn && status.wifi && status.wifi.ap_ssid) hn.textContent = status.wifi.ap_ssid;
+                if (hn && apSsid) hn.textContent = apSsid;
+                const ah = document.getElementById('apSsidHint');
+                if (ah && apSsid) ah.textContent = apSsid;
 
                 // Store initial WiFi values for restart detection
                 _initWifi = { ssid: config.wifi.station_ssid || '', password: config.wifi.station_password || '', ap_password: config.wifi.ap_password || '' };
