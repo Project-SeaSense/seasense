@@ -749,10 +749,10 @@ void SeaSenseWebServer::handleCalibrate() {
             <div class="form-group">
                 <label>Calibration Type</label>
                 <select id="ecCalType">
-                    <option value="dry">Dry Calibration</option>
                     <option value="single">Single Point</option>
-                    <option value="low">Two-Point (Low)</option>
-                    <option value="high">Two-Point (High)</option>
+                    <option value="dry">Dry Calibration</option>
+                    <option value="two-low">Two-Point (Low)</option>
+                    <option value="two-high">Two-Point (High)</option>
                 </select>
                 <small>For two-point: calibrate low point first, then high point</small>
             </div>
@@ -970,21 +970,46 @@ void SeaSenseWebServer::handleCalibrate() {
         updateReadings();
         setInterval(updateReadings, 3000);
 
-        function calibrateTemp() {
-            const type = document.getElementById('tempCalType').value;
-            const value = parseFloat(document.getElementById('tempValue').value);
+        // Poll calibration status until complete or error
+        let calPolling = false;
+        function pollCalibration(sensorLabel, readFn) {
+            if (calPolling) return;
+            calPolling = true;
+            setCalBtnsDisabled(true);
+            showToast('Calibrating ' + sensorLabel + '...', 'info');
+            const poll = setInterval(() => {
+                fetch('/api/calibrate/status')
+                    .then(r => r.json())
+                    .then(s => {
+                        if (s.status === 'waiting_stable' || s.status === 'preparing' || s.status === 'calibrating') {
+                            showToast(s.message || ('Calibrating ' + sensorLabel + '...'), 'info');
+                            return;
+                        }
+                        clearInterval(poll);
+                        calPolling = false;
+                        setCalBtnsDisabled(false);
+                        if (s.status === 'complete') {
+                            showToast(sensorLabel + ' calibration successful!', 'success');
+                            if (readFn) setTimeout(readFn, 500);
+                        } else {
+                            showToast('Calibration failed: ' + (s.message || 'Unknown error'), 'error');
+                        }
+                    })
+                    .catch(() => {
+                        clearInterval(poll);
+                        calPolling = false;
+                        setCalBtnsDisabled(false);
+                        showToast('Lost connection during calibration', 'error');
+                    });
+            }, 1000);
+        }
 
-            if (!value && value !== 0) {
-                showToast('Please enter a reference temperature value', 'error');
-                return;
-            }
+        function setCalBtnsDisabled(d) {
+            document.querySelectorAll('.btn-primary').forEach(b => { b.disabled = d; if(d) b.style.opacity='0.5'; else b.style.opacity=''; });
+        }
 
-            const data = {
-                sensor: 'temperature',
-                type: type,
-                value: value || 0
-            };
-
+        function startCalibration(data, sensorLabel, readFn) {
+            if (calPolling) { showToast('Calibration already in progress', 'error'); return; }
             fetch('/api/calibrate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -993,91 +1018,37 @@ void SeaSenseWebServer::handleCalibrate() {
             .then(r => r.json())
             .then(result => {
                 if (result.success) {
-                    showToast('Temperature calibration successful!', 'success');
-                    setTimeout(readTemp, 1000);
+                    pollCalibration(sensorLabel, readFn);
                 } else {
                     showToast('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
                 }
             })
-            .catch(err => showToast('Error during calibration', 'error'));
+            .catch(err => showToast('Error starting calibration', 'error'));
+        }
+
+        function calibrateTemp() {
+            const value = parseFloat(document.getElementById('tempValue').value);
+            if (!value && value !== 0) { showToast('Please enter a reference temperature value', 'error'); return; }
+            startCalibration({ sensor: 'temperature', type: 'single', value: value || 0 }, 'Temperature', readTemp);
         }
 
         function calibrateEC() {
             const type = document.getElementById('ecCalType').value;
             const value = parseFloat(document.getElementById('ecValue').value);
-
-            if (type !== 'dry' && !value && value !== 0) {
-                showToast('Please enter a reference conductivity value', 'error');
-                return;
-            }
-
-            const data = {
-                sensor: 'conductivity',
-                type: type,
-                value: value || 0
-            };
-
-            fetch('/api/calibrate', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
-            })
-            .then(r => r.json())
-            .then(result => {
-                if (result.success) {
-                    showToast('Conductivity calibration successful!', 'success');
-                    setTimeout(readEC, 1000);
-                } else {
-                    showToast('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
-                }
-            })
-            .catch(err => showToast('Error during calibration', 'error'));
+            if (type !== 'dry' && !value && value !== 0) { showToast('Please enter a reference conductivity value', 'error'); return; }
+            startCalibration({ sensor: 'conductivity', type: type, value: value || 0 }, 'Conductivity', readEC);
         }
 
         function calibratePH() {
             const type = document.getElementById('phCalType').value;
             const value = parseFloat(document.getElementById('phValue').value);
-
-            if (!value && value !== 0) {
-                showToast('Please enter a reference pH value', 'error');
-                return;
-            }
-
-            fetch('/api/calibrate', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ sensor: 'ph', type: type, value: value })
-            })
-            .then(r => r.json())
-            .then(result => {
-                if (result.success) {
-                    showToast('pH calibration (' + type + ') successful!', 'success');
-                    setTimeout(readPH, 1000);
-                } else {
-                    showToast('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
-                }
-            })
-            .catch(err => showToast('Error during pH calibration', 'error'));
+            if (!value && value !== 0) { showToast('Please enter a reference pH value', 'error'); return; }
+            startCalibration({ sensor: 'ph', type: type, value: value }, 'pH', readPH);
         }
 
         function calibrateDO() {
             const type = document.getElementById('doCalType').value;
-
-            fetch('/api/calibrate', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ sensor: 'dissolved_oxygen', type: type, value: 0 })
-            })
-            .then(r => r.json())
-            .then(result => {
-                if (result.success) {
-                    showToast('DO calibration (' + type + ') successful!', 'success');
-                    setTimeout(readDO, 1000);
-                } else {
-                    showToast('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
-                }
-            })
-            .catch(err => showToast('Error during DO calibration', 'error'));
+            startCalibration({ sensor: 'dissolved_oxygen', type: type, value: 0 }, 'DO', readDO);
         }
 
         // Toggle value input visibility based on calibration type
