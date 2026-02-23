@@ -23,7 +23,8 @@ TESTS = $(BUILDDIR)/test_config_clamp \
         $(BUILDDIR)/test_upload_timing \
         $(BUILDDIR)/test_metadata_batching \
         $(BUILDDIR)/test_upload_tracking \
-        $(BUILDDIR)/test_gps_nan_guard
+        $(BUILDDIR)/test_gps_nan_guard \
+        $(BUILDDIR)/test_pump_controller
 
 .PHONY: all test clean
 
@@ -82,6 +83,10 @@ $(BUILDDIR)/test_upload_tracking: test_upload_tracking.cpp $(SRCDIR)/src/storage
 # GPS NaN guard tests (standalone — extracted filtering predicate)
 $(BUILDDIR)/test_gps_nan_guard: test_gps_nan_guard.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+
+# PumpController state machine tests
+$(BUILDDIR)/test_pump_controller: test_pump_controller.cpp $(SRCDIR)/src/pump/PumpController.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
 
 clean:
 	rm -rf $(BUILDDIR)

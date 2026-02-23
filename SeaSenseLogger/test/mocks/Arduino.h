@@ -25,6 +25,20 @@ inline unsigned long millis() { return _mock_millis; }
 inline void delay(unsigned long) {}
 
 // ============================================================================
+// Mock GPIO — track pin state for test assertions
+// ============================================================================
+
+#define HIGH 1
+#define LOW  0
+#define OUTPUT 1
+#define INPUT  0
+
+inline int _mock_pin_mode[256] = {};
+inline int _mock_pin_state[256] = {};
+inline void pinMode(uint8_t pin, uint8_t mode) { _mock_pin_mode[pin] = mode; }
+inline void digitalWrite(uint8_t pin, uint8_t val) { _mock_pin_state[pin] = val; }
+
+// ============================================================================
 // Arduino constrain / min / max
 // ============================================================================
 
