@@ -350,7 +350,11 @@ void SeaSenseWebServer::handleDashboard() {
         .skel-value { width:120px; height:28px }
         .skel-env-label { width:50px; height:10px; margin-bottom:6px }
         .skel-env-value { width:70px; height:20px }
-        .spark { display:block; margin-top:8px; width:100%; height:32px }
+        .sensor-row { display:flex; align-items:center; gap:12px }
+        .sensor-row .sensor-value { flex-shrink:0 }
+        .spark-wrap { flex:1; min-width:0 }
+        .spark { display:block; width:100%; height:32px }
+        .spark-range { font-size:9px; color:var(--t3); text-align:right; margin-top:2px; white-space:nowrap }
         .measure-bar { display:flex; align-items:center; justify-content:space-between; background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:10px 16px; margin:10px 0 }
         .countdown { font-size:13px; color:var(--ac); font-weight:600; font-variant-numeric:tabular-nums; font-family:'SF Mono',ui-monospace,Consolas,monospace }
         .upload-bar { background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:8px 16px; margin:0 0 16px; font-size:12px; color:var(--t2); display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:34px }
@@ -552,17 +556,30 @@ void SeaSenseWebServer::handleDashboard() {
         }
 
         const sparkData = {};
-        const SPARK_MAX = 30;
+        const SPARK_MAX = 10;
+        function sparkRangeLabel(key) {
+            const pts = sparkData[key];
+            if (!pts || pts.length < 2) return '';
+            let mn = pts[0].v, mx = pts[0].v;
+            for (let i = 1; i < pts.length; i++) { if (pts[i].v < mn) mn = pts[i].v; if (pts[i].v > mx) mx = pts[i].v; }
+            const spanMs = pts[pts.length-1].t - pts[0].t;
+            const spanMin = Math.round(spanMs / 60000);
+            let spanStr;
+            if (spanMin < 1) spanStr = '<1 min';
+            else if (spanMin < 60) spanStr = 'last ' + spanMin + ' min';
+            else { const h = Math.floor(spanMin/60); const m = spanMin%60; spanStr = 'last ' + h + 'h' + (m ? ' ' + m + 'm' : ''); }
+            return '<div class="spark-range">' + fmtSensor(key, mn) + ' – ' + fmtSensor(key, mx) + ' · ' + spanStr + '</div>';
+        }
         function sparkSvg(key) {
             const pts = sparkData[key];
             if (!pts || pts.length < 2) return '';
-            let mn = pts[0], mx = pts[0];
-            for (let i = 1; i < pts.length; i++) { if (pts[i] < mn) mn = pts[i]; if (pts[i] > mx) mx = pts[i]; }
+            let mn = pts[0].v, mx = pts[0].v;
+            for (let i = 1; i < pts.length; i++) { if (pts[i].v < mn) mn = pts[i].v; if (pts[i].v > mx) mx = pts[i].v; }
             const range = mx - mn || 1;
             const w = 200, h = 32, pad = 2;
-            const coords = pts.map((v, i) => {
+            const coords = pts.map((p, i) => {
                 const x = (i / (pts.length - 1)) * w;
-                const y = pad + (1 - (v - mn) / range) * (h - 2 * pad);
+                const y = pad + (1 - (p.v - mn) / range) * (h - 2 * pad);
                 return x.toFixed(1) + ',' + y.toFixed(1);
             });
             const polyPts = coords.join(' ');
@@ -574,7 +591,7 @@ void SeaSenseWebServer::handleDashboard() {
                 + '</linearGradient></defs>'
                 + '<polygon points="' + fillPts + '" fill="url(#sg' + key.replace(/\s/g,'') + ')"/>'
                 + '<polyline points="' + polyPts + '" fill="none" stroke="rgba(34,211,238,0.5)" stroke-width="1.5" stroke-linejoin="round"/>'
-                + '</svg>';
+                + '</svg>' + sparkRangeLabel(key);
         }
 
         function update() {
@@ -589,8 +606,11 @@ void SeaSenseWebServer::handleDashboard() {
                             if (s.value !== 0) {
                                 lastGood[key] = { value: s.value, unit: s.unit, clamped: s.clamped };
                                 if (!sparkData[key]) sparkData[key] = [];
-                                sparkData[key].push(s.value);
-                                if (sparkData[key].length > SPARK_MAX) sparkData[key].shift();
+                                const arr = sparkData[key];
+                                if (!arr.length || arr[arr.length-1].v !== s.value) {
+                                    arr.push({v:s.value, t:Date.now()});
+                                    if (arr.length > SPARK_MAX) arr.shift();
+                                }
                             }
                             const has = lastGood[key];
                             let valueFormatted = has ? fmtSensor(key, has.value) : '&mdash;';
@@ -599,12 +619,13 @@ void SeaSenseWebServer::handleDashboard() {
                             }
                             const unit = has ? has.unit : '';
 
+                            const spark = sparkSvg(key);
                             html += `<div class="sensor-card">
                                 <div class="sensor-name">${s.type}</div>
-                                <div class="sensor-value">
-                                    ${valueFormatted}<span class="sensor-unit">${unit}</span>
+                                <div class="sensor-row">
+                                    <div class="sensor-value">${valueFormatted}<span class="sensor-unit">${unit}</span></div>
+                                    ${spark ? '<div class="spark-wrap">' + spark + '</div>' : ''}
                                 </div>
-                                ${sparkSvg(key)}
                                 ${s.serial ? `<div class="sensor-meta">Serial: ${s.serial}</div>` : ''}
                             </div>`;
                         });
@@ -686,7 +707,8 @@ void SeaSenseWebServer::handleDashboard() {
                         const r = data.records[i];
                         if (r.value === 0) continue;
                         if (!sparkData[r.type]) sparkData[r.type] = [];
-                        sparkData[r.type].push(r.value);
+                        const t = r.time ? new Date(r.time + 'Z').getTime() : Date.now();
+                        sparkData[r.type].push({v:r.value, t:t});
                     }
                     Object.keys(sparkData).forEach(k => {
                         if (sparkData[k].length > SPARK_MAX) sparkData[k] = sparkData[k].slice(-SPARK_MAX);
