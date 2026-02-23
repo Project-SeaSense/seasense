@@ -400,6 +400,7 @@ void SeaSenseWebServer::handleDashboard() {
             <div class="sensor-card"><div class="skel skel-name"></div><div class="skel skel-value"></div></div>
             <div class="sensor-card"><div class="skel skel-name"></div><div class="skel skel-value"></div></div>
             <div class="sensor-card"><div class="skel skel-name"></div><div class="skel skel-value"></div></div>
+            <div class="sensor-card"><div class="skel skel-name"></div><div class="skel skel-value"></div></div>
         </div>
         <div class="section-title">Navigation</div>
         <div class="env-grid" id="envNav">
