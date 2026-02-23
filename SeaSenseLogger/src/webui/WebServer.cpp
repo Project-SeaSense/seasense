@@ -505,6 +505,18 @@ void SeaSenseWebServer::handleDashboard() {
                 + '<span>Next: ' + nextStr + '</span>';
         }
 
+        // Track last known good values per sensor type
+        const lastGood = {};
+
+        function fmtSensor(type, value) {
+            const t = type.toLowerCase();
+            if (t.includes('temperature')) return value.toFixed(3);
+            if (t.includes('salinity'))    return value.toFixed(2);
+            if (t.includes('ph'))          return value.toFixed(3);
+            if (t.includes('oxygen'))      return value.toFixed(2);
+            return value.toFixed(0);
+        }
+
         function update() {
             fetch('/api/sensors')
                 .then(r => r.json())
@@ -512,24 +524,19 @@ void SeaSenseWebServer::handleDashboard() {
                     let html = '';
                     if (data.sensors && data.sensors.length > 0) {
                         data.sensors.forEach(s => {
-                            // Format value based on sensor type
-                            let valueFormatted;
-                            if (s.type.toLowerCase().includes('temperature')) {
-                                valueFormatted = s.value.toFixed(3); // 3 decimals for temperature
-                            } else if (s.type.toLowerCase().includes('salinity')) {
-                                valueFormatted = s.value.toFixed(2); // 2 decimals for salinity
-                            } else if (s.type.toLowerCase().includes('ph')) {
-                                valueFormatted = s.value.toFixed(3); // 3 decimals for pH
-                            } else if (s.type.toLowerCase().includes('oxygen')) {
-                                valueFormatted = s.value.toFixed(2); // 2 decimals for DO
-                            } else {
-                                valueFormatted = s.value.toFixed(0); // No decimals for conductivity
+                            const key = s.type;
+                            // Use new value if non-zero, otherwise keep last known
+                            if (s.value !== 0) {
+                                lastGood[key] = { value: s.value, unit: s.unit };
                             }
+                            const has = lastGood[key];
+                            const valueFormatted = has ? fmtSensor(key, has.value) : '&mdash;';
+                            const unit = has ? has.unit : '';
 
                             html += `<div class="sensor-card">
                                 <div class="sensor-name">${s.type}</div>
                                 <div class="sensor-value">
-                                    ${valueFormatted}<span class="sensor-unit">${s.unit}</span>
+                                    ${valueFormatted}<span class="sensor-unit">${unit}</span>
                                 </div>
                                 ${s.serial ? `<div class="sensor-meta">Serial: ${s.serial}</div>` : ''}
                             </div>`;
