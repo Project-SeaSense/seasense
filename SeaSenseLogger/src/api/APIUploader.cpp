@@ -163,7 +163,7 @@ void APIUploader::process() {
     bool ok = uploadPayload(payload);
     unsigned long uploadDur = millis() - uploadStart;
 
-    // Record history entry
+    // Record history entry (in-memory)
     UploadRecord rec;
     rec.startMs      = uploadStart;
     rec.durationMs   = uploadDur;
@@ -175,6 +175,18 @@ void APIUploader::process() {
     if (_historyCount < UPLOAD_HISTORY_SIZE) _historyCount++;
     if (ok) _totalBytesSent += _lastPayloadBytes;
 
+    // Persist history entry to SPIFFS (survives reboots)
+    {
+        time_t recEpoch = time(nullptr);
+        SPIFFSStorage::PersistedUploadRecord prec;
+        prec.epochTime = (recEpoch > 1000000000) ? (int64_t)recEpoch : 0;
+        prec.durationMs = uploadDur;
+        prec.success = ok;
+        prec.recordCount = ok ? (uint32_t)records.size() : 0;
+        prec.payloadBytes = _lastPayloadBytes;
+        _storage->addUploadHistoryRecord(prec);
+    }
+
     if (ok) {
         _status = UploadStatus::SUCCESS;
         _lastError = "";
@@ -182,6 +194,10 @@ void APIUploader::process() {
 
         // Mark these records as uploaded (persists count to SPIFFS metadata)
         _storage->setLastUploadedMillis(records[records.size() - 1].millis);
+
+        // Persist last successful upload epoch (survives reboots, unlike millis)
+        time_t nowEpoch = time(nullptr);
+        if (nowEpoch > 1000000000) _storage->setLastSuccessEpoch((int64_t)nowEpoch);
 
         // Update persistent lifetime upload counter
         _storage->addBytesUploaded(_lastPayloadBytes);

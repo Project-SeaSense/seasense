@@ -22,12 +22,16 @@ SPIFFSStorage::SPIFFSStorage(uint16_t maxRecords)
     : _maxRecords(maxRecords),
       _mounted(false),
       _cachedRecordCount(0),
-      _metadataDirtyCount(0)
+      _metadataDirtyCount(0),
+      _uploadHistoryCount(0),
+      _uploadHistoryHead(0)
 {
     _metadata.lastUploadedMillis = 0;
     _metadata.totalRecordsWritten = 0;
     _metadata.recordsAtLastUpload = 0;
     _metadata.totalBytesUploaded = 0;
+    _metadata.lastSuccessEpoch = 0;
+    memset(_uploadHistory, 0, sizeof(_uploadHistory));
 }
 
 SPIFFSStorage::~SPIFFSStorage() {
@@ -403,6 +407,26 @@ bool SPIFFSStorage::loadMetadata() {
     _metadata.totalRecordsWritten = doc["totalRecordsWritten"] | 0U;
     _metadata.recordsAtLastUpload = doc["recordsAtLastUpload"] | 0U;
     _metadata.totalBytesUploaded = doc["totalBytesUploaded"] | (uint64_t)0;
+    _metadata.lastSuccessEpoch = doc["lastSuccessEpoch"] | (int64_t)0;
+
+    // Load persisted upload history
+    _uploadHistoryCount = doc["uhCount"] | (uint8_t)0;
+    _uploadHistoryHead = doc["uhHead"] | (uint8_t)0;
+    if (_uploadHistoryCount > MAX_UPLOAD_HISTORY) _uploadHistoryCount = MAX_UPLOAD_HISTORY;
+    if (_uploadHistoryHead >= MAX_UPLOAD_HISTORY) _uploadHistoryHead = 0;
+    JsonArray uhArr = doc["uh"].as<JsonArray>();
+    if (uhArr) {
+        uint8_t idx = 0;
+        for (JsonObject entry : uhArr) {
+            if (idx >= MAX_UPLOAD_HISTORY) break;
+            _uploadHistory[idx].epochTime = entry["t"] | (int64_t)0;
+            _uploadHistory[idx].durationMs = entry["d"] | 0UL;
+            _uploadHistory[idx].success = entry["s"] | false;
+            _uploadHistory[idx].recordCount = entry["r"] | 0U;
+            _uploadHistory[idx].payloadBytes = entry["b"] | (size_t)0;
+            idx++;
+        }
+    }
 
     DEBUG_STORAGE_PRINTLN("Metadata loaded");
     return true;
@@ -420,6 +444,20 @@ bool SPIFFSStorage::saveMetadata() {
     doc["totalRecordsWritten"] = _metadata.totalRecordsWritten;
     doc["recordsAtLastUpload"] = _metadata.recordsAtLastUpload;
     doc["totalBytesUploaded"] = _metadata.totalBytesUploaded;
+    doc["lastSuccessEpoch"] = _metadata.lastSuccessEpoch;
+
+    // Persist upload history ring buffer (short keys to save space)
+    doc["uhCount"] = _uploadHistoryCount;
+    doc["uhHead"] = _uploadHistoryHead;
+    JsonArray uhArr = doc["uh"].to<JsonArray>();
+    for (uint8_t i = 0; i < MAX_UPLOAD_HISTORY; i++) {
+        JsonObject entry = uhArr.add<JsonObject>();
+        entry["t"] = _uploadHistory[i].epochTime;
+        entry["d"] = _uploadHistory[i].durationMs;
+        entry["s"] = _uploadHistory[i].success;
+        entry["r"] = _uploadHistory[i].recordCount;
+        entry["b"] = _uploadHistory[i].payloadBytes;
+    }
 
     serializeJson(doc, file);
     file.flush();
@@ -611,6 +649,24 @@ bool SPIFFSStorage::parseCSVLine(const String& line, DataRecord& record) const {
 
     // Support old format (15 fields) and new format (30 fields)
     return (fieldIndex >= 10);
+}
+
+void SPIFFSStorage::setLastSuccessEpoch(int64_t epoch) {
+    _metadata.lastSuccessEpoch = epoch;
+    saveMetadata();
+}
+
+void SPIFFSStorage::addUploadHistoryRecord(const PersistedUploadRecord& rec) {
+    _uploadHistory[_uploadHistoryHead] = rec;
+    _uploadHistoryHead = (_uploadHistoryHead + 1) % MAX_UPLOAD_HISTORY;
+    if (_uploadHistoryCount < MAX_UPLOAD_HISTORY) _uploadHistoryCount++;
+    saveMetadata();
+}
+
+const SPIFFSStorage::PersistedUploadRecord* SPIFFSStorage::getUploadHistory(uint8_t& count, uint8_t& head) const {
+    count = _uploadHistoryCount;
+    head = _uploadHistoryHead;
+    return _uploadHistory;
 }
 
 bool SPIFFSStorage::ensureDataFileWithHeader() {

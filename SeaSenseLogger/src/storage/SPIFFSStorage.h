@@ -55,6 +55,29 @@ public:
     /** Get the persistent lifetime total bytes uploaded */
     uint64_t getTotalBytesUploaded() const { return _metadata.totalBytesUploaded; }
 
+    /** Get Unix epoch of last successful upload (0 = never) */
+    int64_t getLastSuccessEpoch() const { return _metadata.lastSuccessEpoch; }
+
+    /** Set Unix epoch of last successful upload */
+    void setLastSuccessEpoch(int64_t epoch);
+
+    /** Persisted upload history record (compact, survives reboot) */
+    struct PersistedUploadRecord {
+        int64_t epochTime;
+        unsigned long durationMs;
+        bool success;
+        uint32_t recordCount;
+        size_t payloadBytes;
+    };
+
+    static const uint8_t MAX_UPLOAD_HISTORY = 10;
+
+    /** Add an upload history record to persisted ring buffer */
+    void addUploadHistoryRecord(const PersistedUploadRecord& rec);
+
+    /** Get persisted upload history (count/head for ring buffer iteration) */
+    const PersistedUploadRecord* getUploadHistory(uint8_t& count, uint8_t& head) const;
+
 private:
     // ========================================================================
     // Configuration
@@ -119,6 +142,7 @@ private:
         uint32_t totalRecordsWritten;
         uint32_t recordsAtLastUpload;
         uint64_t totalBytesUploaded;    // Lifetime bytes sent to API (persisted)
+        int64_t lastSuccessEpoch;       // Unix epoch of last successful upload (0 = never)
     } _metadata;
 
     // In-memory record count — avoids O(n) file scan on every write/status call.
@@ -128,6 +152,11 @@ private:
     // Metadata batching: save to flash every N writes to reduce wear
     static const uint16_t METADATA_SAVE_INTERVAL = 50;
     uint16_t _metadataDirtyCount;
+
+    // Persisted upload history ring buffer
+    PersistedUploadRecord _uploadHistory[MAX_UPLOAD_HISTORY];
+    uint8_t _uploadHistoryCount;
+    uint8_t _uploadHistoryHead;
 
     // Crash-safe trim: backup file for atomic rename
     static const char* BACKUP_FILE;  // "/data.bak"

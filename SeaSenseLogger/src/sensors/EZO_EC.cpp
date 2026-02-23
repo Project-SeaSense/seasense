@@ -198,6 +198,13 @@ float EZO_EC::getSalinity() const {
     return calculateSalinity(_value, _lastTempCompensation);
 }
 
+bool EZO_EC::isSalinityClamped() const {
+    if (!_tempCompensationSet) return false;
+    // Check if salinity hits the 50 PSU clamp by seeing if EC is high enough.
+    // At typical seawater temps, EC > ~60000 µS/cm produces salinity > 50 PSU.
+    return (getSalinity() >= 50.0f && _value > 55000.0f);
+}
+
 // ============================================================================
 // Quality Assessment
 // ============================================================================

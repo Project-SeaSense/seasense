@@ -394,7 +394,8 @@ void SeaSenseWebServer::handleDashboard() {
 
     <script>
         let autoUpdate = true;
-        let countdownMs = null;
+        let cdAnchorMs = null;   // server-reported remaining ms
+        let cdAnchorAt = null;   // Date.now() when received
         let pumpPhaseLabel = '';
 
         function toggleMenu() {
@@ -415,14 +416,15 @@ void SeaSenseWebServer::handleDashboard() {
             }
         });
 
-        // Countdown ticker — runs every 100ms locally to avoid excess requests
+        // Countdown ticker — runs every 100ms, driven by local clock from anchor
         setInterval(function() {
             const label = document.getElementById('countdownLabel');
             if (!label) return;
             if (pumpPhaseLabel) { label.textContent = pumpPhaseLabel; return; }
-            if (countdownMs === null) return;
-            countdownMs = Math.max(0, countdownMs - 100);
-            const s = Math.floor(countdownMs / 1000);
+            if (cdAnchorMs === null || cdAnchorAt === null) return;
+            const elapsed = Date.now() - cdAnchorAt;
+            const remaining = Math.max(0, cdAnchorMs - elapsed);
+            const s = Math.floor(remaining / 1000);
             const m = Math.floor(s / 60);
             label.textContent = 'Next measurement in ' + m + ':' + String(s % 60).padStart(2, '0');
         }, 100);
@@ -431,7 +433,8 @@ void SeaSenseWebServer::handleDashboard() {
             fetch('/api/measurement')
                 .then(r => r.json())
                 .then(d => {
-                    countdownMs = d.next_read_in_ms;
+                    cdAnchorMs = d.next_read_in_ms;
+                    cdAnchorAt = Date.now();
                     pumpPhaseLabel = d.pump_phase_label || '';
                 })
                 .catch(() => {});
@@ -473,7 +476,11 @@ void SeaSenseWebServer::handleDashboard() {
                         : (status === 'SUCCESS' || status === 'IDLE') ? 'ok' : 'busy';
                     const pending = (u.pending_records != null) ? u.pending_records + ' pending' : '--';
                     const lastMs = u.last_success_ms || 0;
-                    const lastStr = (lastMs > 0 && uptimeMs > 0) ? fmtAgo(uptimeMs - lastMs) : 'never';
+                    const lastEpoch = u.last_success_epoch || 0;
+                    let lastStr;
+                    if (lastMs > 0 && uptimeMs > 0) lastStr = fmtAgo(uptimeMs - lastMs);
+                    else if (lastEpoch > 0) lastStr = fmtAgo((Date.now()/1000 - lastEpoch) * 1000);
+                    else lastStr = 'never';
                     _upNextMs = u.next_upload_ms || 0;
                     _upFetchedAt = Date.now();
                     _upLastHtml = '<span class="up-state ' + stateClass + '">' + status + '</span>'
@@ -527,10 +534,13 @@ void SeaSenseWebServer::handleDashboard() {
                             const key = s.type;
                             // Use new value if non-zero, otherwise keep last known
                             if (s.value !== 0) {
-                                lastGood[key] = { value: s.value, unit: s.unit };
+                                lastGood[key] = { value: s.value, unit: s.unit, clamped: s.clamped };
                             }
                             const has = lastGood[key];
-                            const valueFormatted = has ? fmtSensor(key, has.value) : '&mdash;';
+                            let valueFormatted = has ? fmtSensor(key, has.value) : '&mdash;';
+                            if (has && has.clamped && key.toLowerCase().includes('salinity')) {
+                                valueFormatted = '>' + valueFormatted;
+                            }
                             const unit = has ? has.unit : '';
 
                             html += `<div class="sensor-card">
@@ -1349,7 +1359,12 @@ void SeaSenseWebServer::handleData() {
                     document.getElementById('upPending').textContent = u.pending_records != null ? u.pending_records : '--';
 
                     const lastMs = u.last_success_ms || 0;
-                    document.getElementById('upLast').textContent = (lastMs > 0 && uptimeMs > 0) ? fmtAgo(uptimeMs - lastMs) : 'never';
+                    const lastEpoch = u.last_success_epoch || 0;
+                    let lastStr;
+                    if (lastMs > 0 && uptimeMs > 0) lastStr = fmtAgo(uptimeMs - lastMs);
+                    else if (lastEpoch > 0) lastStr = fmtAgo((Date.now()/1000 - lastEpoch) * 1000);
+                    else lastStr = 'never';
+                    document.getElementById('upLast').textContent = lastStr;
                     _dataUpNextMs = u.next_upload_ms || 0;
                     _dataUpFetchedAt = Date.now();
                     tickUpNext();
@@ -1383,13 +1398,16 @@ void SeaSenseWebServer::handleData() {
                     document.getElementById('upTotal').textContent = fmtBytes(totalUp);
                     const tbody = document.getElementById('historyBody');
                     if (!d.history || d.history.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No uploads yet this session</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No upload history</td></tr>';
                         return;
                     }
                     tbody.innerHTML = d.history.map(e => {
                         const cls = e.success ? 'badge-ok' : 'badge-err';
                         const lbl = e.success ? 'OK' : 'FAIL';
-                        const time = (e.start_ms > 0 && uptimeMs > 0) ? fmtAgo(uptimeMs - e.start_ms) : '--';
+                        let time;
+                        if (e.start_ms > 0 && uptimeMs > 0) time = fmtAgo(uptimeMs - e.start_ms);
+                        else if (e.epoch > 0) time = fmtAgo((Date.now()/1000 - e.epoch) * 1000);
+                        else time = '--';
                         return '<tr><td>' + time + '</td>'
                             + '<td><span class="badge ' + cls + '">' + lbl + '</span></td>'
                             + '<td>' + (e.record_count || 0) + '</td>'
@@ -1400,14 +1418,13 @@ void SeaSenseWebServer::handleData() {
                 .catch(() => { document.getElementById('historyBody').innerHTML = '<tr><td colspan="5" class="empty-row">Error loading history</td></tr>'; });
         }
 
-        // TODO: Stored records table stays on "Loading..." if /api/data/records
-        //       request is slow or returns empty. Add error handling / timeout
-        //       message, and investigate why records may appear empty after reboot.
         function loadRecords() {
             const tbody = document.getElementById('recordsBody');
             tbody.innerHTML = '<tr><td colspan="4" class="empty-row">Loading...</td></tr>';
-            fetch('/api/data/records?page=' + currentPage + '&limit=' + PAGE_SIZE)
-                .then(r => r.json())
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 15000);
+            fetch('/api/data/records?page=' + currentPage + '&limit=' + PAGE_SIZE, { signal: ctrl.signal })
+                .then(r => { clearTimeout(timer); return r.json(); })
                 .then(d => {
                     if (!d.records || d.records.length === 0) {
                         tbody.innerHTML = '<tr><td colspan="4" class="empty-row">No records stored yet</td></tr>';
@@ -1433,7 +1450,11 @@ void SeaSenseWebServer::handleData() {
                     document.getElementById('prevBtn').disabled = currentPage >= maxPage;
                     document.getElementById('nextBtn').disabled = currentPage <= 0;
                 })
-                .catch(() => { tbody.innerHTML = '<tr><td colspan="4" class="empty-row">Error loading records</td></tr>'; });
+                .catch(e => {
+                    clearTimeout(timer);
+                    const msg = e.name === 'AbortError' ? 'Request timed out — SPIFFS may be busy' : 'Error loading records';
+                    tbody.innerHTML = '<tr><td colspan="4" class="empty-row">' + msg + '</td></tr>';
+                });
         }
 
         function changePage(dir) {
@@ -1441,23 +1462,33 @@ void SeaSenseWebServer::handleData() {
             loadRecords();
         }
 
-        // TODO: Force upload should poll status/history until upload completes
-        //       (currently fires a single 3s timeout — misses slow uploads).
-        //       Replace setTimeout with a poll loop that checks upload status
-        //       every 2s until status changes from "Uploading" to success/error,
-        //       then refresh stats + history once.
-        // TODO: Upload history table should auto-refresh periodically (e.g. every
-        //       10-15s) so users see new entries without manual page reload.
         function forceUpload() {
             const btn = document.getElementById('forceBtn');
-            btn.disabled = true; btn.textContent = 'Scheduling...';
+            btn.disabled = true; btn.textContent = 'Uploading...';
             fetch('/api/upload/force', { method: 'POST' })
                 .then(r => r.json())
                 .then(d => {
-                    showToast('Upload scheduled — check history in a moment', 'success');
-                    btn.textContent = 'Force Upload Now';
-                    btn.disabled = false;
-                    setTimeout(() => { loadStats(); loadHistory(); }, 3000);
+                    let polls = 0;
+                    const maxPolls = 15;
+                    const pollId = setInterval(() => {
+                        polls++;
+                        fetch('/api/status').then(r => r.json()).then(s => {
+                            const u = s.upload || {};
+                            const st = (u.status || '').toLowerCase();
+                            const done = !u.force_pending && st !== 'uploading' && st !== 'querying data' && st !== 'syncing time';
+                            if (done || polls >= maxPolls) {
+                                clearInterval(pollId);
+                                btn.textContent = 'Force Upload Now';
+                                btn.disabled = false;
+                                loadStats(); loadHistory();
+                                if (done && st === 'success') showToast('Upload completed successfully', 'success');
+                                else if (done) showToast('Upload finished: ' + (u.status || 'unknown'), st.startsWith('error') ? 'error' : 'success');
+                                else showToast('Upload still in progress — check history', 'error');
+                            } else {
+                                btn.textContent = 'Uploading... (' + polls + '/' + maxPolls + ')';
+                            }
+                        }).catch(() => {});
+                    }, 2000);
                 })
                 .catch(() => { btn.textContent = 'Force Upload Now'; btn.disabled = false; showToast('Request failed', 'error'); });
         }
@@ -1483,6 +1514,7 @@ void SeaSenseWebServer::handleData() {
         loadHistory();
         loadRecords();
         setInterval(loadStats, 15000);
+        setInterval(loadHistory, 15000);
         setInterval(tickUpNext, 1000);
         setInterval(function() { if (currentPage === 0) loadRecords(); }, 30000);
     </script>
@@ -1649,11 +1681,25 @@ void SeaSenseWebServer::handleSettings() {
             </div>
         </div>
 
-        <!-- TODO: Add Deployment section with editable fields for:
-             - Sensor depth (cm) below waterline
-             - Purchase date (date picker)
-             - Deploy date (date picker, or show auto-stamped value as readonly)
-             Save via /api/settings with deployment.depth_cm, deployment.purchase_date -->
+        <!-- Deployment -->
+        <div class="section">
+            <h2>Deployment</h2>
+            <div class="form-group">
+                <label>Sensor Depth Below Waterline (cm)</label>
+                <input type="number" id="deploy-depth" min="0" step="1" placeholder="e.g. 30">
+                <small>How far below the waterline the sensor intake sits</small>
+            </div>
+            <div class="form-group">
+                <label>Purchase Date</label>
+                <input type="date" id="deploy-purchase-date">
+                <small>When the device/sensors were purchased</small>
+            </div>
+            <div class="form-group">
+                <label>Deploy Date</label>
+                <input type="text" id="deploy-deploy-date" readonly>
+                <small>Auto-stamped on first boot. Read-only.</small>
+            </div>
+        </div>
 
         <!-- Device Configuration -->
         <div class="section">
@@ -1773,6 +1819,13 @@ void SeaSenseWebServer::handleSettings() {
                     || (config.gps && config.gps.nmea_output_enabled) // backward-compat
                 );
 
+                // Deployment
+                if (config.deployment) {
+                    document.getElementById('deploy-depth').value = config.deployment.depth_cm || '';
+                    document.getElementById('deploy-purchase-date').value = config.deployment.purchase_date || '';
+                    document.getElementById('deploy-deploy-date').value = config.deployment.deploy_date || 'Not set';
+                }
+
                 // Device
                 document.getElementById('device-guid').value = config.device.device_guid || '';
                 document.getElementById('partner-id').value = config.device.partner_id || '';
@@ -1817,6 +1870,10 @@ void SeaSenseWebServer::handleSettings() {
                 },
                 nmea: {
                     output_enabled: document.getElementById('nmea-output-enabled').checked
+                },
+                deployment: {
+                    depth_cm: parseFloat(document.getElementById('deploy-depth').value) || 0,
+                    purchase_date: document.getElementById('deploy-purchase-date').value || ''
                 },
                 device: {
                     device_guid: document.getElementById('device-guid').value,
@@ -2202,15 +2259,32 @@ void SeaSenseWebServer::handleApiUploadHistory() {
     doc["total_bytes_uploaded"] = _storage->getTotalBytesUploaded();
     JsonArray arr = doc["history"].to<JsonArray>();
 
-    // Iterate most-recent-first: head-1, head-2, ... wrapping around
-    for (uint8_t i = 0; i < count; i++) {
-        uint8_t idx = (head + APIUploader::UPLOAD_HISTORY_SIZE - 1 - i) % APIUploader::UPLOAD_HISTORY_SIZE;
-        JsonObject e = arr.add<JsonObject>();
-        e["start_ms"]    = hist[idx].startMs;
-        e["duration_ms"] = hist[idx].durationMs;
-        e["success"]     = hist[idx].success;
-        e["record_count"]  = hist[idx].recordCount;
-        e["payload_bytes"] = hist[idx].payloadBytes;
+    if (count > 0) {
+        // Serve in-memory history (millis-based, current session)
+        for (uint8_t i = 0; i < count; i++) {
+            uint8_t idx = (head + APIUploader::UPLOAD_HISTORY_SIZE - 1 - i) % APIUploader::UPLOAD_HISTORY_SIZE;
+            JsonObject e = arr.add<JsonObject>();
+            e["start_ms"]    = hist[idx].startMs;
+            e["duration_ms"] = hist[idx].durationMs;
+            e["success"]     = hist[idx].success;
+            e["record_count"]  = hist[idx].recordCount;
+            e["payload_bytes"] = hist[idx].payloadBytes;
+        }
+    } else {
+        // Fallback: serve persisted history (epoch-based, survives reboots)
+        uint8_t pCount = 0, pHead = 0;
+        const SPIFFSStorage::PersistedUploadRecord* phist = _storage->getUploadHistory(pCount, pHead);
+        if (phist && pCount > 0) {
+            for (uint8_t i = 0; i < pCount; i++) {
+                uint8_t idx = (pHead + SPIFFSStorage::MAX_UPLOAD_HISTORY - 1 - i) % SPIFFSStorage::MAX_UPLOAD_HISTORY;
+                JsonObject e = arr.add<JsonObject>();
+                e["epoch"]       = phist[idx].epochTime;
+                e["duration_ms"] = phist[idx].durationMs;
+                e["success"]     = phist[idx].success;
+                e["record_count"]  = phist[idx].recordCount;
+                e["payload_bytes"] = phist[idx].payloadBytes;
+            }
+        }
     }
 
     String json;
@@ -2275,6 +2349,13 @@ void SeaSenseWebServer::handleApiConfig() {
         unsigned long minMs = (unsigned long)pc.flushDurationMs + pc.measureDurationMs;
         samplingObj["min_sampling_ms"] = max(minMs, 5000UL);
     }
+
+    // Deployment metadata
+    ConfigManager::DeploymentConfig dep = _configManager->getDeploymentConfig();
+    JsonObject depObj = doc["deployment"].to<JsonObject>();
+    depObj["depth_cm"] = dep.depthCm;
+    depObj["purchase_date"] = dep.purchaseDate;
+    depObj["deploy_date"] = dep.deployDate;
 
     // Device config
     ConfigManager::DeviceConfig device = _configManager->getDeviceConfig();
@@ -2475,6 +2556,7 @@ void SeaSenseWebServer::handleApiStatus() {
     doc["upload"]["status"] = apiUploader.getStatusString();
     doc["upload"]["pending_records"] = apiUploader.getPendingRecords();
     doc["upload"]["last_success_ms"] = apiUploader.getLastUploadTime();
+    doc["upload"]["last_success_epoch"] = _storage->getLastSuccessEpoch();
     doc["upload"]["last_attempt_ms"] = apiUploader.getLastAttemptTime();
     doc["upload"]["last_error"] = apiUploader.getLastError();
     doc["upload"]["force_pending"] = apiUploader.isForcePending();
@@ -2828,6 +2910,7 @@ String SeaSenseWebServer::allSensorsToJSON() {
         salinityObj["value"] = salinity;
         salinityObj["unit"] = "PSU";
         salinityObj["quality"] = sensorQualityToString(data.quality);
+        salinityObj["clamped"] = _ecSensor->isSalinityClamped();
     }
 
     if (_phSensor && _phSensor->isEnabled()) {

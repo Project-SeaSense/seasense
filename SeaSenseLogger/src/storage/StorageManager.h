@@ -127,6 +127,18 @@ public:
      */
     uint64_t getTotalBytesUploaded() const;
 
+    /** Get Unix epoch of last successful upload (0 = never) */
+    int64_t getLastSuccessEpoch() const;
+
+    /** Set Unix epoch of last successful upload */
+    void setLastSuccessEpoch(int64_t epoch);
+
+    /** Add persisted upload history record */
+    void addUploadHistoryRecord(const SPIFFSStorage::PersistedUploadRecord& rec);
+
+    /** Get persisted upload history (ring buffer) */
+    const SPIFFSStorage::PersistedUploadRecord* getUploadHistory(uint8_t& count, uint8_t& head) const;
+
     /**
      * Get human-readable status string
      * @return Status description

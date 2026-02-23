@@ -109,6 +109,12 @@ public:
      */
     float getSalinity() const;
 
+    /**
+     * Check if salinity is clamped at the 50 PSU upper limit
+     * @return true if the raw calculation would exceed 50 PSU
+     */
+    bool isSalinityClamped() const;
+
 protected:
     /**
      * Assess conductivity reading quality

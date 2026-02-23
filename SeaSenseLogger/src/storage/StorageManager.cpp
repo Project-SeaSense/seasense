@@ -283,6 +283,34 @@ uint64_t StorageManager::getTotalBytesUploaded() const {
     return 0;
 }
 
+int64_t StorageManager::getLastSuccessEpoch() const {
+    if (_spiffsAvailable) {
+        return _spiffs->getLastSuccessEpoch();
+    }
+    return 0;
+}
+
+void StorageManager::setLastSuccessEpoch(int64_t epoch) {
+    if (_spiffsAvailable) {
+        _spiffs->setLastSuccessEpoch(epoch);
+    }
+}
+
+void StorageManager::addUploadHistoryRecord(const SPIFFSStorage::PersistedUploadRecord& rec) {
+    if (_spiffsAvailable) {
+        _spiffs->addUploadHistoryRecord(rec);
+    }
+}
+
+const SPIFFSStorage::PersistedUploadRecord* StorageManager::getUploadHistory(uint8_t& count, uint8_t& head) const {
+    if (_spiffsAvailable) {
+        return _spiffs->getUploadHistory(count, head);
+    }
+    count = 0;
+    head = 0;
+    return nullptr;
+}
+
 String StorageManager::getStatusString() const {
     String status = "";
 
