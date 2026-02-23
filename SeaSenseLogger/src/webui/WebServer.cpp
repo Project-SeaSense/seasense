@@ -727,7 +727,7 @@ void SeaSenseWebServer::handleCalibrate() {
 
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="readTemp()">Read Sensor</button>
-                <button class="btn btn-primary" onclick="calibrateTemp()">Calibrate</button>
+                <button class="btn btn-primary" onclick="calibrateTemp(this)">Calibrate</button>
             </div>
         </div>
 
@@ -765,7 +765,7 @@ void SeaSenseWebServer::handleCalibrate() {
 
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="readEC()">Read Sensor</button>
-                <button class="btn btn-primary" onclick="calibrateEC()">Calibrate</button>
+                <button class="btn btn-primary" onclick="calibrateEC(this)">Calibrate</button>
             </div>
         </div>
 
@@ -802,7 +802,7 @@ void SeaSenseWebServer::handleCalibrate() {
 
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="readPH()">Read Sensor</button>
-                <button class="btn btn-primary" onclick="calibratePH()">Calibrate</button>
+                <button class="btn btn-primary" onclick="calibratePH(this)">Calibrate</button>
             </div>
         </div>
 
@@ -832,7 +832,7 @@ void SeaSenseWebServer::handleCalibrate() {
 
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="readDO()">Read Sensor</button>
-                <button class="btn btn-primary" onclick="calibrateDO()">Calibrate</button>
+                <button class="btn btn-primary" onclick="calibrateDO(this)">Calibrate</button>
             </div>
         </div>
     </div>
@@ -970,24 +970,37 @@ void SeaSenseWebServer::handleCalibrate() {
         updateReadings();
         setInterval(updateReadings, 3000);
 
-        // Poll calibration status until complete or error
+        // Poll calibration status — show progress on the button, toast only at start/end
         let calPolling = false;
+        let calBtn = null;
+        let calBtnOrigText = '';
+
         function pollCalibration(sensorLabel, readFn) {
             if (calPolling) return;
             calPolling = true;
             setCalBtnsDisabled(true);
-            showToast('Calibrating ' + sensorLabel + '...', 'info');
+            showToast('Calibration started', 'info');
             const poll = setInterval(() => {
                 fetch('/api/calibrate/status')
                     .then(r => r.json())
                     .then(s => {
-                        if (s.status === 'waiting_stable' || s.status === 'preparing' || s.status === 'calibrating') {
-                            showToast(s.message || ('Calibrating ' + sensorLabel + '...'), 'info');
+                        if (s.status === 'preparing') {
+                            setCalBtnText('Preparing...');
+                            return;
+                        }
+                        if (s.status === 'waiting_stable') {
+                            const rd = s.currentReading ? ' (' + s.currentReading.toFixed(0) + ')' : '';
+                            setCalBtnText('Stabilizing...' + rd);
+                            return;
+                        }
+                        if (s.status === 'calibrating') {
+                            setCalBtnText('Calibrating...');
                             return;
                         }
                         clearInterval(poll);
                         calPolling = false;
                         setCalBtnsDisabled(false);
+                        restoreCalBtn();
                         if (s.status === 'complete') {
                             showToast(sensorLabel + ' calibration successful!', 'success');
                             if (readFn) setTimeout(readFn, 500);
@@ -999,17 +1012,33 @@ void SeaSenseWebServer::handleCalibrate() {
                         clearInterval(poll);
                         calPolling = false;
                         setCalBtnsDisabled(false);
+                        restoreCalBtn();
                         showToast('Lost connection during calibration', 'error');
                     });
             }, 1000);
         }
 
         function setCalBtnsDisabled(d) {
-            document.querySelectorAll('.btn-primary').forEach(b => { b.disabled = d; if(d) b.style.opacity='0.5'; else b.style.opacity=''; });
+            document.querySelectorAll('.btn-primary').forEach(b => {
+                b.disabled = d;
+                b.style.opacity = d ? '0.5' : '';
+            });
+            // Keep the active button visible
+            if (d && calBtn) calBtn.style.opacity = '1';
         }
 
-        function startCalibration(data, sensorLabel, readFn) {
+        function setCalBtnText(txt) {
+            if (calBtn) calBtn.textContent = txt;
+        }
+
+        function restoreCalBtn() {
+            if (calBtn) { calBtn.textContent = calBtnOrigText; calBtn = null; }
+        }
+
+        function startCalibration(data, sensorLabel, readFn, btnEl) {
             if (calPolling) { showToast('Calibration already in progress', 'error'); return; }
+            calBtn = btnEl;
+            calBtnOrigText = btnEl.textContent;
             fetch('/api/calibrate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -1020,35 +1049,36 @@ void SeaSenseWebServer::handleCalibrate() {
                 if (result.success) {
                     pollCalibration(sensorLabel, readFn);
                 } else {
+                    restoreCalBtn();
                     showToast('Calibration failed: ' + (result.error || 'Unknown error'), 'error');
                 }
             })
-            .catch(err => showToast('Error starting calibration', 'error'));
+            .catch(err => { restoreCalBtn(); showToast('Error starting calibration', 'error'); });
         }
 
-        function calibrateTemp() {
+        function calibrateTemp(btn) {
             const value = parseFloat(document.getElementById('tempValue').value);
             if (!value && value !== 0) { showToast('Please enter a reference temperature value', 'error'); return; }
-            startCalibration({ sensor: 'temperature', type: 'single', value: value || 0 }, 'Temperature', readTemp);
+            startCalibration({ sensor: 'temperature', type: 'single', value: value || 0 }, 'Temperature', readTemp, btn);
         }
 
-        function calibrateEC() {
+        function calibrateEC(btn) {
             const type = document.getElementById('ecCalType').value;
             const value = parseFloat(document.getElementById('ecValue').value);
             if (type !== 'dry' && !value && value !== 0) { showToast('Please enter a reference conductivity value', 'error'); return; }
-            startCalibration({ sensor: 'conductivity', type: type, value: value || 0 }, 'Conductivity', readEC);
+            startCalibration({ sensor: 'conductivity', type: type, value: value || 0 }, 'Conductivity', readEC, btn);
         }
 
-        function calibratePH() {
+        function calibratePH(btn) {
             const type = document.getElementById('phCalType').value;
             const value = parseFloat(document.getElementById('phValue').value);
             if (!value && value !== 0) { showToast('Please enter a reference pH value', 'error'); return; }
-            startCalibration({ sensor: 'ph', type: type, value: value }, 'pH', readPH);
+            startCalibration({ sensor: 'ph', type: type, value: value }, 'pH', readPH, btn);
         }
 
-        function calibrateDO() {
+        function calibrateDO(btn) {
             const type = document.getElementById('doCalType').value;
-            startCalibration({ sensor: 'dissolved_oxygen', type: type, value: 0 }, 'DO', readDO);
+            startCalibration({ sensor: 'dissolved_oxygen', type: type, value: 0 }, 'DO', readDO, btn);
         }
 
         // Toggle value input visibility based on calibration type
