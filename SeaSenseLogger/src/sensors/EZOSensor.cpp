@@ -356,6 +356,16 @@ bool EZOSensor::wake() {
     return (code == EZOResponseCode::SUCCESS || code == EZOResponseCode::PROCESSING);
 }
 
+int EZOSensor::getCalibrationPoints() {
+    String response;
+    EZOResponseCode code = sendCommand("Cal,?", response, 300);
+    if (code != EZOResponseCode::SUCCESS) return -1;
+    // Response format: "?Cal,N" where N is the calibration point count
+    int commaIdx = response.indexOf(',');
+    if (commaIdx < 0) return -1;
+    return response.substring(commaIdx + 1).toInt();
+}
+
 bool EZOSensor::clearCalibration() {
     String response;
     EZOResponseCode code = sendCommand("Cal,clear", response, 300);

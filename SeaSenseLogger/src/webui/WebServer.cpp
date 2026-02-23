@@ -79,6 +79,7 @@ bool SeaSenseWebServer::begin() {
     _server->on("/api/sensor/read", std::bind(&SeaSenseWebServer::handleApiSensorRead, this));
     _server->on("/api/calibrate", std::bind(&SeaSenseWebServer::handleApiCalibrate, this));
     _server->on("/api/calibrate/status", std::bind(&SeaSenseWebServer::handleApiCalibrateStatus, this));
+    _server->on("/api/calibration/info", std::bind(&SeaSenseWebServer::handleApiCalibrationInfo, this));
     _server->on("/api/data/list", std::bind(&SeaSenseWebServer::handleApiDataList, this));
     _server->on("/api/data/latest", std::bind(&SeaSenseWebServer::handleApiDataLatest, this));
     _server->on("/api/data/download", std::bind(&SeaSenseWebServer::handleApiDataDownload, this));
@@ -540,7 +541,7 @@ void SeaSenseWebServer::handleDashboard() {
         }
         function fmtSensor(type, value) {
             const t = type.toLowerCase();
-            if (t.includes('temperature')) return fmtNum(value, 1);
+            if (t.includes('temperature')) return fmtNum(value, 3);
             if (t.includes('salinity'))    return fmtNum(value, 2);
             if (t.includes('ph'))          return fmtNum(value, 2);
             if (t.includes('oxygen'))      return fmtNum(value, 2);
@@ -720,6 +721,11 @@ void SeaSenseWebServer::handleCalibrate() {
         .status-offline { background:rgba(71,85,105,0.2); color:var(--t3); border:1px solid rgba(71,85,105,0.3) }
         .cal-card.offline { opacity:0.4; pointer-events:none }
         .cal-card.offline::before { background:var(--t3) }
+        .status-partial { background:rgba(251,191,36,0.15); color:var(--wn); border:1px solid rgba(251,191,36,0.3) }
+        .cal-history { margin-top:12px; font-size:12px; color:var(--t2) }
+        .cal-history table { width:100%; border-collapse:collapse }
+        .cal-history th { text-align:left; color:var(--t3); font-weight:600; padding:4px 8px; border-bottom:1px solid var(--bd); font-size:11px; text-transform:uppercase; letter-spacing:0.5px }
+        .cal-history td { padding:4px 8px; border-bottom:1px solid rgba(26,39,68,0.3) }
         @keyframes readPulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
         .reading-pulse { animation:readPulse 0.4s ease-in-out 2 }
     </style>
@@ -747,7 +753,7 @@ void SeaSenseWebServer::handleCalibrate() {
     <div class="container">
         <!-- Temperature Calibration -->
         <div class="cal-card">
-            <div class="cal-header">Temperature Sensor <span class="status-current status-calibrated" id="tempStatus">Calibrated</span></div>
+            <div class="cal-header">Temperature Sensor <span class="status-current status-offline" id="tempStatus">...</span></div>
             <div class="cal-info">
                 <strong>EZO-RTD Temperature Sensor</strong><br>
                 Single-point calibration recommended. Use ice water (0&deg;C) or room temperature with accurate thermometer.
@@ -777,11 +783,12 @@ void SeaSenseWebServer::handleCalibrate() {
                 <button class="btn btn-secondary" onclick="readTemp()">Read Sensor</button>
                 <button class="btn btn-primary" onclick="calibrateTemp(this)">Calibrate</button>
             </div>
+            <div class="cal-history" id="tempHistory"></div>
         </div>
 
         <!-- Conductivity Calibration -->
         <div class="cal-card">
-            <div class="cal-header">Conductivity Sensor <span class="status-current status-calibrated" id="ecStatus">Calibrated</span></div>
+            <div class="cal-header">Conductivity Sensor <span class="status-current status-offline" id="ecStatus">...</span></div>
             <div class="cal-info">
                 <strong>EZO-EC Conductivity Sensor</strong><br>
                 <strong>Single point:</strong> One solution at your target range. &plusmn;2% accuracy.<br>
@@ -816,6 +823,7 @@ void SeaSenseWebServer::handleCalibrate() {
                 <button class="btn btn-secondary" onclick="readEC()">Read Sensor</button>
                 <button class="btn btn-primary" onclick="calibrateEC(this)">Calibrate</button>
             </div>
+            <div class="cal-history" id="ecHistory"></div>
         </div>
 
         <!-- pH Calibration -->
@@ -853,6 +861,7 @@ void SeaSenseWebServer::handleCalibrate() {
                 <button class="btn btn-secondary" onclick="readPH()">Read Sensor</button>
                 <button class="btn btn-primary" onclick="calibratePH(this)">Calibrate</button>
             </div>
+            <div class="cal-history" id="phHistory"></div>
         </div>
 
         <!-- Dissolved Oxygen Calibration -->
@@ -883,6 +892,7 @@ void SeaSenseWebServer::handleCalibrate() {
                 <button class="btn btn-secondary" onclick="readDO()">Read Sensor</button>
                 <button class="btn btn-primary" onclick="calibrateDO(this)">Calibrate</button>
             </div>
+            <div class="cal-history" id="doHistory"></div>
         </div>
     </div>
 
@@ -924,7 +934,7 @@ void SeaSenseWebServer::handleCalibrate() {
                     data.sensors.forEach(s => {
                         const t = s.type.toLowerCase();
                         if (t.includes('temperature')) {
-                            document.getElementById('tempReading').textContent = s.value.toFixed(1);
+                            document.getElementById('tempReading').textContent = s.value.toFixed(3);
                         } else if (t.includes('conductivity')) {
                             document.getElementById('ecReading').textContent = s.value.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
                         } else if (t === 'ph') {
@@ -935,29 +945,23 @@ void SeaSenseWebServer::handleCalibrate() {
                             doPresent = true;
                         }
                     });
-                    // Update pH card status
+                    // Update pH card online/offline (calibration badge set by loadCalInfo)
                     const phCard = document.getElementById('phCard');
-                    const phStatus = document.getElementById('phStatus');
                     if (phPresent) {
                         phCard.classList.remove('offline');
-                        phStatus.textContent = 'Connected';
-                        phStatus.className = 'status-current status-calibrated';
                     } else {
                         phCard.classList.add('offline');
-                        phStatus.textContent = 'Not Connected';
-                        phStatus.className = 'status-current status-offline';
+                        document.getElementById('phStatus').textContent = 'Not Connected';
+                        document.getElementById('phStatus').className = 'status-current status-offline';
                     }
-                    // Update DO card status
+                    // Update DO card online/offline
                     const doCard = document.getElementById('doCard');
-                    const doSt = document.getElementById('doStatus');
                     if (doPresent) {
                         doCard.classList.remove('offline');
-                        doSt.textContent = 'Connected';
-                        doSt.className = 'status-current status-calibrated';
                     } else {
                         doCard.classList.add('offline');
-                        doSt.textContent = 'Not Connected';
-                        doSt.className = 'status-current status-offline';
+                        document.getElementById('doStatus').textContent = 'Not Connected';
+                        document.getElementById('doStatus').className = 'status-current status-offline';
                     }
                 })
                 .catch(() => {});
@@ -980,7 +984,7 @@ void SeaSenseWebServer::handleCalibrate() {
             el.classList.add('reading-pulse');
             triggerRead(() => {
                 fetch('/api/sensor/reading?type=temperature').then(r => r.json())
-                    .then(data => { el.textContent = data.value.toFixed(1); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
+                    .then(data => { el.textContent = data.value.toFixed(3); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
                     .catch(() => { el.classList.remove('reading-pulse'); showToast('Error reading temperature sensor', 'error'); });
             });
         }
@@ -1052,6 +1056,7 @@ void SeaSenseWebServer::handleCalibrate() {
                         if (s.status === 'complete') {
                             showToast(sensorLabel + ' calibration successful!', 'success');
                             if (readFn) setTimeout(readFn, 500);
+                            setTimeout(loadCalInfo, 1000);
                         } else {
                             showToast('Calibration failed: ' + (s.message || 'Unknown error'), 'error');
                         }
@@ -1149,9 +1154,53 @@ void SeaSenseWebServer::handleCalibrate() {
         // Set initial default
         document.getElementById('phValue').value = '7.00';
 
+        function loadCalInfo() {
+            fetch('/api/calibration/info').then(r => r.json()).then(data => {
+                if (!data.sensors) return;
+                const labels = {
+                    temperature: { el: 'tempStatus', hist: 'tempHistory', max: 1, names: ['1-point'] },
+                    conductivity: { el: 'ecStatus', hist: 'ecHistory', max: 2, names: ['1-point','2-point'] },
+                    ph: { el: 'phStatus', hist: 'phHistory', max: 3, names: ['1-point','2-point','3-point'] },
+                    dissolved_oxygen: { el: 'doStatus', hist: 'doHistory', max: 2, names: ['1-point','2-point'] }
+                };
+                for (const [key, cfg] of Object.entries(labels)) {
+                    const s = data.sensors[key];
+                    const el = document.getElementById(cfg.el);
+                    if (!el) continue;
+                    if (!s || s.points < 0) {
+                        // Sensor not responding — handled by updateReadings offline logic
+                        continue;
+                    }
+                    if (s.points === 0) {
+                        el.textContent = 'Not Calibrated';
+                        el.className = 'status-current status-not-calibrated';
+                    } else if (s.points >= cfg.max) {
+                        el.textContent = cfg.names[s.points - 1] || (s.points + '-point');
+                        el.className = 'status-current status-calibrated';
+                    } else {
+                        el.textContent = cfg.names[s.points - 1] || (s.points + '-point');
+                        el.className = 'status-current status-partial';
+                    }
+                    // Render calibration history
+                    const histEl = document.getElementById(cfg.hist);
+                    if (histEl && s.history && s.history.length > 0) {
+                        histEl.innerHTML = '<table><tr><th>Date</th><th>Type</th><th>Value</th></tr>'
+                            + s.history.map(h => {
+                                let d = h.date || '--';
+                                if (d.length > 10) d = d.substring(0, 10);
+                                return '<tr><td>' + d + '</td><td>' + (h.type || '--') + '</td><td>' + (h.value != null ? h.value : '--') + '</td></tr>';
+                            }).join('') + '</table>';
+                    } else if (histEl) {
+                        histEl.innerHTML = '';
+                    }
+                }
+            }).catch(() => {});
+        }
+
         // Initial read
         readTemp();
         readEC();
+        loadCalInfo();
     </script>
 </body>
 </html>
@@ -1366,7 +1415,7 @@ void SeaSenseWebServer::handleData() {
         function fmtValue(v, t) {
             t = (t||'').toLowerCase();
             let d = 0;
-            if (t.includes('temp')) d = 1;
+            if (t.includes('temp')) d = 3;
             else if (t.includes('salin')) d = 2;
             else if (t.includes('ph')) d = 2;
             else if (t.includes('oxy')) d = 2;
@@ -1448,10 +1497,7 @@ void SeaSenseWebServer::handleData() {
                     tbody.innerHTML = d.history.map(e => {
                         const cls = e.success ? 'badge-ok' : 'badge-err';
                         const lbl = e.success ? 'OK' : 'FAIL';
-                        let time;
-                        if (e.start_ms > 0 && uptimeMs > 0) time = fmtAgo(uptimeMs - e.start_ms);
-                        else if (e.epoch > 0) time = fmtAgo((Date.now()/1000 - e.epoch) * 1000);
-                        else time = '--';
+                        const time = (e.epoch > 0) ? fmtAgo((Date.now()/1000 - e.epoch) * 1000) : '--';
                         return '<tr><td>' + time + '</td>'
                             + '<td><span class="badge ' + cls + '">' + lbl + '</span></td>'
                             + '<td>' + (e.record_count || 0) + '</td>'
@@ -2221,6 +2267,64 @@ void SeaSenseWebServer::handleApiCalibrateStatus() {
     sendJSON(json);
 }
 
+void SeaSenseWebServer::handleApiCalibrationInfo() {
+    extern SemaphoreHandle_t g_i2cMutex;
+    extern JsonObject getSensorMetadata(const String& sensorType);
+
+    bool locked = (g_i2cMutex != NULL) && xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(2000));
+    if (!locked) {
+        sendError("I2C bus busy, try again", 503);
+        return;
+    }
+
+    JsonDocument doc;
+    JsonObject sensors = doc["sensors"].to<JsonObject>();
+
+    // Helper struct for iteration
+    struct SensorEntry {
+        const char* key;       // JSON key
+        const char* metaType;  // device_config.json sensor type
+        EZOSensor* sensor;
+    };
+
+    SensorEntry entries[] = {
+        { "temperature",      "Temperature",      _tempSensor },
+        { "conductivity",     "Conductivity",     _ecSensor },
+        { "ph",               "pH",               _phSensor },
+        { "dissolved_oxygen",  "Dissolved Oxygen", _doSensor }
+    };
+
+    for (auto& e : entries) {
+        if (!e.sensor) continue;
+        JsonObject obj = sensors[e.key].to<JsonObject>();
+
+        int pts = e.sensor->getCalibrationPoints();
+        obj["points"] = pts;
+
+        // Calibration history from device_config.json
+        JsonObject meta = getSensorMetadata(e.metaType);
+        if (!meta.isNull() && meta["calibration"].is<JsonArray>()) {
+            JsonArray src = meta["calibration"].as<JsonArray>();
+            JsonArray hist = obj["history"].to<JsonArray>();
+            // Copy last 5 entries (most recent)
+            int start = src.size() > 5 ? src.size() - 5 : 0;
+            for (int i = start; i < (int)src.size(); i++) {
+                JsonObject h = hist.add<JsonObject>();
+                JsonObject s = src[i];
+                if (!s["date"].isNull()) h["date"] = s["date"];
+                if (!s["type"].isNull()) h["type"] = s["type"];
+                if (!s["value"].isNull()) h["value"] = s["value"];
+            }
+        }
+    }
+
+    xSemaphoreGive(g_i2cMutex);
+
+    String json;
+    serializeJson(doc, json);
+    sendJSON(json);
+}
+
 void SeaSenseWebServer::handleApiDataList() {
     StorageStats stats = _storage->getStats();
 
@@ -2342,40 +2446,23 @@ void SeaSenseWebServer::handleApiUploadForce() {
 void SeaSenseWebServer::handleApiUploadHistory() {
     extern APIUploader apiUploader;
 
-    uint8_t count = 0;
-    const UploadRecord* hist = apiUploader.getUploadHistory(count);
-    uint8_t head = apiUploader.getHistoryHead();
-
     JsonDocument doc;
     doc["total_bytes_sent"] = apiUploader.getTotalBytesSent();
     doc["total_bytes_uploaded"] = _storage->getTotalBytesUploaded();
     JsonArray arr = doc["history"].to<JsonArray>();
 
-    if (count > 0) {
-        // Serve in-memory history (millis-based, current session)
-        for (uint8_t i = 0; i < count; i++) {
-            uint8_t idx = (head + APIUploader::UPLOAD_HISTORY_SIZE - 1 - i) % APIUploader::UPLOAD_HISTORY_SIZE;
+    // Always serve persisted history (survives reboots, includes current session)
+    uint8_t pCount = 0, pHead = 0;
+    const SPIFFSStorage::PersistedUploadRecord* phist = _storage->getUploadHistory(pCount, pHead);
+    if (phist && pCount > 0) {
+        for (uint8_t i = 0; i < pCount; i++) {
+            uint8_t idx = (pHead + SPIFFSStorage::MAX_UPLOAD_HISTORY - 1 - i) % SPIFFSStorage::MAX_UPLOAD_HISTORY;
             JsonObject e = arr.add<JsonObject>();
-            e["start_ms"]    = hist[idx].startMs;
-            e["duration_ms"] = hist[idx].durationMs;
-            e["success"]     = hist[idx].success;
-            e["record_count"]  = hist[idx].recordCount;
-            e["payload_bytes"] = hist[idx].payloadBytes;
-        }
-    } else {
-        // Fallback: serve persisted history (epoch-based, survives reboots)
-        uint8_t pCount = 0, pHead = 0;
-        const SPIFFSStorage::PersistedUploadRecord* phist = _storage->getUploadHistory(pCount, pHead);
-        if (phist && pCount > 0) {
-            for (uint8_t i = 0; i < pCount; i++) {
-                uint8_t idx = (pHead + SPIFFSStorage::MAX_UPLOAD_HISTORY - 1 - i) % SPIFFSStorage::MAX_UPLOAD_HISTORY;
-                JsonObject e = arr.add<JsonObject>();
-                e["epoch"]       = phist[idx].epochTime;
-                e["duration_ms"] = phist[idx].durationMs;
-                e["success"]     = phist[idx].success;
-                e["record_count"]  = phist[idx].recordCount;
-                e["payload_bytes"] = phist[idx].payloadBytes;
-            }
+            e["epoch"]       = phist[idx].epochTime;
+            e["duration_ms"] = phist[idx].durationMs;
+            e["success"]     = phist[idx].success;
+            e["record_count"]  = phist[idx].recordCount;
+            e["payload_bytes"] = phist[idx].payloadBytes;
         }
     }
 

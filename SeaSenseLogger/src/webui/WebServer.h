@@ -153,6 +153,7 @@ private:
     // API - Calibration
     void handleApiCalibrate();
     void handleApiCalibrateStatus();
+    void handleApiCalibrationInfo();
 
     // API - Storage
     void handleApiDataList();

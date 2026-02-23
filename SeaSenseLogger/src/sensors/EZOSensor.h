@@ -126,6 +126,13 @@ public:
     bool wake();
 
     /**
+     * Query calibration point count from the probe
+     * Sends "Cal,?" command, parses "?Cal,N" response
+     * @return Number of calibration points (0=uncalibrated), or -1 on error
+     */
+    int getCalibrationPoints();
+
+    /**
      * Clear calibration data
      * Sends "Cal,clear" command
      * @return true if successful
