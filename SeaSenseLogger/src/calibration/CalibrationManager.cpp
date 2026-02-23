@@ -186,23 +186,23 @@ void CalibrationManager::cancel() {
 bool CalibrationManager::isReadingStable(float currentValue) {
     unsigned long now = millis();
 
-    // Only check stability every 500ms
+    // Only sample every 500ms
     if (now - _lastReadingTime < 500) {
         return false;
     }
     _lastReadingTime = now;
 
-    // Add to stability buffer
+    // Add to circular stability buffer
     _stabilityBuffer[_stabilityIndex] = currentValue;
     _stabilityIndex = (_stabilityIndex + 1) % STABILITY_SAMPLES;
 
-    // Need full buffer before checking stability
-    if (_stabilityIndex != 0 && _state.status == CalibrationStatus::WAITING_STABLE &&
-        (now - _state.startTime) < (STABILITY_SAMPLES * 500 + 3000)) {
+    // Minimum time in WAITING_STABLE: need full buffer + at least 5s total
+    unsigned long minStableMs = STABILITY_SAMPLES * 500 + 3000;
+    if (now - _state.startTime < minStableMs) {
         return false;
     }
 
-    // Calculate variance
+    // Calculate mean and coefficient of variation (CV)
     float mean = 0;
     for (int i = 0; i < STABILITY_SAMPLES; i++) {
         mean += _stabilityBuffer[i];
@@ -216,24 +216,31 @@ bool CalibrationManager::isReadingStable(float currentValue) {
     }
     variance /= STABILITY_SAMPLES;
 
-    // Stability threshold (adjust based on sensor type)
-    float threshold = 0.1;  // Default for temperature
+    // Use percentage-based threshold (coefficient of variation)
+    // CV = sqrt(variance) / |mean|, but we compare variance against (mean * pct)^2
+    float pct = 0.002f;  // default: 0.2% for temperature
     if (_state.sensorType == "conductivity") {
-        threshold = 50.0;  // Higher threshold for conductivity
+        pct = 0.002f;    // 0.2% — e.g. ±150 µS at 75000
     } else if (_state.sensorType == "ph") {
-        threshold = 0.02;  // pH is very precise (±0.002)
+        pct = 0.005f;    // 0.5% — e.g. ±0.035 at pH 7
     } else if (_state.sensorType == "dissolved_oxygen") {
-        threshold = 0.1;   // DO in mg/L (±0.05)
+        pct = 0.005f;    // 0.5% — e.g. ±0.04 at 8 mg/L
     }
+
+    // Threshold = (mean * pct)^2, with a small floor to avoid div-by-zero
+    float absMean = fabs(mean);
+    float limit = absMean * pct;
+    float threshold = (limit > 0.001f) ? limit * limit : 0.001f;
 
     bool stable = (variance < threshold);
 
     if (stable) {
+        float cv = (absMean > 0.001f) ? sqrt(variance) / absMean * 100.0f : 0.0f;
         Serial.print("[CALIBRATION] Reading stable: ");
         Serial.print(mean, 2);
-        Serial.print(" (variance: ");
-        Serial.print(variance, 4);
-        Serial.println(")");
+        Serial.print(" (CV: ");
+        Serial.print(cv, 3);
+        Serial.println("%)");
     }
 
     return stable;
