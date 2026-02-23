@@ -764,7 +764,8 @@ void SeaSenseWebServer::handleCalibrate() {
             <div class="cal-header">Conductivity Sensor <span class="status-current status-calibrated" id="ecStatus">Calibrated</span></div>
             <div class="cal-info">
                 <strong>EZO-EC Conductivity Sensor</strong><br>
-                Multi-point calibration recommended for best accuracy. Use standard calibration solutions (e.g. 1413 &micro;S/cm, 12880 &micro;S/cm).
+                <strong>Single point:</strong> One solution at your target range. &plusmn;2% accuracy.<br>
+                <strong>Two point:</strong> Dry &rarr; Low &rarr; High, in that order. &plusmn;1% accuracy. Requires two solutions spanning your range.
             </div>
 
             <div class="cal-section">
@@ -778,11 +779,11 @@ void SeaSenseWebServer::handleCalibrate() {
                 <label>Calibration Type</label>
                 <select id="ecCalType">
                     <option value="single">Single Point</option>
-                    <option value="dry">Dry Calibration</option>
-                    <option value="two-low">Two-Point (Low)</option>
-                    <option value="two-high">Two-Point (High)</option>
+                    <option value="dry">Two-Point: Step 1 — Dry (probe in air)</option>
+                    <option value="two-low">Two-Point: Step 2 — Low Solution</option>
+                    <option value="two-high">Two-Point: Step 3 — High Solution</option>
                 </select>
-                <small>For two-point: calibrate low point first, then high point</small>
+                <small id="ecCalHint">Calibrate with one solution at your target range</small>
             </div>
 
             <div class="form-group" id="ecValueGroup">
@@ -1111,6 +1112,13 @@ void SeaSenseWebServer::handleCalibrate() {
         // Toggle value input visibility based on calibration type
         document.getElementById('ecCalType').addEventListener('change', function() {
             document.getElementById('ecValueGroup').style.display = this.value === 'dry' ? 'none' : 'block';
+            const hints = {
+                'single': 'Calibrate with one solution at your target range',
+                'dry': 'Step 1: Ensure probe is completely dry and clean, then calibrate',
+                'two-low': 'Step 2: Place probe in LOW conductivity solution',
+                'two-high': 'Step 3: Place probe in HIGH conductivity solution'
+            };
+            document.getElementById('ecCalHint').textContent = hints[this.value] || '';
         });
 
         // Pre-fill pH reference value based on selected calibration type
