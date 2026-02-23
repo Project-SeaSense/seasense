@@ -361,9 +361,12 @@ int EZOSensor::getCalibrationPoints() {
     EZOResponseCode code = sendCommand("Cal,?", response, 300);
     if (code != EZOResponseCode::SUCCESS) return -1;
     // Response format: "?Cal,N" where N is the calibration point count
-    int commaIdx = response.indexOf(',');
+    // Use lastIndexOf in case response has extra prefix characters
+    int commaIdx = response.lastIndexOf(',');
     if (commaIdx < 0) return -1;
-    return response.substring(commaIdx + 1).toInt();
+    int pts = response.substring(commaIdx + 1).toInt();
+    // EZO sensors: RTD 0-1, EC 0-2, pH 0-3, DO 0-2 — anything else is garbage
+    return (pts >= 0 && pts <= 3) ? pts : -1;
 }
 
 bool EZOSensor::clearCalibration() {

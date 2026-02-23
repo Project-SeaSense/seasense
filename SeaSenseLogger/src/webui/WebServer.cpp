@@ -727,7 +727,7 @@ void SeaSenseWebServer::handleCalibrate() {
         .cal-history th { text-align:left; color:var(--t3); font-weight:600; padding:4px 8px; border-bottom:1px solid var(--bd); font-size:11px; text-transform:uppercase; letter-spacing:0.5px }
         .cal-history td { padding:4px 8px; border-bottom:1px solid rgba(26,39,68,0.3) }
         @keyframes readPulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-        .reading-pulse { animation:readPulse 0.4s ease-in-out 2 }
+        .reading-pulse { animation:readPulse 0.6s ease-in-out infinite }
     </style>
 </head>
 <body>
@@ -984,7 +984,7 @@ void SeaSenseWebServer::handleCalibrate() {
             el.classList.add('reading-pulse');
             triggerRead(() => {
                 fetch('/api/sensor/reading?type=temperature').then(r => r.json())
-                    .then(data => { el.textContent = data.value.toFixed(3); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
+                    .then(data => { el.textContent = data.value.toFixed(3); el.classList.remove('reading-pulse'); })
                     .catch(() => { el.classList.remove('reading-pulse'); showToast('Error reading temperature sensor', 'error'); });
             });
         }
@@ -994,7 +994,7 @@ void SeaSenseWebServer::handleCalibrate() {
             el.classList.add('reading-pulse');
             triggerRead(() => {
                 fetch('/api/sensor/reading?type=conductivity').then(r => r.json())
-                    .then(data => { el.textContent = data.value.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ','); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
+                    .then(data => { el.textContent = data.value.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ','); el.classList.remove('reading-pulse'); })
                     .catch(() => { el.classList.remove('reading-pulse'); showToast('Error reading conductivity sensor', 'error'); });
             });
         }
@@ -1004,7 +1004,7 @@ void SeaSenseWebServer::handleCalibrate() {
             el.classList.add('reading-pulse');
             triggerRead(() => {
                 fetch('/api/sensor/reading?type=ph').then(r => r.json())
-                    .then(data => { el.textContent = data.value.toFixed(2); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
+                    .then(data => { el.textContent = data.value.toFixed(2); el.classList.remove('reading-pulse'); })
                     .catch(() => { el.classList.remove('reading-pulse'); showToast('Error reading pH sensor', 'error'); });
             });
         }
@@ -1014,7 +1014,7 @@ void SeaSenseWebServer::handleCalibrate() {
             el.classList.add('reading-pulse');
             triggerRead(() => {
                 fetch('/api/sensor/reading?type=dissolved_oxygen').then(r => r.json())
-                    .then(data => { el.textContent = data.value.toFixed(2); setTimeout(() => el.classList.remove('reading-pulse'), 800); })
+                    .then(data => { el.textContent = data.value.toFixed(2); el.classList.remove('reading-pulse'); })
                     .catch(() => { el.classList.remove('reading-pulse'); showToast('Error reading DO sensor', 'error'); });
             });
         }
