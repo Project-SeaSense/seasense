@@ -190,6 +190,7 @@ private:
     void handleApiSystemRestart();
     void handleApiConfigReset();
     void handleApiClearSafeMode();
+    void handleApiFactoryReset();
 
     // ========================================================================
     // Helper Methods

@@ -383,8 +383,21 @@ void setup() {
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH);
 
-    // Initialize system health (watchdog + error tracking)
-    systemHealth.begin(WDT_TIMEOUT_MS, 255, BOOT_LOOP_WINDOW_MS);  // threshold=255 disables safe mode
+    // Initialize system health (watchdog + boot loop detection)
+    systemHealth.begin(WDT_TIMEOUT_MS, BOOT_LOOP_THRESHOLD, BOOT_LOOP_WINDOW_MS);
+
+    // Safe mode detection: if boot loop detected, skip non-essential subsystems
+    if (systemHealth.isInSafeMode()) {
+        Serial.println();
+        Serial.println("!!! ========================================= !!!");
+        Serial.print("!!! [SAFE MODE] Boot loop detected (");
+        Serial.print(systemHealth.getConsecutiveReboots());
+        Serial.println(" consecutive reboots)");
+        Serial.println("!!! [SAFE MODE] Starting minimal mode: WiFi AP + Web UI only");
+        Serial.println("!!! [SAFE MODE] Connect to SeaSense AP -> 192.168.4.1 -> clear safe mode");
+        Serial.println("!!! ========================================= !!!");
+        Serial.println();
+    }
 
     // Load device configuration
     Serial.println("\n[CONFIG] Loading device configuration...");
@@ -403,6 +416,9 @@ void setup() {
     Serial.println(getPartnerID());
     Serial.print("[CONFIG] Firmware: ");
     Serial.println(getFirmwareVersion());
+
+    // In safe mode, skip I2C, sensors, and GPS
+    if (!systemHealth.isInSafeMode()) {
 
     // Initialize I2C
     Serial.println("\n[I2C] Initializing I2C bus...");
@@ -476,6 +492,8 @@ void setup() {
         Serial.println("[ERROR] Failed to initialize GPS module");
     }
 
+    } // end !isInSafeMode() — I2C, sensors, GPS
+
     // Initialize configuration manager
     Serial.println("\n[CONFIG] Loading runtime configuration...");
     if (!configManager.begin()) {
@@ -513,6 +531,9 @@ void setup() {
     // Pin web server to Core 0 so sensor/upload work on Core 1 never blocks the UI
     xTaskCreatePinnedToCore(webServerTask, "WebServer", WEB_SERVER_TASK_STACK_SIZE, NULL, 1, NULL, 0);
     Serial.println("[WIFI] Web server task pinned to Core 0");
+
+    // In safe mode, skip API uploader, NMEA2000, I2C mutex, and pump
+    if (!systemHealth.isInSafeMode()) {
 
     // Initialize API uploader
     Serial.println("\n[API] Initializing API uploader...");
@@ -559,8 +580,14 @@ void setup() {
     pumpController.begin();
     pumpController.startPump();  // Begin first pump cycle without waiting for cycleIntervalMs
 
+    } // end !isInSafeMode() — API, NMEA2000, I2C mutex, pump
+
     Serial.println("\n===========================================");
-    Serial.println("   SeaSense Logger - Ready");
+    if (systemHealth.isInSafeMode()) {
+        Serial.println("   SeaSense Logger - SAFE MODE");
+    } else {
+        Serial.println("   SeaSense Logger - Ready");
+    }
     Serial.println("===========================================\n");
 
     digitalWrite(LED_PIN, LOW);
@@ -630,6 +657,12 @@ void loop() {
     // Feed watchdog first — if anything below hangs, WDT will reboot
     g_loopStage = "loop:start";
     systemHealth.feedWatchdog();
+
+    // Safe mode: only web server runs (on Core 0), nothing to do here
+    if (systemHealth.isInSafeMode()) {
+        delay(100);
+        return;
+    }
 
     // Update GPS sources (must be called frequently)
     g_loopStage = "gps:update";

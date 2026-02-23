@@ -189,6 +189,22 @@ void SystemHealth::clearSafeMode() {
     _consecutiveReboots = 0;
 }
 
+void SystemHealth::resetAllCounters() {
+    if (_nvsReady) {
+        nvs_erase_all(_nvsHandle);
+        nvs_commit(_nvsHandle);
+        Serial.println("[HEALTH] All NVS counters erased (factory reset)");
+    }
+
+    _rebootCount = 0;
+    _consecutiveReboots = 0;
+    _sensorErrors = 0;
+    _sdErrors = 0;
+    _apiErrors = 0;
+    _wifiErrors = 0;
+    _safeMode = false;
+}
+
 bool SystemHealth::openNVS() {
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &_nvsHandle);
     if (err != ESP_OK) {

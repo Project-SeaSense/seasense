@@ -33,6 +33,7 @@ inline esp_err_t nvs_set_u32(nvs_handle_t, const char* key, uint32_t value) {
     return ESP_OK;
 }
 
+inline esp_err_t nvs_erase_all(nvs_handle_t) { mock_nvs_store().clear(); return ESP_OK; }
 inline esp_err_t nvs_commit(nvs_handle_t) { return ESP_OK; }
 inline void nvs_close(nvs_handle_t) {}
 

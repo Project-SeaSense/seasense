@@ -100,6 +100,7 @@ bool SeaSenseWebServer::begin() {
     _server->on("/api/measurement", std::bind(&SeaSenseWebServer::handleApiMeasurement, this));
     _server->on("/api/system/restart", std::bind(&SeaSenseWebServer::handleApiSystemRestart, this));
     _server->on("/api/system/clear-safe-mode", std::bind(&SeaSenseWebServer::handleApiClearSafeMode, this));
+    _server->on("/api/system/factory-reset", std::bind(&SeaSenseWebServer::handleApiFactoryReset, this));
 
     _server->onNotFound(std::bind(&SeaSenseWebServer::handleNotFound, this));
 
@@ -349,6 +350,7 @@ void SeaSenseWebServer::handleDashboard() {
         .skel-value { width:120px; height:28px }
         .skel-env-label { width:50px; height:10px; margin-bottom:6px }
         .skel-env-value { width:70px; height:20px }
+        .spark { display:block; margin-top:8px; width:100%; height:32px }
         .measure-bar { display:flex; align-items:center; justify-content:space-between; background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:10px 16px; margin:10px 0 }
         .countdown { font-size:13px; color:var(--ac); font-weight:600; font-variant-numeric:tabular-nums; font-family:'SF Mono',ui-monospace,Consolas,monospace }
         .upload-bar { background:var(--cd); border:1px solid var(--bd); border-radius:10px; padding:8px 16px; margin:0 0 16px; font-size:12px; color:var(--t2); display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:34px }
@@ -412,6 +414,7 @@ void SeaSenseWebServer::handleDashboard() {
     </div>
 
     <script>
+        (function(){fetch('/api/status').then(function(r){return r.json()}).then(function(d){if(d.system&&d.system.safe_mode){var b=document.createElement('div');b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#7c2d12;color:#fed7aa;padding:12px 16px;font-size:13px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.3)';b.innerHTML='\u26a0\ufe0f SAFE MODE \u2014 Boot loop detected ('+d.system.consecutive_reboots+' consecutive reboots). Only WiFi and web interface are active. <button id="smClr" style="margin-left:8px;background:#ea580c;color:white;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px">Clear Safe Mode &amp; Restart</button>';document.body.prepend(b);document.body.style.paddingTop=b.offsetHeight+'px';document.getElementById('smClr').onclick=function(){this.textContent='Restarting...';this.disabled=true;fetch('/api/system/clear-safe-mode',{method:'POST'})}}}).catch(function(){})})();
         let autoUpdate = true;
         let cdAnchorMs = null;   // server-reported remaining ms
         let cdAnchorAt = null;   // Date.now() when received
@@ -548,6 +551,32 @@ void SeaSenseWebServer::handleDashboard() {
             return fmtNum(value, 0);
         }
 
+        const sparkData = {};
+        const SPARK_MAX = 30;
+        function sparkSvg(key) {
+            const pts = sparkData[key];
+            if (!pts || pts.length < 2) return '';
+            let mn = pts[0], mx = pts[0];
+            for (let i = 1; i < pts.length; i++) { if (pts[i] < mn) mn = pts[i]; if (pts[i] > mx) mx = pts[i]; }
+            const range = mx - mn || 1;
+            const w = 200, h = 32, pad = 2;
+            const coords = pts.map((v, i) => {
+                const x = (i / (pts.length - 1)) * w;
+                const y = pad + (1 - (v - mn) / range) * (h - 2 * pad);
+                return x.toFixed(1) + ',' + y.toFixed(1);
+            });
+            const polyPts = coords.join(' ');
+            const fillPts = '0,' + h + ' ' + polyPts + ' ' + w + ',' + h;
+            return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">'
+                + '<defs><linearGradient id="sg' + key.replace(/\s/g,'') + '" x1="0" y1="0" x2="0" y2="1">'
+                + '<stop offset="0%" stop-color="rgba(34,211,238,0.15)"/>'
+                + '<stop offset="100%" stop-color="rgba(34,211,238,0)"/>'
+                + '</linearGradient></defs>'
+                + '<polygon points="' + fillPts + '" fill="url(#sg' + key.replace(/\s/g,'') + ')"/>'
+                + '<polyline points="' + polyPts + '" fill="none" stroke="rgba(34,211,238,0.5)" stroke-width="1.5" stroke-linejoin="round"/>'
+                + '</svg>';
+        }
+
         function update() {
             fetch('/api/sensors')
                 .then(r => r.json())
@@ -559,6 +588,9 @@ void SeaSenseWebServer::handleDashboard() {
                             // Use new value if non-zero, otherwise keep last known
                             if (s.value !== 0) {
                                 lastGood[key] = { value: s.value, unit: s.unit, clamped: s.clamped };
+                                if (!sparkData[key]) sparkData[key] = [];
+                                sparkData[key].push(s.value);
+                                if (sparkData[key].length > SPARK_MAX) sparkData[key].shift();
                             }
                             const has = lastGood[key];
                             let valueFormatted = has ? fmtSensor(key, has.value) : '&mdash;';
@@ -572,6 +604,7 @@ void SeaSenseWebServer::handleDashboard() {
                                 <div class="sensor-value">
                                     ${valueFormatted}<span class="sensor-unit">${unit}</span>
                                 </div>
+                                ${sparkSvg(key)}
                                 ${s.serial ? `<div class="sensor-meta">Serial: ${s.serial}</div>` : ''}
                             </div>`;
                         });
@@ -647,6 +680,19 @@ void SeaSenseWebServer::handleDashboard() {
                 });
                 update();
             }).catch(() => { update(); });
+            fetch('/api/data/records?limit=50').then(r => r.json()).then(data => {
+                if (data.records) {
+                    for (let i = data.records.length - 1; i >= 0; i--) {
+                        const r = data.records[i];
+                        if (r.value === 0) continue;
+                        if (!sparkData[r.type]) sparkData[r.type] = [];
+                        sparkData[r.type].push(r.value);
+                    }
+                    Object.keys(sparkData).forEach(k => {
+                        if (sparkData[k].length > SPARK_MAX) sparkData[k] = sparkData[k].slice(-SPARK_MAX);
+                    });
+                }
+            }).catch(() => {});
         }
         loadLatest();
         updateEnv();
@@ -905,6 +951,7 @@ void SeaSenseWebServer::handleCalibrate() {
     </div>
 
     <script>
+        (function(){fetch('/api/status').then(function(r){return r.json()}).then(function(d){if(d.system&&d.system.safe_mode){var b=document.createElement('div');b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#7c2d12;color:#fed7aa;padding:12px 16px;font-size:13px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.3)';b.innerHTML='\u26a0\ufe0f SAFE MODE \u2014 Boot loop detected ('+d.system.consecutive_reboots+' consecutive reboots). Only WiFi and web interface are active. <button id="smClr" style="margin-left:8px;background:#ea580c;color:white;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px">Clear Safe Mode &amp; Restart</button>';document.body.prepend(b);document.body.style.paddingTop=b.offsetHeight+'px';document.getElementById('smClr').onclick=function(){this.textContent='Restarting...';this.disabled=true;fetch('/api/system/clear-safe-mode',{method:'POST'})}}}).catch(function(){})})();
         function toggleMenu() {
             document.getElementById('sidebar').classList.toggle('open');
             document.getElementById('overlay').classList.toggle('show');
@@ -1377,6 +1424,7 @@ void SeaSenseWebServer::handleData() {
     </div>
 
     <script>
+        (function(){fetch('/api/status').then(function(r){return r.json()}).then(function(d){if(d.system&&d.system.safe_mode){var b=document.createElement('div');b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#7c2d12;color:#fed7aa;padding:12px 16px;font-size:13px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.3)';b.innerHTML='\u26a0\ufe0f SAFE MODE \u2014 Boot loop detected ('+d.system.consecutive_reboots+' consecutive reboots). Only WiFi and web interface are active. <button id="smClr" style="margin-left:8px;background:#ea580c;color:white;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px">Clear Safe Mode &amp; Restart</button>';document.body.prepend(b);document.body.style.paddingTop=b.offsetHeight+'px';document.getElementById('smClr').onclick=function(){this.textContent='Restarting...';this.disabled=true;fetch('/api/system/clear-safe-mode',{method:'POST'})}}}).catch(function(){})})();
         let currentPage = 0;
         const PAGE_SIZE = 20;
         let totalRecords = 0;
@@ -1829,7 +1877,8 @@ void SeaSenseWebServer::handleSettings() {
         <div class="actions">
             <button type="submit" class="btn btn-primary">Save Configuration</button>
             <button type="button" class="btn btn-warning" onclick="resetConfig()">Reset to Defaults</button>
-            <button type="button" class="btn btn-danger" onclick="restartDevice()">Restart Device</button>
+            <button type="button" class="btn btn-danger" onclick="restartDevice()">Restart Device</button>\
+            <button type="button" style="background:#991b1b;color:#fecaca;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500" onclick="factoryReset()">Factory Reset</button>
         </div>
         </form>
     </div>
@@ -1846,6 +1895,7 @@ void SeaSenseWebServer::handleSettings() {
     </div>
 
     <script>
+        (function(){fetch('/api/status').then(function(r){return r.json()}).then(function(d){if(d.system&&d.system.safe_mode){var b=document.createElement('div');b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#7c2d12;color:#fed7aa;padding:12px 16px;font-size:13px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.3)';b.innerHTML='\u26a0\ufe0f SAFE MODE \u2014 Boot loop detected ('+d.system.consecutive_reboots+' consecutive reboots). Only WiFi and web interface are active. <button id="smClr" style="margin-left:8px;background:#ea580c;color:white;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px">Clear Safe Mode &amp; Restart</button>';document.body.prepend(b);document.body.style.paddingTop=b.offsetHeight+'px';document.getElementById('smClr').onclick=function(){this.textContent='Restarting...';this.disabled=true;fetch('/api/system/clear-safe-mode',{method:'POST'})}}}).catch(function(){})})();
         function toggleMenu() {
             document.getElementById('sidebar').classList.toggle('open');
             document.getElementById('overlay').classList.toggle('show');
@@ -2062,6 +2112,18 @@ void SeaSenseWebServer::handleSettings() {
                 }, 1000);
             } catch (e) {
                 showToast('Restart command sent', 'info');
+            }
+        }
+
+        async function factoryReset() {
+            if (!confirm('FACTORY RESET: This will erase ALL data, settings, calibration, and device identity. This cannot be undone. Continue?')) return;
+            if (!confirm('Are you absolutely sure? The device will restart with default settings and a new identity.')) return;
+
+            try {
+                await fetch('/api/system/factory-reset', {method: 'POST'});
+                document.body.innerHTML = '<div style="text-align:center;padding:50px;color:#e2e8f0;"><h2 style="color:#f87171;">Factory Reset Complete</h2><p style="color:#94a3b8;">Device is restarting with default settings. Please wait 30 seconds and refresh.</p></div>';
+            } catch (e) {
+                showToast('Factory reset command sent', 'info');
             }
         }
 
@@ -3173,5 +3235,48 @@ void SeaSenseWebServer::handleApiClearSafeMode() {
 
     sendJSON("{\"success\":true,\"message\":\"Safe mode cleared, restarting...\"}");
     delay(500);  // Let response send
+    ESP.restart();
+}
+
+void SeaSenseWebServer::handleApiFactoryReset() {
+    if (_server->method() != HTTP_POST) {
+        sendError("Method not allowed", 405);
+        return;
+    }
+
+    Serial.println("[FACTORY RESET] Starting factory reset...");
+
+    // 1. Clear sensor data (SPIFFS + SD)
+    if (_storage) {
+        _storage->clear();
+        Serial.println("[FACTORY RESET] Sensor data cleared");
+    }
+
+    // 2. Delete calibration overlay
+    if (SPIFFS.exists("/device_config.json")) {
+        SPIFFS.remove("/device_config.json");
+        Serial.println("[FACTORY RESET] Calibration overlay removed");
+    }
+
+    // 3. Wipe NVS counters
+    extern SystemHealth systemHealth;
+    systemHealth.resetAllCounters();
+    Serial.println("[FACTORY RESET] NVS counters reset");
+
+    // 4. Regenerate device GUID
+    if (_configManager) {
+        _configManager->regenerateDeviceGUID();
+        Serial.println("[FACTORY RESET] Device GUID regenerated");
+    }
+
+    // 5. Reset config to defaults
+    if (_configManager) {
+        _configManager->reset();
+        Serial.println("[FACTORY RESET] Configuration reset to defaults");
+    }
+
+    Serial.println("[FACTORY RESET] Complete — restarting device");
+    sendJSON("{\"success\":true,\"message\":\"Factory reset complete, restarting with defaults...\"}");
+    delay(500);
     ESP.restart();
 }

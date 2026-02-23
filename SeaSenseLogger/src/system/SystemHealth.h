@@ -85,6 +85,11 @@ public:
      */
     void clearSafeMode();
 
+    /**
+     * Factory reset: erase all NVS counters and zero in-memory state.
+     */
+    void resetAllCounters();
+
 private:
     bool _safeMode;
     bool _nvsReady;
