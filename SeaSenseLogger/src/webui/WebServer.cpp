@@ -2271,11 +2271,11 @@ void SeaSenseWebServer::handleApiDataRecords() {
     StorageStats stats = _storage->getStats();
     uint32_t total = stats.totalRecords;
 
-    // Read the full SPIFFS circular buffer so we can serve the most-recent
-    // records from the tail, regardless of page number.
-    // NOTE: Limiting this to 200 caused "recent data missing" once total>200,
-    // because only the oldest records were loaded.
-    std::vector<DataRecord> recs = _storage->readRecords(0, SPIFFS_CIRCULAR_BUFFER_SIZE);
+    // Skip directly to the page we need instead of reading all records.
+    // Page 0 = most recent, so we skip to the tail of the file.
+    uint32_t tailStart = (uint32_t)((page + 1) * limit);
+    uint32_t skip = total > tailStart ? total - tailStart : 0;
+    std::vector<DataRecord> recs = _storage->readRecords(0, limit, skip);
 
     JsonDocument doc;
     doc["total"]  = total;
@@ -2283,12 +2283,11 @@ void SeaSenseWebServer::handleApiDataRecords() {
     doc["limit"]  = limit;
     JsonArray arr = doc["records"].to<JsonArray>();
 
-    // Slice most-recent-first from tail of the read batch
-    int startIdx = (int)recs.size() - 1 - (page * (int)limit);
-    for (int i = startIdx; i > startIdx - (int)limit && i >= 0; i--) {
+    // Return in most-recent-first order
+    for (int i = (int)recs.size() - 1; i >= 0; i--) {
         JsonObject r = arr.add<JsonObject>();
         r["millis"]  = recs[i].millis;
-        r["time"]    = recs[i].timestampUTC;  // empty string if no GPS/NTP fix yet
+        r["time"]    = recs[i].timestampUTC;
         r["type"]    = recs[i].sensorType;
         r["value"]   = recs[i].value;
         r["unit"]    = recs[i].unit;

@@ -123,6 +123,8 @@ private:
     float _stabilityBuffer[STABILITY_SAMPLES];
     int _stabilityIndex;
     unsigned long _lastReadingTime;
+    float _lastCV;          // Last computed CV (%) for status messages
+    float _lastCVTarget;    // Target CV threshold (%) for status messages
 
     /**
      * Check if sensor reading is stable

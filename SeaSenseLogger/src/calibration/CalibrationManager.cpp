@@ -130,7 +130,18 @@ void CalibrationManager::update() {
             }
             break;
 
-        case CalibrationStatus::WAITING_STABLE:
+        case CalibrationStatus::WAITING_STABLE: {
+            // Timeout after 60 seconds of waiting for stability
+            if (now - _state.startTime > 60000) {
+                _state.status = CalibrationStatus::ERROR;
+                _state.message = "Timed out waiting for stable reading (CV=" +
+                               String(_lastCV, 2) + "%). Try reducing agitation.";
+                _state.success = false;
+                Serial.print("[CALIBRATION] Timeout — CV: ");
+                Serial.print(_lastCV, 2);
+                Serial.println("%");
+                break;
+            }
             // Check if reading is stable
             if (isReadingStable(currentValue)) {
                 _state.status = CalibrationStatus::CALIBRATING;
@@ -146,16 +157,18 @@ void CalibrationManager::update() {
                     Serial.println("[CALIBRATION] Success!");
                 } else {
                     _state.status = CalibrationStatus::ERROR;
-                    _state.message = "Calibration command failed";
+                    _state.message = "Calibration command failed — sensor rejected the command";
                     _state.success = false;
                     Serial.println("[CALIBRATION] Failed!");
                 }
             } else {
-                // Update stability message with current reading
-                _state.message = "Waiting for stable reading... (" +
-                               String(currentValue, 2) + ")";
+                // Show CV progress so user can see how close to stability
+                _state.message = "Stabilizing... CV=" + String(_lastCV, 2) +
+                               "% (need <" + String(_lastCVTarget, 1) +
+                               "%) — " + String(currentValue, 1);
             }
             break;
+        }
 
         case CalibrationStatus::CALIBRATING:
             // Calibration command already sent, waiting for completion
@@ -220,7 +233,7 @@ bool CalibrationManager::isReadingStable(float currentValue) {
     // CV = sqrt(variance) / |mean|, but we compare variance against (mean * pct)^2
     float pct = 0.002f;  // default: 0.2% for temperature
     if (_state.sensorType == "conductivity") {
-        pct = 0.002f;    // 0.2% — e.g. ±150 µS at 75000
+        pct = 0.005f;    // 0.5% — e.g. ±750 µS at 150000 (stirred high-EC)
     } else if (_state.sensorType == "ph") {
         pct = 0.005f;    // 0.5% — e.g. ±0.035 at pH 7
     } else if (_state.sensorType == "dissolved_oxygen") {
@@ -232,14 +245,17 @@ bool CalibrationManager::isReadingStable(float currentValue) {
     float limit = absMean * pct;
     float threshold = (limit > 0.001f) ? limit * limit : 0.001f;
 
+    // Track CV for status messages and timeout reporting
+    _lastCV = (absMean > 0.001f) ? sqrt(variance) / absMean * 100.0f : 0.0f;
+    _lastCVTarget = pct * 100.0f;
+
     bool stable = (variance < threshold);
 
     if (stable) {
-        float cv = (absMean > 0.001f) ? sqrt(variance) / absMean * 100.0f : 0.0f;
         Serial.print("[CALIBRATION] Reading stable: ");
         Serial.print(mean, 2);
         Serial.print(" (CV: ");
-        Serial.print(cv, 3);
+        Serial.print(_lastCV, 3);
         Serial.println("%)");
     }
 
@@ -357,6 +373,8 @@ void CalibrationManager::resetState() {
 
     _stabilityIndex = 0;
     _lastReadingTime = 0;
+    _lastCV = 0.0;
+    _lastCVTarget = 0.0;
     for (int i = 0; i < STABILITY_SAMPLES; i++) {
         _stabilityBuffer[i] = 0.0;
     }
