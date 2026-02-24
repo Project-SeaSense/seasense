@@ -33,13 +33,7 @@ const char DEVICE_CONFIG_JSON[] PROGMEM = R"JSON({
       "depth_cm": 10,
       "purchase_date": "2024-01-15T00:00:00Z",
       "deploy_date": "2024-05-01T00:00:00Z",
-      "calibration": [
-        {
-          "date": "2024-01-15T12:00:00Z",
-          "type": "factory",
-          "note": "Factory calibration"
-        }
-      ],
+      "calibration": [],
       "enabled": true
     },
     {
@@ -54,14 +48,7 @@ const char DEVICE_CONFIG_JSON[] PROGMEM = R"JSON({
       "depth_cm": 10,
       "purchase_date": "2024-01-15T00:00:00Z",
       "deploy_date": "2024-05-01T00:00:00Z",
-      "calibration": [
-        {
-          "date": "2024-05-10T12:00:00Z",
-          "type": "single",
-          "value": 1413,
-          "note": "Single point at 1413µS/cm solution"
-        }
-      ],
+      "calibration": [],
       "enabled": true
     },
     {

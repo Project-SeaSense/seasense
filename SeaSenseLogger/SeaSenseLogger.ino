@@ -483,6 +483,32 @@ void setup() {
         Serial.println("[SENSORS] EZO-DO not detected - disabled");
     }
 
+    // Boot-time EZO ↔ SPIFFS calibration consistency check
+    // EZO sensor is the truth for "is it calibrated"; SPIFFS is the history store.
+    Serial.println("\n[CONFIG] Checking EZO calibration vs SPIFFS history...");
+    struct CalCheck { EZOSensor* sensor; const char* type; const char* label; };
+    CalCheck calChecks[] = {
+        { &tempSensor, "Temperature", "EZO-RTD" },
+        { &ecSensor,   "Conductivity", "EZO-EC" },
+        { &phSensor,   "pH", "EZO-pH" },
+        { &doSensor,   "Dissolved Oxygen", "EZO-DO" }
+    };
+    for (auto& chk : calChecks) {
+        if (!chk.sensor->isEnabled()) continue;
+        int pts = chk.sensor->getCalibrationPoints();
+        if (pts < 0) continue;  // sensor not responding
+        JsonObject meta = getSensorMetadata(chk.type);
+        bool spiffsEmpty = meta.isNull() || !meta["calibration"].is<JsonArray>()
+                           || meta["calibration"].as<JsonArray>().size() == 0;
+        if (pts > 0 && spiffsEmpty) {
+            Serial.printf("[CONFIG] Warning: %s has %d-point calibration but no history in SPIFFS\n",
+                          chk.label, pts);
+        } else if (pts == 0 && !spiffsEmpty) {
+            Serial.printf("[CONFIG] Note: %s has SPIFFS history but EZO reports uncalibrated\n",
+                          chk.label);
+        }
+    }
+
     // Initialize GPS
     Serial.println("\n[GPS] Initializing GPS module...");
     if (gps.begin(GPS_BAUD_RATE)) {
