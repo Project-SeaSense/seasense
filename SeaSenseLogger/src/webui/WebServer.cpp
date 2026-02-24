@@ -1269,7 +1269,7 @@ void SeaSenseWebServer::handleCalibrate() {
                     const histEl = document.getElementById(cfg.hist);
                     if (histEl && s.history && s.history.length > 0) {
                         histEl.innerHTML = '<table><tr><th>Date</th><th>Type</th><th>Value</th></tr>'
-                            + s.history.map(h => {
+                            + s.history.slice().reverse().map(h => {
                                 let d = h.date || '--';
                                 if (d.length > 10) d = d.substring(0, 10);
                                 return '<tr><td>' + d + '</td><td>' + (h.type || '--') + '</td><td>' + (h.value != null ? h.value : '--') + '</td></tr>';
