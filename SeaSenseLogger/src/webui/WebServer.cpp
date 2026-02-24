@@ -557,7 +557,7 @@ void SeaSenseWebServer::handleDashboard() {
         }
 
         const sparkData = {};
-        const SPARK_MAX = 10;
+        const SPARK_MAX = 60;
         function sparkRangeLabel(key) {
             const pts = sparkData[key];
             if (!pts || pts.length < 2) return '';
