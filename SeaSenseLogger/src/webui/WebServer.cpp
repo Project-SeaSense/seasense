@@ -2527,7 +2527,7 @@ void SeaSenseWebServer::handleApiDataDownload() {
             chunk += "," + (isnan(r.humidity) ? String("") : String(r.humidity, 1));
             chunk += "," + (isnan(r.cogTrue) ? String("") : String(r.cogTrue, 1));
             chunk += "," + (isnan(r.sog) ? String("") : String(r.sog, 2));
-            chunk += "," + (isnan(r.headingTrue) ? String("") : String(r.headingTrue, 1));
+            chunk += "," + (isnan(r.heading) ? String("") : String(r.heading, 1));
             chunk += "," + (isnan(r.pitch) ? String("") : String(r.pitch, 1));
             chunk += "," + (isnan(r.roll) ? String("") : String(r.roll, 1));
             chunk += "\r\n";
