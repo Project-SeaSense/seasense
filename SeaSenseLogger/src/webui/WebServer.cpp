@@ -499,8 +499,8 @@ void SeaSenseWebServer::handleDashboard() {
                     const u = d.upload || {};
                     const uptimeMs = d.uptime_ms || 0;
                     const status = u.status || '--';
-                    const stateClass = status.startsWith('ERROR') ? 'err'
-                        : (status === 'SUCCESS' || status === 'IDLE') ? 'ok' : 'busy';
+                    const stateClass = (status === 'Success' || status === 'Idle') ? 'ok'
+                        : (status === 'Uploading' || status === 'Syncing time' || status === 'Querying data') ? 'busy' : 'err';
                     const pending = (u.pending_records != null) ? u.pending_records + ' pending' : '--';
                     const lastMs = u.last_success_ms || 0;
                     const lastEpoch = u.last_success_epoch || 0;
@@ -1528,7 +1528,8 @@ void SeaSenseWebServer::handleData() {
                     document.getElementById('statPending').textContent = (u.pending_records != null ? u.pending_records : '--') + ' pending upload';
 
                     const status = u.status || '--';
-                    const cls = status.startsWith('ERROR') ? 'badge-err' : (status === 'Success' || status === 'Idle' || status === 'No data') ? 'badge-ok' : 'badge-busy';
+                    const cls = (status === 'Success' || status === 'Idle' || status === 'No data') ? 'badge-ok'
+                        : (status === 'Uploading' || status === 'Syncing time' || status === 'Querying data') ? 'badge-busy' : 'badge-err';
                     let statusHtml = '<span class="badge ' + cls + '">' + status + '</span>';
                     if (u.last_error) {
                         statusHtml += '<div style="font-size:11px;color:#f87171;margin-top:4px;">' + u.last_error + '</div>';
