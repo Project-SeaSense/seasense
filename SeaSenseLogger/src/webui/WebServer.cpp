@@ -2472,18 +2472,68 @@ void SeaSenseWebServer::handleApiDataLatest() {
 }
 
 void SeaSenseWebServer::handleApiDataDownload() {
-    if (!SPIFFS.exists("/data.csv")) {
-        sendError("No data file found", 404);
+    StorageStats stats = _storage->getStats();
+    uint32_t total = stats.totalRecords;
+    if (total == 0) {
+        sendError("No data records", 404);
         return;
     }
-    File file = SPIFFS.open("/data.csv", FILE_READ);
-    if (!file) {
-        sendError("Failed to open data file", 500);
-        return;
-    }
+
     _server->sendHeader("Content-Disposition", "attachment; filename=\"seasense-data.csv\"");
-    _server->streamFile(file, "text/csv");
-    file.close();
+    _server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+    _server->send(200, "text/csv", "");
+
+    // Send CSV header
+    _server->sendContent("millis,timestamp_utc,latitude,longitude,altitude,gps_sats,gps_hdop,"
+        "sensor_type,sensor_model,sensor_serial,sensor_instance,calibration_date,"
+        "value,unit,quality,"
+        "wind_speed_true_ms,wind_angle_true_deg,wind_speed_app_ms,wind_angle_app_deg,"
+        "water_depth_m,stw_ms,water_temp_ext_c,air_temp_c,baro_pressure_pa,"
+        "humidity_pct,cog_deg,sog_ms,heading_deg,pitch_deg,roll_deg\r\n");
+
+    // Stream records in batches to avoid OOM
+    const uint16_t batchSize = 50;
+    for (uint32_t offset = 0; offset < total; offset += batchSize) {
+        uint16_t count = (total - offset < batchSize) ? (total - offset) : batchSize;
+        std::vector<DataRecord> recs = _storage->readRecords(0, count, offset);
+        String chunk;
+        chunk.reserve(recs.size() * 200);
+        for (const auto& r : recs) {
+            chunk += String(r.millis) + ",";
+            chunk += r.timestampUTC + ",";
+            chunk += isnan(r.latitude)  ? "," : String(r.latitude, 6) + ",";
+            chunk += isnan(r.longitude) ? "," : String(r.longitude, 6) + ",";
+            chunk += isnan(r.altitude)  ? "," : String(r.altitude, 1) + ",";
+            chunk += String(r.gps_satellites) + ",";
+            chunk += (isnan(r.gps_hdop) ? "" : String(r.gps_hdop, 1)) + ",";
+            chunk += r.sensorType + ",";
+            chunk += r.sensorModel + ",";
+            chunk += r.sensorSerial + ",";
+            chunk += String(r.sensorInstance) + ",";
+            chunk += r.calibrationDate + ",";
+            chunk += String(r.value, 2) + ",";
+            chunk += r.unit + ",";
+            chunk += r.quality;
+            chunk += "," + (isnan(r.windSpeedTrue) ? String("") : String(r.windSpeedTrue, 2));
+            chunk += "," + (isnan(r.windAngleTrue) ? String("") : String(r.windAngleTrue, 1));
+            chunk += "," + (isnan(r.windSpeedApparent) ? String("") : String(r.windSpeedApparent, 2));
+            chunk += "," + (isnan(r.windAngleApparent) ? String("") : String(r.windAngleApparent, 1));
+            chunk += "," + (isnan(r.waterDepth) ? String("") : String(r.waterDepth, 2));
+            chunk += "," + (isnan(r.speedThroughWater) ? String("") : String(r.speedThroughWater, 2));
+            chunk += "," + (isnan(r.waterTempExternal) ? String("") : String(r.waterTempExternal, 2));
+            chunk += "," + (isnan(r.airTemp) ? String("") : String(r.airTemp, 2));
+            chunk += "," + (isnan(r.baroPressure) ? String("") : String(r.baroPressure, 0));
+            chunk += "," + (isnan(r.humidity) ? String("") : String(r.humidity, 1));
+            chunk += "," + (isnan(r.cogTrue) ? String("") : String(r.cogTrue, 1));
+            chunk += "," + (isnan(r.sog) ? String("") : String(r.sog, 2));
+            chunk += "," + (isnan(r.headingTrue) ? String("") : String(r.headingTrue, 1));
+            chunk += "," + (isnan(r.pitch) ? String("") : String(r.pitch, 1));
+            chunk += "," + (isnan(r.roll) ? String("") : String(r.roll, 1));
+            chunk += "\r\n";
+        }
+        _server->sendContent(chunk);
+    }
+    _server->sendContent("");  // End chunked transfer
 }
 
 void SeaSenseWebServer::handleApiDataClear() {
