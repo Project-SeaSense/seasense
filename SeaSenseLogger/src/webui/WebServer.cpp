@@ -1262,8 +1262,8 @@ void SeaSenseWebServer::handleCalibrate() {
                         el.textContent = cfg.names[s.points - 1] || (s.points + '-point');
                         el.className = 'status-current status-calibrated';
                     } else {
-                        el.textContent = cfg.names[s.points - 1] || (s.points + '-point');
-                        el.className = 'status-current status-partial';
+                        el.textContent = (cfg.names[s.points - 1] || (s.points + '-point')) + ' calibrated';
+                        el.className = 'status-current status-calibrated';
                     }
                     // Render calibration history
                     const histEl = document.getElementById(cfg.hist);
