@@ -824,7 +824,7 @@ void SeaSenseWebServer::handleCalibrate() {
     <div class="container">
         <!-- Temperature Calibration -->
         <div class="cal-card">
-            <div class="cal-header">Temperature Sensor <span class="status-current status-offline" id="tempStatus">...</span></div>
+            <div class="cal-header">Temperature <span class="status-current status-offline" id="tempStatus">...</span></div>
             <div class="cal-info">
                 <strong>EZO-RTD Temperature Sensor</strong><br>
                 Single-point calibration recommended. Use ice water (0&deg;C) or room temperature with accurate thermometer.
@@ -861,7 +861,7 @@ void SeaSenseWebServer::handleCalibrate() {
 
         <!-- Conductivity Calibration -->
         <div class="cal-card">
-            <div class="cal-header">Conductivity Sensor <span class="status-current status-offline" id="ecStatus">...</span></div>
+            <div class="cal-header">Conductivity <span class="status-current status-offline" id="ecStatus">...</span></div>
             <div class="cal-info">
                 <strong>EZO-EC Conductivity Sensor</strong><br>
                 <strong>Single point:</strong> One solution at your target range. &plusmn;2% accuracy.<br>
@@ -903,7 +903,7 @@ void SeaSenseWebServer::handleCalibrate() {
 
         <!-- pH Calibration -->
         <div class="cal-card" id="phCard">
-            <div class="cal-header">pH Sensor <span class="status-current status-offline" id="phStatus">Not Connected</span></div>
+            <div class="cal-header">pH <span class="status-current status-offline" id="phStatus">Not Connected</span></div>
             <div class="cal-info">
                 <strong>EZO-pH Sensor</strong><br>
                 Up to 3-point calibration per Atlas Scientific specs. Always start with mid-point (pH 7.00). Add low (pH 4.00) and high (pH 10.00) for best accuracy. Rinse probe between solutions.
@@ -943,7 +943,7 @@ void SeaSenseWebServer::handleCalibrate() {
 
         <!-- Dissolved Oxygen Calibration -->
         <div class="cal-card" id="doCard">
-            <div class="cal-header">Dissolved Oxygen Sensor <span class="status-current status-offline" id="doStatus">Not Connected</span></div>
+            <div class="cal-header">Dissolved Oxygen <span class="status-current status-offline" id="doStatus">Not Connected</span></div>
             <div class="cal-info">
                 <strong>EZO-DO Sensor</strong><br>
                 Atmospheric calibration: hold probe in air with dry membrane. Zero calibration (optional): submerge in sodium sulfite (Na&#8322;SO&#8323;) solution for 0 mg/L reference.
