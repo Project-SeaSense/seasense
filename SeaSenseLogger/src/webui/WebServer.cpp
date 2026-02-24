@@ -1136,10 +1136,10 @@ void SeaSenseWebServer::handleCalibrate() {
                         if (s.status === 'complete') {
                             showToast(sensorLabel + ' calibration successful!', 'success');
                             if (readFn) setTimeout(readFn, 500);
-                            setTimeout(loadCalInfo, 1000);
                         } else {
                             showToast('Calibration failed: ' + (s.message || 'Unknown error'), 'error');
                         }
+                        setTimeout(loadCalInfo, 1000);
                     })
                     .catch(() => {
                         clearInterval(poll);

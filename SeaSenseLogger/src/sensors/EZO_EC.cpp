@@ -70,7 +70,7 @@ bool EZO_EC::calibrateDry() {
     DEBUG_SENSOR_PRINTLN("Ensure probe is dry and clean!");
 
     String response;
-    EZOResponseCode code = sendCommand("Cal,dry", response, 600);
+    EZOResponseCode code = sendCommand("Cal,dry", response, 900);
 
     if (code != EZOResponseCode::SUCCESS) {
         DEBUG_SENSOR_PRINTLN("Dry calibration failed");
@@ -89,7 +89,7 @@ bool EZO_EC::calibrateSinglePoint(float solutionValue) {
     // Build calibration command: "Cal,one,1413"
     String command = "Cal,one," + String(solutionValue, 0);
     String response;
-    EZOResponseCode code = sendCommand(command, response, 600);
+    EZOResponseCode code = sendCommand(command, response, 900);
 
     if (code != EZOResponseCode::SUCCESS) {
         DEBUG_SENSOR_PRINTLN("Single point calibration failed");
@@ -108,7 +108,7 @@ bool EZO_EC::calibrateLowPoint(float lowValue) {
     // Build calibration command: "Cal,low,84"
     String command = "Cal,low," + String(lowValue, 0);
     String response;
-    EZOResponseCode code = sendCommand(command, response, 600);
+    EZOResponseCode code = sendCommand(command, response, 900);
 
     if (code != EZOResponseCode::SUCCESS) {
         DEBUG_SENSOR_PRINTLN("Low point calibration failed");
@@ -128,7 +128,7 @@ bool EZO_EC::calibrateHighPoint(float highValue) {
     // Build calibration command: "Cal,high,1413"
     String command = "Cal,high," + String(highValue, 0);
     String response;
-    EZOResponseCode code = sendCommand(command, response, 600);
+    EZOResponseCode code = sendCommand(command, response, 900);
 
     if (code != EZOResponseCode::SUCCESS) {
         DEBUG_SENSOR_PRINTLN("High point calibration failed");

@@ -1016,9 +1016,16 @@ void loop() {
     // Feed watchdog before calibration
     systemHealth.feedWatchdog();
 
-    // Update calibration state machine
+    // Update calibration state machine (acquire I2C mutex to prevent
+    // collision with web server running on Core 0)
     g_loopStage = "calibration:update";
-    calibration.update();
+    if (calibration.isCalibrating()) {
+        bool calLocked = (g_i2cMutex != NULL) && xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(2000));
+        calibration.update();
+        if (calLocked) xSemaphoreGive(g_i2cMutex);
+    } else {
+        calibration.update();
+    }
 
     // Handle serial commands
     g_loopStage = "serial:process";

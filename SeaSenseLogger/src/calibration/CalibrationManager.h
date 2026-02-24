@@ -119,7 +119,7 @@ private:
     CalibrationState _state;
 
     // Stability detection
-    static const int STABILITY_SAMPLES = 5;
+    static const int STABILITY_SAMPLES = 10;
     float _stabilityBuffer[STABILITY_SAMPLES];
     int _stabilityIndex;
     unsigned long _lastReadingTime;

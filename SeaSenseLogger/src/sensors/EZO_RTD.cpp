@@ -44,7 +44,7 @@ bool EZO_RTD::calibrate(float referenceTemp) {
     // The sensor will use the current reading and adjust to match the reference
     String command = "Cal," + String(referenceTemp, 2);
     String response;
-    EZOResponseCode code = sendCommand(command, response, 600);
+    EZOResponseCode code = sendCommand(command, response, 900);
 
     if (code != EZOResponseCode::SUCCESS) {
         DEBUG_SENSOR_PRINTLN("Calibration failed");
