@@ -1259,7 +1259,7 @@ void SeaSenseWebServer::handleCalibrate() {
                         el.textContent = 'Not Calibrated';
                         el.className = 'status-current status-not-calibrated';
                     } else if (s.points >= cfg.max) {
-                        el.textContent = cfg.names[s.points - 1] || (s.points + '-point');
+                        el.textContent = (cfg.names[s.points - 1] || (s.points + '-point')) + ' calibrated';
                         el.className = 'status-current status-calibrated';
                     } else {
                         el.textContent = (cfg.names[s.points - 1] || (s.points + '-point')) + ' calibrated';
