@@ -610,10 +610,8 @@ void SeaSenseWebServer::handleDashboard() {
                                 lastGood[key] = { value: s.value, unit: s.unit, clamped: s.clamped };
                                 if (!sparkData[key]) sparkData[key] = [];
                                 const arr = sparkData[key];
-                                if (!arr.length || arr[arr.length-1].v !== s.value) {
-                                    arr.push({v:s.value, t:Date.now()});
-                                    if (arr.length > SPARK_MAX) arr.shift();
-                                }
+                                arr.push({v:s.value, t:Date.now()});
+                                if (arr.length > SPARK_MAX) arr.shift();
                             }
                             const has = lastGood[key];
                             let valueFormatted = has ? fmtSensor(key, has.value) : '&mdash;';
@@ -705,7 +703,7 @@ void SeaSenseWebServer::handleDashboard() {
                 });
                 update();
             }).catch(() => { update(); });
-            fetch('/api/data/records?limit=50').then(r => r.json()).then(data => {
+            fetch('/api/data/records?limit=200').then(r => r.json()).then(data => {
                 if (data.records) {
                     for (let i = data.records.length - 1; i >= 0; i--) {
                         const r = data.records[i];
@@ -2503,7 +2501,7 @@ void SeaSenseWebServer::handleApiDataClear() {
 void SeaSenseWebServer::handleApiDataRecords() {
     uint16_t limit = 20;
     uint16_t page  = 0;
-    if (_server->hasArg("limit")) { limit = (uint16_t)_server->arg("limit").toInt(); if (limit > 50) limit = 50; }
+    if (_server->hasArg("limit")) { limit = (uint16_t)_server->arg("limit").toInt(); if (limit > 200) limit = 200; }
     if (_server->hasArg("page"))  { page  = (uint16_t)_server->arg("page").toInt(); }
 
     StorageStats stats = _storage->getStats();
