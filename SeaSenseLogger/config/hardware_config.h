@@ -13,7 +13,7 @@
 
 // Override at build time: -DFIRMWARE_VERSION='"abc1234"'
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "c600ff0"
+#define FIRMWARE_VERSION ""
 #endif
 #define PARTNER_ID_DEFAULT "projectseasense"
 #define API_URL_LIVE "https://seasense.projectseasense.org"

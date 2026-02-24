@@ -81,7 +81,9 @@ arduino-cli compile \
   SeaSenseLogger
 ```
 
-The `huge_app` partition scheme is required — the firmware is ~1.5MB which exceeds the default 1.2MB partition. The `FIRMWARE_VERSION` flag stamps the git short hash into the build; without it, a fallback hash from `hardware_config.h` is used.
+**Important build notes:**
+- The `huge_app` partition scheme is required — the firmware is ~1.5MB which exceeds the default 1.2MB partition.
+- The `--build-property` flag stamps the git short hash as the firmware version. This is **required** — without it, the firmware version will be empty on the settings page. Always include this flag when compiling.
 
 ## Current Status
 
