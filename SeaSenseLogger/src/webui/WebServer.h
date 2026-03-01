@@ -18,6 +18,7 @@
 #include "../storage/StorageManager.h"
 #include "../calibration/CalibrationManager.h"
 #include "../pump/PumpController.h"
+#include "../ota/OTAManager.h"
 
 // Forward declarations
 class EZO_RTD;
@@ -100,6 +101,9 @@ private:
 
     // Configuration
     ConfigManager* _configManager;
+
+    // OTA
+    OTAManager _otaManager;
 
     // WiFi
     String _apSSID;
@@ -185,6 +189,12 @@ private:
 
     // API - Measurement mode
     void handleApiMeasurement();
+
+    // API - OTA
+    void handleApiOtaUpload();
+    void handleApiOtaStatus();
+    void handleApiOtaCheck();
+    void handleApiOtaInstall();
 
     // API - System
     void handleApiSystemRestart();

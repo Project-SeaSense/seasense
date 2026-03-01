@@ -21,6 +21,7 @@
 #include <Wire.h>
 #include <ArduinoJson.h>
 #include <time.h>
+#include <esp_ota_ops.h>
 
 // Configuration
 #include "config/hardware_config.h"
@@ -580,6 +581,10 @@ void setup() {
     if (!webServer.begin()) {
         Serial.println("[ERROR] Failed to start web server!");
     }
+
+    // OTA rollback protection: mark this firmware as valid once we reach this point
+    // If an OTA update causes a boot loop, the bootloader will roll back automatically
+    esp_ota_mark_app_valid_cancel_rollback();
 
     // Pin web server to Core 0 so sensor/upload work on Core 1 never blocks the UI
     xTaskCreatePinnedToCore(webServerTask, "WebServer", WEB_SERVER_TASK_STACK_SIZE, NULL, 1, NULL, 0);

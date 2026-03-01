@@ -103,6 +103,46 @@ bool SeaSenseWebServer::begin() {
     _server->on("/api/system/clear-safe-mode", std::bind(&SeaSenseWebServer::handleApiClearSafeMode, this));
     _server->on("/api/system/factory-reset", std::bind(&SeaSenseWebServer::handleApiFactoryReset, this));
 
+    // OTA endpoints
+    _server->on("/api/ota/status", std::bind(&SeaSenseWebServer::handleApiOtaStatus, this));
+    _server->on("/api/ota/check", std::bind(&SeaSenseWebServer::handleApiOtaCheck, this));
+    _server->on("/api/ota/install", std::bind(&SeaSenseWebServer::handleApiOtaInstall, this));
+    _server->on("/api/ota/upload", HTTP_POST,
+        // Response handler (called after upload completes)
+        [this]() {
+            if (_otaManager.getState() == OTAManager::State::SUCCESS) {
+                sendJSON("{\"success\":true,\"message\":\"Update complete, restarting...\"}");
+                delay(1000);
+                ESP.restart();
+            } else {
+                sendError(_otaManager.getErrorMessage(), 500);
+            }
+        },
+        // Upload handler (called for each chunk)
+        [this]() {
+            HTTPUpload& upload = _server->upload();
+            if (upload.status == UPLOAD_FILE_START) {
+                // Check pump state — block OTA if pump is active
+                if (_pumpController) {
+                    PumpState ps = _pumpController->getState();
+                    if (ps == PumpState::FLUSHING || ps == PumpState::MEASURING) {
+                        _otaManager.abort();
+                        return;
+                    }
+                }
+                _otaManager.begin(upload.totalSize);
+            } else if (upload.status == UPLOAD_FILE_WRITE) {
+                if (_otaManager.getState() == OTAManager::State::RECEIVING) {
+                    _otaManager.writeChunk(upload.buf, upload.currentSize);
+                }
+            } else if (upload.status == UPLOAD_FILE_END) {
+                _otaManager.end();
+            } else if (upload.status == UPLOAD_FILE_ABORTED) {
+                _otaManager.abort();
+            }
+        }
+    );
+
     _server->onNotFound(std::bind(&SeaSenseWebServer::handleNotFound, this));
 
     _server->begin();
@@ -1935,6 +1975,47 @@ void SeaSenseWebServer::handleSettings() {
             <button type="button" style="background:#991b1b;color:#fecaca;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500" onclick="factoryReset()">Factory Reset</button>
         </div>
         </form>
+
+        <!-- Firmware Update -->
+        <div class="section">
+            <h2>Firmware Update</h2>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <div>
+                    <div style="font-size:13px;color:var(--t2);">Current version</div>
+                    <div id="ota-current" style="font-size:15px;font-weight:600;color:var(--tx);font-family:monospace;">—</div>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:13px;color:var(--t2);">Max firmware size</div>
+                    <div id="ota-maxsize" style="font-size:15px;font-weight:600;color:var(--tx);">—</div>
+                </div>
+            </div>
+
+            <h3>Check for Updates</h3>
+            <div style="margin:10px 0;">
+                <button type="button" class="btn btn-primary" id="ota-check-btn" onclick="otaCheck()" style="margin:0;">Check for updates</button>
+                <span id="ota-check-result" style="margin-left:10px;font-size:13px;color:var(--t2);"></span>
+            </div>
+            <div id="ota-update-available" style="display:none;margin:10px 0;padding:12px;background:rgba(34,211,238,0.08);border:1px solid var(--bd);border-radius:8px;">
+                <div style="font-size:14px;color:var(--ac);font-weight:600;">Update available: <span id="ota-new-version"></span></div>
+                <button type="button" class="btn btn-primary" id="ota-install-btn" onclick="otaInstall()" style="margin-top:8px;">Install Update</button>
+            </div>
+
+            <h3>Manual Upload</h3>
+            <div style="margin:10px 0;">
+                <input type="file" id="ota-file" accept=".bin" style="font-size:13px;color:var(--t2);">
+                <button type="button" class="btn btn-sm" id="ota-upload-btn" onclick="otaUpload()" style="margin-left:8px;">Upload &amp; Flash</button>
+            </div>
+
+            <!-- Shared progress bar -->
+            <div id="ota-progress-wrap" style="display:none;margin-top:12px;">
+                <div style="background:var(--bg);border-radius:6px;overflow:hidden;height:22px;border:1px solid var(--bd);">
+                    <div id="ota-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--ac),var(--a2));transition:width 0.3s;border-radius:6px;display:flex;align-items:center;justify-content:center;">
+                        <span id="ota-progress-text" style="font-size:11px;font-weight:700;color:var(--bg);"></span>
+                    </div>
+                </div>
+                <div id="ota-status-text" style="font-size:12px;color:var(--t2);margin-top:4px;"></div>
+            </div>
+        </div>
     </div>
 
     <div id="restartModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;backdrop-filter:blur(4px);align-items:center;justify-content:center;">
@@ -2041,6 +2122,10 @@ void SeaSenseWebServer::handleSettings() {
                 document.getElementById('device-guid').value = config.device.device_guid || '';
                 document.getElementById('partner-id').value = config.device.partner_id || '';
                 document.getElementById('firmware-version').value = config.device.firmware_version || '';
+
+                // OTA current version
+                var otaCur = document.getElementById('ota-current');
+                if (otaCur) otaCur.textContent = config.device.firmware_version || '—';
 
             } catch (e) {
                 showToast('Failed to load configuration: ' + e.message, 'error');
@@ -2190,7 +2275,153 @@ void SeaSenseWebServer::handleSettings() {
         }
 
         document.getElementById('configForm').addEventListener('submit', saveConfig);
+
+        // === OTA Functions ===
+        let _otaUpdateUrl = '';
+
+        async function otaLoadStatus() {
+            try {
+                const d = await fetch('/api/ota/status').then(r => r.json());
+                document.getElementById('ota-maxsize').textContent = (d.maxSize / 1024).toFixed(0) + ' KB';
+            } catch(e) {}
+        }
+
+        async function otaCheck() {
+            const btn = document.getElementById('ota-check-btn');
+            const result = document.getElementById('ota-check-result');
+            btn.disabled = true; btn.textContent = 'Checking...';
+            result.textContent = '';
+            document.getElementById('ota-update-available').style.display = 'none';
+            try {
+                const d = await fetch('/api/ota/check', {method:'POST'}).then(r => r.json());
+                if (d.available) {
+                    document.getElementById('ota-new-version').textContent = d.version;
+                    document.getElementById('ota-update-available').style.display = 'block';
+                    _otaUpdateUrl = d.url;
+                    result.style.color = 'var(--ac)';
+                    result.textContent = 'New version found!';
+                } else {
+                    result.style.color = 'var(--ok)';
+                    result.textContent = 'Up to date';
+                }
+            } catch(e) {
+                result.style.color = 'var(--er)';
+                result.textContent = 'Check failed: ' + e.message;
+            }
+            btn.disabled = false; btn.textContent = 'Check for updates';
+        }
+
+        function otaShowProgress() {
+            document.getElementById('ota-progress-wrap').style.display = 'block';
+        }
+
+        function otaSetProgress(pct, text) {
+            document.getElementById('ota-progress-bar').style.width = pct + '%';
+            document.getElementById('ota-progress-text').textContent = pct + '%';
+            if (text) document.getElementById('ota-status-text').textContent = text;
+        }
+
+        let _otaPollTimer = null;
+        function otaPollProgress(cb) {
+            _otaPollTimer = setInterval(async () => {
+                try {
+                    const d = await fetch('/api/ota/status').then(r => r.json());
+                    otaSetProgress(d.progress, d.state === 'receiving' ? 'Flashing firmware...' : d.state);
+                    if (d.state === 'success') {
+                        clearInterval(_otaPollTimer);
+                        otaSetProgress(100, 'Update complete! Restarting device...');
+                        if (cb) cb();
+                    } else if (d.state === 'error') {
+                        clearInterval(_otaPollTimer);
+                        otaSetProgress(0, 'Error: ' + d.error);
+                    }
+                } catch(e) {
+                    clearInterval(_otaPollTimer);
+                    otaSetProgress(100, 'Device restarting...');
+                    if (cb) cb();
+                }
+            }, 500);
+        }
+
+        async function otaInstall() {
+            if (!_otaUpdateUrl) { showToast('No update URL', 'error'); return; }
+            if (!confirm('Install firmware update? The device will restart.')) return;
+            const btn = document.getElementById('ota-install-btn');
+            btn.disabled = true; btn.textContent = 'Installing...';
+            otaShowProgress();
+            otaSetProgress(0, 'Starting download...');
+            try {
+                await fetch('/api/ota/install', {
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({url: _otaUpdateUrl})
+                });
+                otaPollProgress(function() {
+                    setTimeout(function() { location.reload(); }, 15000);
+                });
+            } catch(e) {
+                otaSetProgress(100, 'Device restarting...');
+                setTimeout(function() { location.reload(); }, 15000);
+            }
+        }
+
+        async function otaUpload() {
+            const fileInput = document.getElementById('ota-file');
+            if (!fileInput.files.length) { showToast('Select a .bin file first', 'error'); return; }
+            const file = fileInput.files[0];
+            if (!file.name.endsWith('.bin')) { showToast('File must be a .bin firmware file', 'error'); return; }
+
+            // Client-side size check
+            try {
+                const st = await fetch('/api/ota/status').then(r => r.json());
+                if (file.size > st.maxSize) {
+                    showToast('Firmware too large: ' + (file.size/1024).toFixed(0) + ' KB, max ' + (st.maxSize/1024).toFixed(0) + ' KB', 'error');
+                    return;
+                }
+            } catch(e) {}
+
+            if (!confirm('Upload and flash ' + file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)? Device will restart.')) return;
+
+            const btn = document.getElementById('ota-upload-btn');
+            btn.disabled = true; btn.textContent = 'Uploading...';
+            otaShowProgress();
+            otaSetProgress(0, 'Uploading firmware...');
+
+            const formData = new FormData();
+            formData.append('firmware', file);
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/ota/upload', true);
+            xhr.upload.onprogress = function(e) {
+                if (e.lengthComputable) {
+                    const pct = Math.round(e.loaded * 100 / e.total);
+                    otaSetProgress(pct, 'Uploading... ' + pct + '%');
+                }
+            };
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    otaSetProgress(100, 'Update complete! Restarting device...');
+                    setTimeout(function() { location.reload(); }, 15000);
+                } else {
+                    try {
+                        const d = JSON.parse(xhr.responseText);
+                        otaSetProgress(0, 'Error: ' + (d.error || 'Upload failed'));
+                    } catch(e) {
+                        otaSetProgress(0, 'Upload failed');
+                    }
+                    btn.disabled = false; btn.textContent = 'Upload & Flash';
+                }
+            };
+            xhr.onerror = function() {
+                otaSetProgress(100, 'Device restarting...');
+                setTimeout(function() { location.reload(); }, 15000);
+            };
+            xhr.send(formData);
+        }
+
         loadConfig();
+        // Load OTA status to show max firmware size and current version
+        otaLoadStatus();
     </script>
 </body>
 </html>
@@ -3451,4 +3682,85 @@ void SeaSenseWebServer::handleApiFactoryReset() {
     sendJSON("{\"success\":true,\"message\":\"Factory reset complete, restarting with defaults...\"}");
     delay(500);
     ESP.restart();
+}
+
+// ============================================================================
+// OTA API Handlers
+// ============================================================================
+
+void SeaSenseWebServer::handleApiOtaStatus() {
+    String json = "{\"state\":\"";
+    switch (_otaManager.getState()) {
+        case OTAManager::State::IDLE:      json += "idle"; break;
+        case OTAManager::State::CHECKING:  json += "checking"; break;
+        case OTAManager::State::RECEIVING: json += "receiving"; break;
+        case OTAManager::State::SUCCESS:   json += "success"; break;
+        case OTAManager::State::ERROR:     json += "error"; break;
+    }
+    json += "\",\"progress\":";
+    json += String(_otaManager.getProgress());
+    json += ",\"maxSize\":";
+    json += String((unsigned long)_otaManager.getMaxFirmwareSize());
+    json += ",\"error\":\"";
+    json += _otaManager.getErrorMessage();
+    json += "\"}";
+    sendJSON(json);
+}
+
+void SeaSenseWebServer::handleApiOtaCheck() {
+    if (_server->method() != HTTP_POST) {
+        sendError("Method not allowed", 405);
+        return;
+    }
+
+    OTAManager::UpdateInfo info = _otaManager.checkForUpdate(FIRMWARE_VERSION);
+
+    String json = "{\"available\":";
+    json += info.available ? "true" : "false";
+    json += ",\"version\":\"";
+    json += info.version;
+    json += "\",\"url\":\"";
+    json += info.url;
+    json += "\",\"currentVersion\":\"";
+    json += FIRMWARE_VERSION;
+    json += "\"}";
+    sendJSON(json);
+}
+
+void SeaSenseWebServer::handleApiOtaInstall() {
+    if (_server->method() != HTTP_POST) {
+        sendError("Method not allowed", 405);
+        return;
+    }
+
+    // Check pump state — block OTA if pump is active
+    if (_pumpController) {
+        PumpState ps = _pumpController->getState();
+        if (ps == PumpState::FLUSHING || ps == PumpState::MEASURING) {
+            sendError("Cannot update while pump is active", 409);
+            return;
+        }
+    }
+
+    String body = _server->arg("plain");
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, body);
+    if (err) {
+        sendError("Invalid JSON", 400);
+        return;
+    }
+
+    String url = doc["url"] | "";
+    if (url.isEmpty()) {
+        sendError("Missing 'url' field", 400);
+        return;
+    }
+
+    // Start OTA in a non-blocking way — respond first, then download
+    sendJSON("{\"success\":true,\"message\":\"Starting update...\"}");
+
+    if (_otaManager.updateFromUrl(url)) {
+        delay(1000);
+        ESP.restart();
+    }
 }

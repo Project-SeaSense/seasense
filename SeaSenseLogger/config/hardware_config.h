@@ -141,7 +141,7 @@
 // ============================================================================
 
 #define SPIFFS_MOUNT_POINT "/spiffs"
-#define SPIFFS_CIRCULAR_BUFFER_SIZE 1000 // Keep last 1000 records in SPIFFS (~62h offline at 16 rec/hr)
+#define SPIFFS_CIRCULAR_BUFFER_SIZE 200 // Keep last 200 records in SPIFFS (128KB partition, config only)
 #define SD_MOUNT_POINT "/sd"
 #define SD_CSV_FILENAME "/sd/seasense_data.csv"
 #define SD_WRITE_BUFFER_SIZE 512

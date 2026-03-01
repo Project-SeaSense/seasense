@@ -25,7 +25,8 @@ TESTS = $(BUILDDIR)/test_config_clamp \
         $(BUILDDIR)/test_upload_tracking \
         $(BUILDDIR)/test_gps_nan_guard \
         $(BUILDDIR)/test_pump_controller \
-        $(BUILDDIR)/test_wind_correction
+        $(BUILDDIR)/test_wind_correction \
+        $(BUILDDIR)/test_ota_manager
 
 .PHONY: all test clean
 
@@ -91,6 +92,10 @@ $(BUILDDIR)/test_pump_controller: test_pump_controller.cpp $(SRCDIR)/src/pump/Pu
 
 # Wind correction (tilt de-bias) tests
 $(BUILDDIR)/test_wind_correction: test_wind_correction.cpp $(SRCDIR)/src/sensors/WindCorrection.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
+
+# OTA manager state machine + version parsing tests
+$(BUILDDIR)/test_ota_manager: test_ota_manager.cpp $(SRCDIR)/src/ota/OTAManager.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
 
 clean:

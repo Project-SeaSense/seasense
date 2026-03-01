@@ -70,10 +70,21 @@
 - Watchdog feeding, error counters, diagnostics
 - Clear safe mode via web API or serial command
 
+#### Phase 6: OTA Firmware Updates
+- **OTAManager** - Firmware update via web UI (Settings page)
+- Two update methods: GitHub Releases check + manual .bin upload
+- Device polls `api.github.com/repos/Project-SeaSense/seasense/releases/latest`
+- Compares `tag_name` (e.g. `fw-abc1234`) with current `FIRMWARE_VERSION`
+- Downloads .bin asset with redirect following → streams to OTA partition
+- Manual upload: browser uploads .bin via chunked HTTP POST
+- Partition layout: 4MB flash, dual OTA slots (2 x 1.875 MB), 128KB SPIFFS, 64KB coredump
+- Safety: size check (client + server + OTAManager), MD5 (ESP32 Update.h), pump state check
+- Rollback protection: `esp_ota_mark_app_valid_cancel_rollback()` after successful boot
+- Progress tracking via `/api/ota/status` endpoint
+
 ### Pending
 - NMEA2000 PGN generation (transmit sensor data to bus)
 - BLE configuration interface
-- OTA firmware updates
 - Gzip payload compression
 
 ---
@@ -451,8 +462,14 @@ WiFi credentials and API keys (git-ignored):
    - Bluetooth Low Energy interface for mobile app setup
    - Sensor configuration without WiFi
 
-3. **OTA Firmware Updates**
-   - Over-the-air updates via web UI or cloud API
+3. **OTA Firmware Updates** (Implemented)
+   - Dual OTA partition layout: 4MB flash, 2 x 1.875 MB app slots + 128KB SPIFFS
+   - Server check: polls GitHub Releases API for latest release tag
+   - Manual upload: .bin file upload via browser (Settings page)
+   - Rollback protection via `esp_ota_mark_app_valid_cancel_rollback()`
+   - Pump safety: blocks OTA when pump is in FLUSHING or MEASURING state
+   - Max firmware size: ~1.875 MB per OTA slot (~375KB headroom over current ~1.5MB)
+   - Deploy workflow: `gh release create "fw-$(git rev-parse --short HEAD)"` with .bin asset
 
 ### Future Enhancements
 
