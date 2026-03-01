@@ -527,11 +527,22 @@ void setup() {
     }
 
     // Initialize BNO085 IMU (optional — N2K attitude fallback if absent)
+    // Retry up to 3 times — sensor may not respond on first probe after cold boot
     Serial.println("\n[IMU] Probing BNO085...");
-    if (imu.begin()) {
-        Serial.println("[IMU] BNO085 initialized");
-    } else {
-        Serial.println("[IMU] BNO085 not detected — N2K attitude fallback");
+    {
+        bool imuOk = false;
+        for (int attempt = 0; attempt < 3 && !imuOk; attempt++) {
+            if (attempt > 0) {
+                Serial.printf("[IMU] Retry %d/2...\n", attempt);
+                delay(100);
+            }
+            imuOk = imu.begin();
+        }
+        if (imuOk) {
+            Serial.println("[IMU] BNO085 initialized");
+        } else {
+            Serial.println("[IMU] BNO085 not detected — N2K attitude fallback");
+        }
     }
 
     } // end !isInSafeMode() — I2C, sensors, GPS
@@ -599,19 +610,40 @@ void setup() {
     }
 
     // Initialize NMEA2000 GPS listener
+    // Run in a separate task with timeout — CAN bus init can hang indefinitely
+    // on cold boot when no transceiver is connected, triggering the watchdog
     Serial.println("\n[N2K] Initializing NMEA2000 GPS listener...");
-    if (n2kGPS.begin()) {
-        Serial.println("[N2K] NMEA2000 GPS listener initialized");
+    {
+        struct N2KInitCtx { SemaphoreHandle_t sem; bool ok; };
+        static N2KInitCtx n2kCtx;
+        n2kCtx.sem = xSemaphoreCreateBinary();
+        n2kCtx.ok = false;
 
-        // Initialize NMEA2000 environmental listener (shares CAN bus with GPS)
-        tNMEA2000* n2kInstance = n2kGPS.getN2kInstance();
-        if (n2kInstance) {
-            n2kEnv.begin(n2kInstance);
-            n2kGPS.setMsgForwardCallback(n2kMsgForward);
-            Serial.println("[N2K] NMEA2000 environmental listener initialized");
+        TaskHandle_t n2kTaskHandle = NULL;
+        xTaskCreate([](void* p) {
+            auto* c = (N2KInitCtx*)p;
+            c->ok = n2kGPS.begin();
+            xSemaphoreGive(c->sem);
+            vTaskDelete(NULL);
+        }, "N2KInit", 4096, &n2kCtx, 1, &n2kTaskHandle);
+
+        if (xSemaphoreTake(n2kCtx.sem, pdMS_TO_TICKS(10000)) == pdTRUE) {
+            if (n2kCtx.ok) {
+                Serial.println("[N2K] NMEA2000 GPS listener initialized");
+                tNMEA2000* n2kInstance = n2kGPS.getN2kInstance();
+                if (n2kInstance) {
+                    n2kEnv.begin(n2kInstance);
+                    n2kGPS.setMsgForwardCallback(n2kMsgForward);
+                    Serial.println("[N2K] NMEA2000 environmental listener initialized");
+                }
+            } else {
+                Serial.println("[WARNING] NMEA2000 GPS init failed (CAN bus unavailable?)");
+            }
+        } else {
+            Serial.println("[WARNING] NMEA2000 init timed out (CAN bus hang) — skipping");
+            vTaskDelete(n2kTaskHandle);
         }
-    } else {
-        Serial.println("[WARNING] NMEA2000 GPS init failed (CAN bus unavailable?)");
+        vSemaphoreDelete(n2kCtx.sem);
     }
 
     // Create I2C mutex for thread-safe sensor access (Core 0 web vs Core 1 loop)
