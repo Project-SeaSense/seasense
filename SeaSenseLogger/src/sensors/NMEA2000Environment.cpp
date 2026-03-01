@@ -7,6 +7,7 @@
 
 #include "NMEA2000Environment.h"
 #include "../../config/hardware_config.h"
+#include <initializer_list>
 
 // ============================================================================
 // Constructor
@@ -130,6 +131,35 @@ String NMEA2000Environment::getStatusString() const {
     if (_heading.isValid()) status += " Heading";
     if (_pitch.isValid() || _roll.isValid()) status += " Attitude";
     return status;
+}
+
+// Helper: return the smallest age among the given fields (most recent update)
+static unsigned long minAge(std::initializer_list<unsigned long> ages) {
+    unsigned long best = ULONG_MAX;
+    for (auto a : ages) if (a < best) best = a;
+    return best;
+}
+
+unsigned long NMEA2000Environment::getWindAgeMs() const {
+    return minAge({_windSpeedTrue.ageMs(), _windAngleTrue.ageMs(),
+                   _windSpeedApparent.ageMs(), _windAngleApparent.ageMs()});
+}
+
+unsigned long NMEA2000Environment::getWaterAgeMs() const {
+    return minAge({_waterDepth.ageMs(), _speedThroughWater.ageMs(),
+                   _waterTempExternal.ageMs()});
+}
+
+unsigned long NMEA2000Environment::getAtmoAgeMs() const {
+    return minAge({_airTemp.ageMs(), _baroPressure.ageMs(), _humidity.ageMs()});
+}
+
+unsigned long NMEA2000Environment::getNavAgeMs() const {
+    return minAge({_cogTrue.ageMs(), _sog.ageMs(), _heading.ageMs()});
+}
+
+unsigned long NMEA2000Environment::getAttitudeAgeMs() const {
+    return minAge({_pitch.ageMs(), _roll.ageMs()});
 }
 
 // ============================================================================

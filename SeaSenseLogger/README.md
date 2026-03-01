@@ -10,6 +10,7 @@ ESP32-based water quality logger for Atlas Scientific EZO sensors. Logs temperat
 - **Atlas Scientific EZO-pH** - pH sensor, I2C 0x63 (optional)
 - **Atlas Scientific EZO-DO** - Dissolved oxygen sensor, I2C 0x61 (optional)
 - **NEO-6M GPS module** - For self-reliant time and location (UART2)
+- **BNO085 IMU** - Hull-mounted 9-DOF IMU for pitch/roll and wind correction (I2C 0x4A, optional)
 - **CAN bus transceiver** - For NMEA2000 network (e.g., SN65HVD230)
 - **SD card module** - For permanent data storage
 - **Pump relay module** - For water flow control during measurements
@@ -38,6 +39,7 @@ ESP32-based water quality logger for Atlas Scientific EZO sensors. Logs temperat
      - **TinyGPSPlus** by Mikal Hart
      - **NMEA2000** by Timo Lappalainen — for NMEA2000 bus communication
      - **N2kMessages** — NMEA2000 message definitions
+     - **Adafruit BNO08x** by Adafruit — for BNO085 IMU (SH2 protocol)
 
 4. **Select Board**
    - Tools → Board → ESP32 Arduino → **ESP32S3 Dev Module**
@@ -98,6 +100,8 @@ arduino-cli compile \
 - Dual storage (SPIFFS circular buffer + SD card permanent) with power-loss protection
 - GPS module integration (NEO-6M) for self-reliant time and location
 - NMEA2000 GPS and environment data capture (wind, depth, heading, attitude, atmosphere)
+- BNO085 IMU for hull-mounted pitch/roll sensing with automatic wind tilt correction
+- Dashboard with per-source labels (IMU/N2K/NEO) and data freshness indicators
 - Web UI for real-time monitoring, calibration, configuration, and data management
 - API upload with bandwidth management and retry with exponential backoff
 - Verbose API error diagnostics (auth, DNS, timeout, rate limit, server errors)
@@ -118,6 +122,8 @@ All sensors are optional — the system auto-detects connected hardware at start
 - **Dissolved Oxygen** (EZO-DO): 0.01–100+ mg/L, ±0.05 mg/L accuracy
 - **Salinity**: Calculated from conductivity and temperature (PSS-78)
 - **Quality tracking**: Each reading assessed for validity and quality
+- **IMU** (BNO085): Pitch/roll at 100Hz, linear acceleration, DCD auto-calibration
+- **Wind correction**: Apparent wind corrected for hull tilt using IMU pitch/roll
 
 ### Data Management
 - Full sensor provenance in every data record
@@ -132,6 +138,7 @@ All sensors are optional — the system auto-detects connected hardware at start
 - Real-time sensor monitoring dashboard with live readings
 - pH and DO sensor cards auto-appear when connected, show "Not Connected" when absent
 - Live NMEA2000 environment data (wind, depth, heading, atmosphere, attitude)
+- Per-source labels on every card (IMU, N2K, NEO) with data age indicators
 - Guided calibration workflow for all four sensor types
 - Pump controller status and configuration
 - Data viewing with UTC timestamps, upload history, and storage stats
@@ -266,7 +273,9 @@ SeaSenseLogger/
 │   │   ├── EZO_DO.h/.cpp       # Dissolved oxygen sensor
 │   │   ├── GPSModule.h/.cpp    # NEO-6M GPS
 │   │   ├── NMEA2000GPS.h/.cpp  # NMEA2000 GPS source
-│   │   └── NMEA2000Environment.h/.cpp  # NMEA2000 environment data
+│   │   ├── NMEA2000Environment.h/.cpp  # NMEA2000 environment data
+│   │   ├── BNO085Module.h/.cpp # BNO085 IMU (pitch/roll/accel)
+│   │   └── WindCorrection.h/.cpp  # Tilt-corrected wind calculation
 │   ├── storage/
 │   │   ├── StorageInterface.h  # Abstract storage interface
 │   │   ├── SPIFFSStorage.h/.cpp
@@ -296,7 +305,8 @@ SeaSenseLogger/
     ├── test_millis_rollover.cpp
     ├── test_upload_timing.cpp
     ├── test_upload_tracking.cpp
-    └── test_system_health.cpp
+    ├── test_system_health.cpp
+    └── test_wind_correction.cpp
 ```
 
 ## Contributing

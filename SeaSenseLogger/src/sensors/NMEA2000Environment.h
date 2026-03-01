@@ -116,6 +116,16 @@ public:
      */
     String getStatusString() const;
 
+    /**
+     * Per-group age in ms since last update (ULONG_MAX if never received).
+     * Uses the most recently updated field within each group.
+     */
+    unsigned long getWindAgeMs() const;
+    unsigned long getWaterAgeMs() const;
+    unsigned long getAtmoAgeMs() const;
+    unsigned long getNavAgeMs() const;
+    unsigned long getAttitudeAgeMs() const;
+
 private:
     // Cached values with per-field timestamps
     struct CachedField {
@@ -136,6 +146,11 @@ private:
 
         float get() const {
             return isValid() ? value : NAN;
+        }
+
+        // Age in ms since last update (ULONG_MAX if never received)
+        unsigned long ageMs() const {
+            return lastUpdateMs > 0 ? millis() - lastUpdateMs : ULONG_MAX;
         }
     };
 

@@ -15,6 +15,7 @@
 #include "../sensors/NMEA2000GPS.h"
 #include "../api/APIUploader.h"
 #include "../sensors/NMEA2000Environment.h"
+#include "../sensors/BNO085Module.h"
 #include <ArduinoJson.h>
 #include <SPIFFS.h>
 
@@ -340,6 +341,8 @@ void SeaSenseWebServer::handleDashboard() {
         .env-unit { font-size:11px; color:var(--t2); margin-left:2px; font-weight:400 }
         .env-none { text-align:center; padding:20px; color:var(--t3); font-size:13px; grid-column:1/-1 }
         .env-nodata { font-size:9px; color:var(--t3); font-style:italic; margin-top:2px }
+        .env-src { font-size:8px; background:rgba(34,211,238,0.15); color:var(--ac); padding:1px 4px; border-radius:3px; margin-left:5px; font-weight:700; letter-spacing:0.5px; vertical-align:middle }
+        .env-age { font-weight:400; opacity:0.7 }
         .loading-pulse { animation:pulse 2s ease-in-out infinite }
         @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
         .status-msg { text-align:center; padding:30px; color:var(--t3); font-size:13px }
@@ -657,11 +660,23 @@ void SeaSenseWebServer::handleDashboard() {
                 });
         }
 
-        function envCard(label, value, unit) {
+        function fmtAge(ms) {
+            if (ms === undefined || ms === null) return '';
+            if (ms < 1000) return '<1s';
+            const s = Math.floor(ms / 1000);
+            if (s < 60) return s + 's';
+            const m = Math.floor(s / 60);
+            if (m < 60) return m + 'm';
+            return Math.floor(m / 60) + 'h';
+        }
+        function envCard(label, value, unit, src, ageMs) {
+            const ageTxt = fmtAge(ageMs);
+            const ageSpan = ageTxt ? ` <span class="env-age">${ageTxt}</span>` : '';
+            const srcBadge = src ? `<span class="env-src">${src}${ageSpan}</span>` : '';
             if (value !== undefined) {
-                return `<div class="env-card"><div class="env-label">${label}</div><div class="env-value">${value}<span class="env-unit">${unit}</span></div></div>`;
+                return `<div class="env-card"><div class="env-label">${label}${srcBadge}</div><div class="env-value">${value}<span class="env-unit">${unit}</span></div></div>`;
             }
-            return `<div class="env-card stale"><div class="env-label">${label}</div><div class="env-value">&mdash;<span class="env-unit"></span></div><div class="env-nodata">no data</div></div>`;
+            return `<div class="env-card stale"><div class="env-label">${label}${srcBadge}</div><div class="env-value">&mdash;<span class="env-unit"></span></div><div class="env-nodata">no data</div></div>`;
         }
 
         function updateEnv() {
@@ -670,27 +685,37 @@ void SeaSenseWebServer::handleDashboard() {
                 .then(d => {
                     const n = d.navigation || {};
                     const a = d.attitude || {};
+                    const g = d.gps || {};
+                    const imuD = d.imu || {};
+                    const nSrc = n.source || 'N2K';
                     let nav = '';
-                    nav += envCard('COG', n.cog, '\u00B0');
-                    nav += envCard('SOG', n.sog, 'm/s');
-                    nav += envCard('Heading', n.heading, '\u00B0');
-                    nav += envCard('STW', d.water ? d.water.stw : undefined, 'm/s');
-                    nav += envCard('Pitch', a.pitch, '\u00B0');
-                    nav += envCard('Roll', a.roll, '\u00B0');
+                    nav += envCard('COG', n.cog, '\u00B0', nSrc, n.age_ms);
+                    nav += envCard('SOG', n.sog, 'm/s', nSrc, n.age_ms);
+                    nav += envCard('Heading', a.heading, '\u00B0', a.heading_source || nSrc, a.age_ms);
+                    const wat = d.water || {};
+                    nav += envCard('STW', wat.stw, 'm/s', 'N2K', wat.age_ms);
+                    nav += envCard('Pitch', a.pitch, '\u00B0', a.pitch_source || 'N2K', a.age_ms);
+                    nav += envCard('Roll', a.roll, '\u00B0', a.roll_source || 'N2K', a.age_ms);
+                    if (g.has_fix) nav += envCard('GPS', g.satellites + ' sats', 'HDOP ' + (g.hdop||'?'), g.source, g.age_ms);
+                    if (imuD.detected && imuD.accel_x !== undefined) {
+                        const mag = Math.sqrt(imuD.accel_x*imuD.accel_x + imuD.accel_y*imuD.accel_y + imuD.accel_z*imuD.accel_z).toFixed(2);
+                        nav += envCard('Accel', mag, 'm/s\u00B2', 'IMU', imuD.accel_age_ms);
+                    }
                     document.getElementById('envNav').innerHTML = nav;
 
                     const w = d.wind || {};
                     const atm = d.atmosphere || {};
-                    const wat = d.water || {};
+                    const wSrc = w.source || 'N2K';
+                    const aSrc = atm.source || 'N2K';
                     let env = '';
-                    env += envCard('Water Temp', wat.temp_ext, '\u00B0C');
-                    env += envCard('Air Temp', atm.air_temp, '\u00B0C');
-                    env += envCard('Depth', wat.depth, 'm');
-                    env += envCard('Pressure', atm.pressure_hpa, 'hPa');
-                    env += envCard('True Wind', w.speed_true, 'm/s');
-                    env += envCard('Wind Dir', w.angle_true, '\u00B0');
-                    env += envCard('Humidity', atm.humidity, '%');
-                    env += envCard('App Wind', w.speed_app, 'm/s');
+                    env += envCard('Water Temp', wat.temp_ext, '\u00B0C', 'N2K', wat.age_ms);
+                    env += envCard('Air Temp', atm.air_temp, '\u00B0C', aSrc, atm.age_ms);
+                    env += envCard('Depth', wat.depth, 'm', 'N2K', wat.age_ms);
+                    env += envCard('Pressure', atm.pressure_hpa, 'hPa', aSrc, atm.age_ms);
+                    env += envCard('True Wind', w.speed_true, 'm/s', wSrc, w.age_ms);
+                    env += envCard('Wind Dir', w.angle_true, '\u00B0', wSrc, w.age_ms);
+                    env += envCard('Humidity', atm.humidity, '%', aSrc, atm.age_ms);
+                    env += envCard('App Wind', w.speed_app, 'm/s', wSrc, w.age_ms);
                     document.getElementById('envData').innerHTML = env;
                 })
                 .catch(() => {});
@@ -2490,7 +2515,9 @@ void SeaSenseWebServer::handleApiDataDownload() {
         "value,unit,quality,"
         "wind_speed_true_ms,wind_angle_true_deg,wind_speed_app_ms,wind_angle_app_deg,"
         "water_depth_m,stw_ms,water_temp_ext_c,air_temp_c,baro_pressure_pa,"
-        "humidity_pct,cog_deg,sog_ms,heading_deg,pitch_deg,roll_deg\r\n");
+        "humidity_pct,cog_deg,sog_ms,heading_deg,pitch_deg,roll_deg,"
+        "wind_speed_corr_ms,wind_angle_corr_deg,"
+        "lin_accel_x,lin_accel_y,lin_accel_z\r\n");
 
     // Stream records in batches to avoid OOM
     const uint16_t batchSize = 50;
@@ -2530,6 +2557,11 @@ void SeaSenseWebServer::handleApiDataDownload() {
             chunk += "," + (isnan(r.heading) ? String("") : String(r.heading, 1));
             chunk += "," + (isnan(r.pitch) ? String("") : String(r.pitch, 1));
             chunk += "," + (isnan(r.roll) ? String("") : String(r.roll, 1));
+            chunk += "," + (isnan(r.windSpeedCorrected) ? String("") : String(r.windSpeedCorrected, 2));
+            chunk += "," + (isnan(r.windAngleCorrected) ? String("") : String(r.windAngleCorrected, 1));
+            chunk += "," + (isnan(r.linAccelX) ? String("") : String(r.linAccelX, 3));
+            chunk += "," + (isnan(r.linAccelY) ? String("") : String(r.linAccelY, 3));
+            chunk += "," + (isnan(r.linAccelZ) ? String("") : String(r.linAccelZ, 3));
             chunk += "\r\n";
         }
         _server->sendContent(chunk);
@@ -2911,40 +2943,97 @@ void SeaSenseWebServer::handleApiStatus() {
 
 void SeaSenseWebServer::handleApiEnvironment() {
     extern NMEA2000Environment n2kEnv;
+    extern BNO085Module imu;
+    extern NMEA2000GPS n2kGPS;
+    extern bool activeGPSHasValidFix();
+    extern GPSData activeGPSGetData();
+    extern unsigned long activeGPSGetAgeMs();
 
     N2kEnvironmentData env = n2kEnv.getSnapshot();
+    IMUData imuData = imu.getSnapshot();
     JsonDocument doc;
-    doc["has_any"] = n2kEnv.hasAnyData();
+    doc["has_any"] = n2kEnv.hasAnyData() || imu.isInitialized();
 
-    // Wind
+    // GPS source
+    JsonObject gps = doc["gps"].to<JsonObject>();
+    gps["has_fix"] = activeGPSHasValidFix();
+    gps["source"] = n2kGPS.hasValidFix() ? "N2K" : "NEO";
+    unsigned long gpsAge = activeGPSGetAgeMs();
+    if (gpsAge != ULONG_MAX) gps["age_ms"] = gpsAge;
+    if (activeGPSHasValidFix()) {
+        GPSData gd = activeGPSGetData();
+        gps["satellites"] = gd.satellites;
+        gps["hdop"] = serialized(String(gd.hdop, 1));
+    }
+
+    // Wind (always N2K)
     JsonObject wind = doc["wind"].to<JsonObject>();
+    wind["source"] = "N2K";
+    unsigned long windAge = n2kEnv.getWindAgeMs();
+    if (windAge != ULONG_MAX) wind["age_ms"] = windAge;
     if (!isnan(env.windSpeedTrue))     wind["speed_true"] = serialized(String(env.windSpeedTrue, 1));
     if (!isnan(env.windAngleTrue))     wind["angle_true"] = serialized(String(env.windAngleTrue, 0));
     if (!isnan(env.windSpeedApparent)) wind["speed_app"] = serialized(String(env.windSpeedApparent, 1));
     if (!isnan(env.windAngleApparent)) wind["angle_app"] = serialized(String(env.windAngleApparent, 0));
 
-    // Water
+    // Water (always N2K)
     JsonObject water = doc["water"].to<JsonObject>();
+    water["source"] = "N2K";
+    unsigned long waterAge = n2kEnv.getWaterAgeMs();
+    if (waterAge != ULONG_MAX) water["age_ms"] = waterAge;
     if (!isnan(env.waterDepth))        water["depth"] = serialized(String(env.waterDepth, 1));
     if (!isnan(env.speedThroughWater)) water["stw"] = serialized(String(env.speedThroughWater, 1));
     if (!isnan(env.waterTempExternal)) water["temp_ext"] = serialized(String(env.waterTempExternal, 1));
 
-    // Atmosphere
+    // Atmosphere (always N2K)
     JsonObject atmo = doc["atmosphere"].to<JsonObject>();
+    atmo["source"] = "N2K";
+    unsigned long atmoAge = n2kEnv.getAtmoAgeMs();
+    if (atmoAge != ULONG_MAX) atmo["age_ms"] = atmoAge;
     if (!isnan(env.airTemp))      atmo["air_temp"] = serialized(String(env.airTemp, 1));
     if (!isnan(env.baroPressure)) atmo["pressure_hpa"] = serialized(String(env.baroPressure / 100.0f, 1));
     if (!isnan(env.humidity))     atmo["humidity"] = serialized(String(env.humidity, 0));
 
-    // Navigation
+    // Navigation (always N2K)
     JsonObject nav = doc["navigation"].to<JsonObject>();
+    nav["source"] = "N2K";
+    unsigned long navAge = n2kEnv.getNavAgeMs();
+    if (navAge != ULONG_MAX) nav["age_ms"] = navAge;
     if (!isnan(env.cogTrue)) nav["cog"] = serialized(String(env.cogTrue, 0));
     if (!isnan(env.sog))    nav["sog"] = serialized(String(env.sog, 1));
     if (!isnan(env.heading)) nav["heading"] = serialized(String(env.heading, 0));
 
-    // Attitude
+    // Attitude — IMU overrides N2K for pitch/roll, heading always N2K
     JsonObject att = doc["attitude"].to<JsonObject>();
-    if (!isnan(env.pitch)) att["pitch"] = serialized(String(env.pitch, 1));
-    if (!isnan(env.roll))  att["roll"] = serialized(String(env.roll, 1));
+    bool imuHasPR = imuData.hasOrientation && (!isnan(imuData.pitch) || !isnan(imuData.roll));
+    att["pitch_source"] = imuHasPR ? "IMU" : "N2K";
+    att["roll_source"] = imuHasPR ? "IMU" : "N2K";
+    att["heading_source"] = "N2K";
+    // Age: use IMU age for pitch/roll if IMU active, N2K attitude age otherwise
+    unsigned long attAge = imuHasPR ? imu.getOrientationAgeMs() : n2kEnv.getAttitudeAgeMs();
+    if (attAge != ULONG_MAX) att["age_ms"] = attAge;
+    // Use IMU pitch/roll if available, else N2K
+    att["pitch"] = serialized(String(imuHasPR && !isnan(imuData.pitch) ? imuData.pitch : env.pitch, 1));
+    att["roll"] = serialized(String(imuHasPR && !isnan(imuData.roll) ? imuData.roll : env.roll, 1));
+    if (!isnan(env.heading)) att["heading"] = serialized(String(env.heading, 0));
+
+    // IMU details (BNO085)
+    JsonObject imuObj = doc["imu"].to<JsonObject>();
+    imuObj["detected"] = imu.isInitialized();
+    if (imu.isInitialized()) {
+        unsigned long oriAge = imu.getOrientationAgeMs();
+        if (oriAge != ULONG_MAX) imuObj["orient_age_ms"] = oriAge;
+        if (!isnan(imuData.pitch))   imuObj["pitch"] = serialized(String(imuData.pitch, 1));
+        if (!isnan(imuData.roll))    imuObj["roll"] = serialized(String(imuData.roll, 1));
+        if (!isnan(imuData.heading)) imuObj["heading"] = serialized(String(imuData.heading, 0));
+        if (imuData.hasLinAccel) {
+            unsigned long accelAge = imu.getAccelAgeMs();
+            if (accelAge != ULONG_MAX) imuObj["accel_age_ms"] = accelAge;
+            imuObj["accel_x"] = serialized(String(imuData.linAccelX, 2));
+            imuObj["accel_y"] = serialized(String(imuData.linAccelY, 2));
+            imuObj["accel_z"] = serialized(String(imuData.linAccelZ, 2));
+        }
+    }
 
     String json;
     serializeJson(doc, json);

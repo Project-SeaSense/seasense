@@ -330,6 +330,11 @@ String activeGPSGetTimeUTC() {
     return gps.getTimeUTC();
 }
 
+unsigned long activeGPSGetAgeMs() {
+    if (n2kGPS.hasValidFix()) return n2kGPS.getAgeMs();
+    return gps.getAgeMs();
+}
+
 // Best available UTC timestamp: GPS first, then NTP, then empty
 String getSystemTimeUTC() {
     String gpsTime = activeGPSGetTimeUTC();

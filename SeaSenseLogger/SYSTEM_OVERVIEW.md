@@ -37,8 +37,22 @@
 - Wind (true/apparent speed and angle), water depth, speed through water
 - Air temperature, barometric pressure, humidity
 - COG, SOG, heading, pitch, roll
+- Per-group data age tracking (wind, water, atmosphere, navigation, attitude)
 - Web dashboard shows live environment values with 3-second polling
 - Always built (no compile-time feature flag)
+
+#### Phase 5b: BNO085 IMU & Wind Correction
+- **BNO085Module** - Hull-mounted 9-DOF IMU via I2C (Adafruit BNO08x / SH2 protocol)
+- SH2_ROTATION_VECTOR at 100Hz → quaternion to Euler (pitch, roll, heading)
+- SH2_LINEAR_ACCELERATION at 100Hz → gravity-free acceleration X/Y/Z
+- Dynamic Calibration Data (DCD) saved to BNO085 flash every 5 minutes
+- CachedField pattern with 200ms staleness (BNO085_STALE_MS)
+- Heading NOT used (magnetometer unreliable on metal hulls — N2K compass preferred)
+- **WindCorrection** - Pure math function, no hardware dependencies
+- Corrects apparent wind for hull tilt using pitch/roll from IMU (or N2K fallback)
+- Projects wind vector components through cos(roll) and cos(pitch)
+- 5 new CSV columns: wind_speed_corr, wind_angle_corr, lin_accel_x/y/z
+- Dashboard source badges (IMU/N2K/NEO) with per-group data age display
 
 #### Phase 6: API Upload
 - **APIUploader** - Bandwidth-conscious upload to SeaSense API
@@ -60,6 +74,7 @@
 - NMEA2000 PGN generation (transmit sensor data to bus)
 - BLE configuration interface
 - OTA firmware updates
+- Gzip payload compression
 
 ---
 
@@ -68,20 +83,21 @@
 ### Data Flow
 
 ```
-EZO Sensors (I2C)
-    ↓
-Sensor Reading (every 5 seconds)
-    ↓
-├─→ Temperature Compensation → EC Sensor
-├─→ Salinity Calculation
-├─→ Quality Assessment
-    ↓
-Storage Manager
+EZO Sensors (I2C)          BNO085 IMU (I2C)         NMEA2000 (CAN)
+    ↓                          ↓                        ↓
+Sensor Reading           Orientation + Accel      Wind/Depth/Nav/Atmo
+(every 5 seconds)        (100Hz, non-blocking)    (cached per-field)
+    ↓                          ↓                        ↓
+├─→ Temp Compensation    IMU overrides N2K         Snapshot at
+├─→ Salinity Calc        pitch/roll (not heading)  measurement time
+├─→ Quality Assessment         ↓                        ↓
+    ↓                    Wind Tilt Correction ←──── Apparent Wind
+    ↓                          ↓
+Storage Manager (DataRecord with 35 CSV columns)
     ├─→ SPIFFS (circular buffer)
     └─→ SD Card (permanent archive)
     ↓
-├─→ Web UI (real-time display)
-├─→ NMEA2000 PGNs (serial/CAN)
+├─→ Web UI (real-time display + source badges + data ages)
 ├─→ API Upload (uncompressed JSON)
 └─→ Web Dashboard (environment data)
 ```
@@ -133,6 +149,7 @@ GPIO 2     ←→  Status LED
 - **0x64** - EZO-EC (Conductivity)
 - **0x61** - EZO-DO (Dissolved Oxygen)
 - **0x63** - EZO-pH (pH)
+- **0x4A** - BNO085 IMU (pitch/roll/acceleration)
 
 ### Power Requirements
 
@@ -191,20 +208,22 @@ GET  /api/data/download        - Download CSV
 POST /api/data/clear           - Clear all data
 ```
 
-#### Environment (NMEA2000)
+#### Environment (NMEA2000 + IMU)
 ```
-GET  /api/environment          - Live NMEA2000 environment data
+GET  /api/environment          - Live environment data (N2K + IMU)
 ```
 
 Response (fields omitted when no data available):
 ```json
 {
   "has_any": true,
-  "wind": { "speed_true": 12.5, "angle_true": 45.0, "speed_app": 14.2, "angle_app": 32.0 },
-  "water": { "depth": 8.5, "stw": 3.2, "temp_ext": 18.3 },
-  "atmosphere": { "air_temp": 22.1, "pressure_hpa": 1013.2, "humidity": 65.0 },
-  "navigation": { "cog": 185.0, "sog": 5.4, "heading": 183.0 },
-  "attitude": { "pitch": -1.2, "roll": 3.5 }
+  "gps": { "has_fix": true, "source": "NEO", "age_ms": 1200, "satellites": 8, "hdop": "1.2" },
+  "wind": { "source": "N2K", "age_ms": 500, "speed_true": 12.5, "angle_true": 45, "speed_app": 14.2, "angle_app": 32 },
+  "water": { "source": "N2K", "age_ms": 800, "depth": 8.5, "stw": 3.2, "temp_ext": 18.3 },
+  "atmosphere": { "source": "N2K", "age_ms": 2000, "air_temp": 22.1, "pressure_hpa": 1013.2, "humidity": 65 },
+  "navigation": { "source": "N2K", "age_ms": 300, "cog": 185, "sog": 5.4, "heading": 183 },
+  "attitude": { "pitch_source": "IMU", "roll_source": "IMU", "heading_source": "N2K", "age_ms": 10, "pitch": -1.2, "roll": 3.5, "heading": 183 },
+  "imu": { "detected": true, "orient_age_ms": 10, "pitch": -1.2, "roll": 3.5, "heading": 42, "accel_age_ms": 10, "accel_x": 0.12, "accel_y": -0.05, "accel_z": 0.03 }
 }
 ```
 
@@ -494,7 +513,9 @@ SeaSenseLogger/
 │   │   ├── EZO_DO.h/.cpp
 │   │   ├── GPSModule.h/.cpp
 │   │   ├── NMEA2000GPS.h/.cpp
-│   │   └── NMEA2000Environment.h/.cpp
+│   │   ├── NMEA2000Environment.h/.cpp
+│   │   ├── BNO085Module.h/.cpp
+│   │   └── WindCorrection.h/.cpp
 │   │
 │   ├── storage/
 │   │   ├── StorageInterface.h
@@ -534,7 +555,8 @@ SeaSenseLogger/
     ├── test_millis_rollover.cpp
     ├── test_upload_timing.cpp
     ├── test_upload_tracking.cpp
-    └── test_system_health.cpp
+    ├── test_system_health.cpp
+    └── test_wind_correction.cpp
 ```
 
 ---

@@ -47,6 +47,11 @@ static DataRecord makeTestRecord() {
     r.heading = 268.0f;
     r.pitch = 1.2f;
     r.roll = -0.5f;
+    r.windSpeedCorrected = 5.8f;
+    r.windAngleCorrected = 168.3f;
+    r.linAccelX = 0.12f;
+    r.linAccelY = -0.05f;
+    r.linAccelZ = 0.03f;
     return r;
 }
 
@@ -79,6 +84,11 @@ void test_full_roundtrip() {
     ASSERT_FLOAT_EQ(original.airTemp, parsed.airTemp, 0.01);
     ASSERT_FLOAT_EQ(original.baroPressure, parsed.baroPressure, 1.0);
     ASSERT_FLOAT_EQ(original.heading, parsed.heading, 0.1);
+    ASSERT_FLOAT_EQ(original.windSpeedCorrected, parsed.windSpeedCorrected, 0.01);
+    ASSERT_FLOAT_EQ(original.windAngleCorrected, parsed.windAngleCorrected, 0.1);
+    ASSERT_FLOAT_EQ(original.linAccelX, parsed.linAccelX, 0.001);
+    ASSERT_FLOAT_EQ(original.linAccelY, parsed.linAccelY, 0.001);
+    ASSERT_FLOAT_EQ(original.linAccelZ, parsed.linAccelZ, 0.001);
 
     TEST_PASS();
 }
@@ -104,6 +114,11 @@ void test_nan_fields_roundtrip() {
     original.heading = NAN;
     original.pitch = NAN;
     original.roll = NAN;
+    original.windSpeedCorrected = NAN;
+    original.windAngleCorrected = NAN;
+    original.linAccelX = NAN;
+    original.linAccelY = NAN;
+    original.linAccelZ = NAN;
 
     String csv = storage.recordToCSV(original);
     DataRecord parsed;
@@ -115,6 +130,11 @@ void test_nan_fields_roundtrip() {
     ASSERT_NAN(parsed.baroPressure);
     ASSERT_NAN(parsed.heading);
     ASSERT_NAN(parsed.roll);
+    ASSERT_NAN(parsed.windSpeedCorrected);
+    ASSERT_NAN(parsed.windAngleCorrected);
+    ASSERT_NAN(parsed.linAccelX);
+    ASSERT_NAN(parsed.linAccelY);
+    ASSERT_NAN(parsed.linAccelZ);
 
     TEST_PASS();
 }
@@ -140,6 +160,9 @@ void test_old_format_backward_compat() {
     ASSERT_NAN(parsed.windSpeedTrue);
     ASSERT_NAN(parsed.waterDepth);
     ASSERT_NAN(parsed.baroPressure);
+    ASSERT_NAN(parsed.windSpeedCorrected);
+    ASSERT_NAN(parsed.windAngleCorrected);
+    ASSERT_NAN(parsed.linAccelX);
 
     TEST_PASS();
 }

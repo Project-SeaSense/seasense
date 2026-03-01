@@ -414,6 +414,11 @@ String APIUploader::buildPayload(const std::vector<DataRecord>& records) const {
         if (!isnan(record.heading))           dp["heading_true_deg"] = record.heading;
         if (!isnan(record.pitch))             dp["pitch_deg"] = record.pitch;
         if (!isnan(record.roll))              dp["roll_deg"] = record.roll;
+        if (!isnan(record.windSpeedCorrected)) dp["wind_speed_corr_ms"] = record.windSpeedCorrected;
+        if (!isnan(record.windAngleCorrected)) dp["wind_angle_corr_deg"] = record.windAngleCorrected;
+        if (!isnan(record.linAccelX))          dp["lin_accel_x"] = record.linAccelX;
+        if (!isnan(record.linAccelY))          dp["lin_accel_y"] = record.linAccelY;
+        if (!isnan(record.linAccelZ))          dp["lin_accel_z"] = record.linAccelZ;
     }
 
     String payload;

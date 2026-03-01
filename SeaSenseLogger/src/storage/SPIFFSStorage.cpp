@@ -304,7 +304,9 @@ String SPIFFSStorage::getCSVHeader() const {
            "value,unit,quality,"
            "wind_speed_true_ms,wind_angle_true_deg,wind_speed_app_ms,wind_angle_app_deg,"
            "water_depth_m,stw_ms,water_temp_ext_c,air_temp_c,baro_pressure_pa,"
-           "humidity_pct,cog_deg,sog_ms,heading_deg,pitch_deg,roll_deg";
+           "humidity_pct,cog_deg,sog_ms,heading_deg,pitch_deg,roll_deg,"
+           "wind_speed_corr_ms,wind_angle_corr_deg,"
+           "lin_accel_x,lin_accel_y,lin_accel_z";
 }
 
 // Helper: format float for CSV, empty string if NaN
@@ -360,6 +362,11 @@ String SPIFFSStorage::recordToCSV(const DataRecord& record) const {
     csv += "," + csvFloat(record.heading, 1);
     csv += "," + csvFloat(record.pitch, 1);
     csv += "," + csvFloat(record.roll, 1);
+    csv += "," + csvFloat(record.windSpeedCorrected, 2);
+    csv += "," + csvFloat(record.windAngleCorrected, 1);
+    csv += "," + csvFloat(record.linAccelX, 3);
+    csv += "," + csvFloat(record.linAccelY, 3);
+    csv += "," + csvFloat(record.linAccelZ, 3);
     return csv;
 }
 
@@ -597,6 +604,11 @@ bool SPIFFSStorage::parseCSVLine(const String& line, DataRecord& record) const {
     record.heading = NAN;
     record.pitch = NAN;
     record.roll = NAN;
+    record.windSpeedCorrected = NAN;
+    record.windAngleCorrected = NAN;
+    record.linAccelX = NAN;
+    record.linAccelY = NAN;
+    record.linAccelZ = NAN;
 
     int fieldIndex = 0;
     int lastComma = -1;
@@ -640,6 +652,11 @@ bool SPIFFSStorage::parseCSVLine(const String& line, DataRecord& record) const {
                 case 27: record.heading = parseOptionalFloat(field); break;
                 case 28: record.pitch = parseOptionalFloat(field); break;
                 case 29: record.roll = parseOptionalFloat(field); break;
+                case 30: record.windSpeedCorrected = parseOptionalFloat(field); break;
+                case 31: record.windAngleCorrected = parseOptionalFloat(field); break;
+                case 32: record.linAccelX = parseOptionalFloat(field); break;
+                case 33: record.linAccelY = parseOptionalFloat(field); break;
+                case 34: record.linAccelZ = parseOptionalFloat(field); break;
             }
 
             fieldIndex++;
@@ -647,7 +664,7 @@ bool SPIFFSStorage::parseCSVLine(const String& line, DataRecord& record) const {
         }
     }
 
-    // Support old format (15 fields) and new format (30 fields)
+    // Support old format (15 fields) and new format (30-35 fields)
     return (fieldIndex >= 10);
 }
 
