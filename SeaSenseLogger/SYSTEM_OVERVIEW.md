@@ -13,6 +13,7 @@
 - **EZO Sensor Base Class** - I2C ASCII protocol communication
 - **EZO-RTD Temperature** - -126°C to +1254°C, ±0.1°C accuracy
 - **EZO-EC Conductivity** - 0.07 to 500,000 µS/cm, temperature-compensated
+- **EZO-DO Dissolved Oxygen** - Salinity-compensated + atmospheric pressure compensation (Henry's Law, via NMEA2000 barometric pressure)
 - **Salinity Calculation** - Practical Salinity Scale (PSS-78 approximation)
 - **Quality Assessment** - Automatic quality indicators (GOOD/FAIR/POOR/ERROR)
 

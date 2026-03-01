@@ -37,6 +37,8 @@
 #include "src/sensors/GPSModule.h"
 #include "src/sensors/NMEA2000GPS.h"
 #include "src/sensors/NMEA2000Environment.h"
+#include "src/sensors/BNO085Module.h"
+#include "src/sensors/WindCorrection.h"
 
 // Storage
 #include "src/storage/StorageInterface.h"
@@ -77,6 +79,7 @@ EZO_DO doSensor;
 GPSModule gps(GPS_RX_PIN, GPS_TX_PIN);
 NMEA2000GPS n2kGPS;
 NMEA2000Environment n2kEnv;
+BNO085Module imu;
 
 // Storage
 StorageManager storage(SPIFFS_CIRCULAR_BUFFER_SIZE, SD_CS_PIN);
@@ -518,6 +521,14 @@ void setup() {
         Serial.println("[ERROR] Failed to initialize GPS module");
     }
 
+    // Initialize BNO085 IMU (optional — N2K attitude fallback if absent)
+    Serial.println("\n[IMU] Probing BNO085...");
+    if (imu.begin()) {
+        Serial.println("[IMU] BNO085 initialized");
+    } else {
+        Serial.println("[IMU] BNO085 not detected — N2K attitude fallback");
+    }
+
     } // end !isInSafeMode() — I2C, sensors, GPS
 
     // Initialize configuration manager
@@ -623,6 +634,26 @@ void setup() {
 // Main Loop
 // ============================================================================
 
+// Override pitch/roll with local IMU (if available) and compute tilt-corrected wind.
+// Heading is NOT overridden — BNO085 magnetometer is unreliable on metal hulls;
+// the N2K compass heading is more accurate.
+void applyIMUAndWindCorrection(DataRecord& record, const IMUData& imuData) {
+    if (imuData.hasOrientation) {
+        if (!isnan(imuData.pitch)) record.pitch = imuData.pitch;
+        if (!isnan(imuData.roll))  record.roll  = imuData.roll;
+    }
+    // Stamp linear acceleration (gravity-removed)
+    if (imuData.hasLinAccel) {
+        record.linAccelX = imuData.linAccelX;
+        record.linAccelY = imuData.linAccelY;
+        record.linAccelZ = imuData.linAccelZ;
+    }
+    // De-tilt apparent wind using current attitude (IMU-overridden or N2K)
+    correctWindForTilt(record.windSpeedApparent, record.windAngleApparent,
+                       record.pitch, record.roll,
+                       record.windSpeedCorrected, record.windAngleCorrected);
+}
+
 // Stamp NMEA2000 environmental context onto a DataRecord
 void stampEnvironmentData(DataRecord& record, const N2kEnvironmentData& env) {
     record.windSpeedTrue     = env.windSpeedTrue;
@@ -694,6 +725,14 @@ void loop() {
     g_loopStage = "gps:update";
     gps.update();
     n2kGPS.update();
+
+    // Update IMU (non-blocking drain of SH2 event queue)
+    if (imu.isInitialized()) {
+        g_loopStage = "imu:update";
+        bool locked = g_i2cMutex && xSemaphoreTake(g_i2cMutex, pdMS_TO_TICKS(50));
+        imu.update();
+        if (locked) xSemaphoreGive(g_i2cMutex);
+    }
 
     // Keep system epoch current for calibration age checks
     if (activeGPSHasValidFix()) {
@@ -788,6 +827,13 @@ void loop() {
             Serial.println(n2kEnv.getStatusString());
         }
 
+        // Snapshot IMU at same moment as wind data for synchronized correction
+        IMUData imuData = imu.getSnapshot();
+        if (imuData.hasOrientation) {
+            Serial.print("IMU: ");
+            Serial.println(imu.getStatusString());
+        }
+
         // Track consecutive sensor failures for I2C bus reset
         static uint8_t consecutiveSensorFails = 0;
         uint8_t sensorFailsThisCycle = 0;
@@ -854,6 +900,7 @@ void loop() {
                 record.gps_hdop = gpsData.hdop;
             }
             stampEnvironmentData(record, envData);
+            applyIMUAndWindCorrection(record, imuData);
 
             // Log to storage (pump-driven and fallback modes only)
             if (saveToStorage && !storage.writeRecord(record)) {
@@ -900,6 +947,7 @@ void loop() {
                 ecRecord.gps_hdop = gpsData.hdop;
             }
             stampEnvironmentData(ecRecord, envData);
+            applyIMUAndWindCorrection(ecRecord, imuData);
 
             // Log to storage (pump-driven and fallback modes only)
             if (saveToStorage && !storage.writeRecord(ecRecord)) {
@@ -940,6 +988,7 @@ void loop() {
                 phRecord.gps_hdop = gpsData.hdop;
             }
             stampEnvironmentData(phRecord, envData);
+            applyIMUAndWindCorrection(phRecord, imuData);
 
             // Log to storage (pump-driven and fallback modes only)
             if (saveToStorage && !storage.writeRecord(phRecord)) {
@@ -958,6 +1007,10 @@ void loop() {
         systemHealth.feedWatchdog();
         if (doSensor.isEnabled()) {
             doSensor.setSalinityCompensation(ecSensor.getSalinity());
+            // Atmospheric pressure compensation (Henry's Law: ~3-4% DO correction for weather variation)
+            if (!isnan(envData.baroPressure)) {
+                doSensor.setPressureCompensation(envData.baroPressure / 1000.0f);  // Pa → kPa
+            }
         }
         if (doSensor.isEnabled() && doSensor.read()) {
             SensorData doData = doSensor.getData();
@@ -983,6 +1036,7 @@ void loop() {
                 doRecord.gps_hdop = gpsData.hdop;
             }
             stampEnvironmentData(doRecord, envData);
+            applyIMUAndWindCorrection(doRecord, imuData);
 
             // Log to storage (pump-driven and fallback modes only)
             if (saveToStorage && !storage.writeRecord(doRecord)) {
