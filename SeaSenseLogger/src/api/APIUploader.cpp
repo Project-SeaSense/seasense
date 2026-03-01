@@ -326,7 +326,7 @@ String APIUploader::buildPayload(const std::vector<DataRecord>& records) const {
 
     JsonObject collector = metadata["collector"].to<JsonObject>();
     collector["device"] = "SeaSense ESP32 Logger";
-    collector["firmware_version"] = "1.0.0";
+    collector["firmware_version"] = FIRMWARE_VERSION;
     collector["export_generated_at_utc"] = millisToUTC(millis());
 
     // Device health telemetry (piggybacks on every upload)
@@ -454,6 +454,24 @@ bool APIUploader::uploadPayload(const String& payload) {
         DEBUG_API_PRINT("Response: ");
         DEBUG_API_PRINTLN(response);
         success = true;
+
+        // Check for backend-triggered OTA update
+        if (_otaCallback) {
+            JsonDocument respDoc;
+            if (deserializeJson(respDoc, response) == DeserializationError::Ok) {
+                const char* otaVersion = respDoc["ota"]["version"];
+                if (otaVersion && strlen(otaVersion) > 0) {
+                    String ver(otaVersion);
+                    if (ver != FIRMWARE_VERSION) {
+                        Serial.print("[API] Backend requests OTA update to version: ");
+                        Serial.println(ver);
+                        http.end();
+                        _otaCallback(ver);
+                        return success;
+                    }
+                }
+            }
+        }
     } else if (httpCode == 401 || httpCode == 403) {
         _lastError = "Authentication failed (HTTP " + String(httpCode) + ") - check API key";
         Serial.print("[API] Auth error: ");

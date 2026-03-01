@@ -71,8 +71,11 @@
 - Clear safe mode via web API or serial command
 
 #### Phase 6: OTA Firmware Updates
-- **OTAManager** - Firmware update via web UI (Settings page)
-- Two update methods: GitHub Releases check + manual .bin upload
+- **OTAManager** - Firmware update via web UI (Settings page) or backend-triggered
+- Three update methods:
+  1. **GitHub Releases check** — Settings page polls GitHub API, compares version, downloads .bin
+  2. **Manual upload** — browser uploads .bin via chunked HTTP POST
+  3. **Backend-triggered** — API response includes `ota.version`, device resolves download URL from GitHub
 - Device polls `api.github.com/repos/Project-SeaSense/seasense/releases/latest`
 - Compares `tag_name` (e.g. `fw-abc1234`) with current `FIRMWARE_VERSION`
 - Downloads .bin asset with redirect following → streams to OTA partition
@@ -81,6 +84,14 @@
 - Safety: size check (client + server + OTAManager), MD5 (ESP32 Update.h), pump state check
 - Rollback protection: `esp_ota_mark_app_valid_cancel_rollback()` after successful boot
 - Progress tracking via `/api/ota/status` endpoint
+
+##### Backend-Triggered OTA (Fleet Management)
+- API upload response can include `{"ota": {"version": "abc1234"}}` to trigger an update
+- Device compares `ota.version` with `FIRMWARE_VERSION`; skips if same
+- Resolves download URL via existing `checkForUpdate()` (GitHub Releases API)
+- Pump safety: skips OTA if pump is in FLUSHING or MEASURING state; retries on next upload
+- Graceful failure: if GitHub API unreachable or no matching .bin, device continues normally
+- `firmware_version` field in API payloads uses `FIRMWARE_VERSION` macro (set at build time)
 
 ### Pending
 - NMEA2000 PGN generation (transmit sensor data to bus)

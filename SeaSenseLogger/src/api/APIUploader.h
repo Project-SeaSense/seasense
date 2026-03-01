@@ -15,7 +15,10 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <time.h>
+#include <functional>
 #include "../storage/StorageManager.h"
+
+using OTACallback = std::function<void(const String& version)>;
 
 /**
  * Upload status
@@ -140,6 +143,12 @@ public:
     void setDeviceGUID(const String& guid) { _config.deviceGUID = guid; }
 
     /**
+     * Register callback for backend-triggered OTA updates
+     * Called when API response contains an ota.version field
+     */
+    void setOTACallback(OTACallback cb) { _otaCallback = cb; }
+
+    /**
      * Get upload history (most-recent-first order)
      * @param count Set to number of valid entries returned
      * @return Pointer to history array (oldest→newest internally; caller iterates count-1 down to 0 for newest-first)
@@ -184,6 +193,7 @@ private:
     size_t _lastPayloadBytes;   // set by uploadPayload(), consumed by process()
     unsigned long _lastAttemptTime; // millis() of latest attempt (success or fail)
     bool _forcePending;         // force-upload request queued
+    OTACallback _otaCallback;   // backend-triggered OTA callback
 
     /**
      * Check if WiFi is connected

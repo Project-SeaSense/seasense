@@ -56,6 +56,9 @@
 // API Upload
 #include "src/api/APIUploader.h"
 
+// OTA Updates
+#include "src/ota/OTAManager.h"
+
 // Pump Controller
 #include "src/pump/PumpController.h"
 
@@ -102,6 +105,9 @@ APIUploader apiUploader(&storage);
 
 // Serial Commands
 SerialCommands serialCommands(&tempSensor, &ecSensor, &gps, &storage, &apiUploader, &webServer, &pumpController);
+
+// OTA Manager (for backend-triggered updates)
+OTAManager otaManager;
 
 // System Health
 SystemHealth systemHealth;
@@ -613,6 +619,41 @@ void setup() {
     } else {
         Serial.println("[WARNING] API uploader initialization failed");
     }
+
+    // Register backend-triggered OTA callback
+    apiUploader.setOTACallback([](const String& version) {
+        // Skip OTA if pump is actively running (safety)
+        if (pumpController.isEnabled()) {
+            PumpController::State pumpState = pumpController.getState();
+            if (pumpState == PumpController::State::FLUSHING ||
+                pumpState == PumpController::State::MEASURING) {
+                Serial.println("[OTA] Skipping backend OTA — pump active, will retry next upload");
+                return;
+            }
+        }
+
+        Serial.print("[OTA] Backend triggered update to version: ");
+        Serial.println(version);
+
+        // Use GitHub Releases API to resolve download URL
+        OTAManager::UpdateInfo info = otaManager.checkForUpdate(FIRMWARE_VERSION);
+        if (!info.available || info.url.isEmpty()) {
+            Serial.println("[OTA] No matching release found on GitHub");
+            return;
+        }
+
+        Serial.print("[OTA] Downloading from: ");
+        Serial.println(info.url);
+
+        if (otaManager.updateFromUrl(info.url)) {
+            Serial.println("[OTA] Update successful, restarting...");
+            delay(1000);
+            ESP.restart();
+        } else {
+            Serial.print("[OTA] Update failed: ");
+            Serial.println(otaManager.getErrorMessage());
+        }
+    });
 
     // Initialize NMEA2000 GPS listener
     // Run in a separate task with timeout — CAN bus init can hang indefinitely

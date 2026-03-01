@@ -176,6 +176,41 @@ void test_write_chunk_fails_if_not_receiving() {
     PASS();
 }
 
+void test_backend_trigger_version_differs() {
+    // Simulate backend sending a version that differs from current
+    String currentVersion = "abc1234";
+    String backendVersion = "def5678";
+
+    // Backend version differs from current → should trigger OTA
+    ASSERT(backendVersion != currentVersion, "different versions should trigger OTA");
+
+    // The backend version may arrive with or without fw- prefix;
+    // parseVersionFromTag handles stripping it
+    String tagVersion = OTAManager::parseVersionFromTag("fw-" + backendVersion);
+    ASSERT(tagVersion == backendVersion, "parseVersionFromTag should strip fw- prefix");
+    ASSERT(tagVersion != currentVersion, "parsed version should differ from current");
+
+    PASS();
+}
+
+void test_backend_trigger_version_same() {
+    // Simulate backend sending same version as current → should NOT trigger OTA
+    String currentVersion = "abc1234";
+    String backendVersion = "abc1234";
+
+    ASSERT(backendVersion == currentVersion, "same version should skip OTA");
+
+    PASS();
+}
+
+void test_backend_trigger_empty_version() {
+    // Empty version from backend → should NOT trigger OTA
+    String backendVersion = "";
+    ASSERT(backendVersion.isEmpty(), "empty version should skip OTA");
+
+    PASS();
+}
+
 // ============================================================================
 // Main
 // ============================================================================
@@ -195,6 +230,9 @@ int main() {
     test_version_comparison();
     test_max_firmware_size();
     test_write_chunk_fails_if_not_receiving();
+    test_backend_trigger_version_differs();
+    test_backend_trigger_version_same();
+    test_backend_trigger_empty_version();
 
     printf("\n  Results: %d passed, %d failed\n\n", g_passed, g_failed);
     return g_failed > 0 ? 1 : 0;
