@@ -17,7 +17,8 @@ const char* SDStorage::METADATA_FILE = "/metadata.json";
 
 SDStorage::SDStorage(uint8_t csPin)
     : _csPin(csPin),
-      _mounted(false)
+      _mounted(false),
+      _spi(HSPI)
 {
     _metadata.lastUploadedMillis = 0;
     _metadata.recordsAtLastUpload = 0;
@@ -34,14 +35,108 @@ SDStorage::~SDStorage() {
 // ============================================================================
 
 bool SDStorage::begin() {
-    DEBUG_STORAGE_PRINTLN("Initializing SD card storage...");
+    Serial.println("[SD] Initializing SD card storage...");
 
-    // Initialize SPI
-    SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, _csPin);
+    // Use dedicated HSPI bus (SPI3) to avoid conflicts with
+    // octal PSRAM on ESP32-S3 N16R8 which shares internal SPI resources
+    _spi.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, _csPin);
+    Serial.printf("[SD] SPI bus: HSPI, SCK=%d MISO=%d MOSI=%d CS=%d @ %dHz\n",
+                  SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, _csPin, SD_SPI_FREQUENCY);
 
-    // Mount SD card
-    if (!SD.begin(_csPin, SPI, SD_SPI_FREQUENCY)) {
-        DEBUG_STORAGE_PRINTLN("SD card mount failed");
+    // Diagnostic: full SPI-mode SD card init sequence to pinpoint failure
+    {
+        pinMode(_csPin, OUTPUT);
+        digitalWrite(_csPin, HIGH);
+        _spi.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
+
+        // 80 clocks with CS high (SD spec requirement)
+        for (int i = 0; i < 10; i++) _spi.transfer(0xFF);
+
+        // Helper: send command, return R1 response
+        auto sendCmd = [&](uint8_t cmd, uint32_t arg, uint8_t crc) -> uint8_t {
+            digitalWrite(_csPin, LOW);
+            _spi.transfer(0x40 | cmd);
+            _spi.transfer((arg >> 24) & 0xFF);
+            _spi.transfer((arg >> 16) & 0xFF);
+            _spi.transfer((arg >> 8) & 0xFF);
+            _spi.transfer(arg & 0xFF);
+            _spi.transfer(crc);
+            uint8_t r = 0xFF;
+            for (int i = 0; i < 16 && r == 0xFF; i++) r = _spi.transfer(0xFF);
+            return r;
+        };
+        auto deselect = [&]() {
+            digitalWrite(_csPin, HIGH);
+            _spi.transfer(0xFF);
+        };
+
+        // CMD0 — GO_IDLE_STATE
+        uint8_t r1 = sendCmd(0, 0, 0x95);
+        deselect();
+        Serial.printf("[SD] CMD0: 0x%02X %s\n", r1, r1 == 0x01 ? "OK" : "FAIL");
+
+        if (r1 == 0x01) {
+            // CMD8 — SEND_IF_COND (required for SDHC)
+            r1 = sendCmd(8, 0x000001AA, 0x87);
+            uint8_t r7[4] = {};
+            if (r1 <= 1) {
+                for (int i = 0; i < 4; i++) r7[i] = _spi.transfer(0xFF);
+            }
+            deselect();
+            Serial.printf("[SD] CMD8: 0x%02X [%02X %02X %02X %02X]\n", r1, r7[0], r7[1], r7[2], r7[3]);
+
+            // ACMD41 — SD_SEND_OP_COND (with HCS bit for SDHC)
+            uint8_t acmd41 = 0xFF;
+            for (int tries = 0; tries < 100; tries++) {
+                sendCmd(55, 0, 0x65);  // CMD55 (APP_CMD prefix)
+                deselect();
+                acmd41 = sendCmd(41, 0x40000000, 0x77);  // ACMD41 with HCS
+                deselect();
+                if (acmd41 == 0x00) break;  // Card ready
+                delay(10);
+            }
+            Serial.printf("[SD] ACMD41: 0x%02X %s\n", acmd41, acmd41 == 0x00 ? "READY" : "FAIL/TIMEOUT");
+
+            if (acmd41 == 0x00) {
+                // CMD58 — READ_OCR
+                r1 = sendCmd(58, 0, 0xFD);
+                uint8_t ocr[4] = {};
+                for (int i = 0; i < 4; i++) ocr[i] = _spi.transfer(0xFF);
+                deselect();
+                Serial.printf("[SD] CMD58: 0x%02X OCR=[%02X %02X %02X %02X] %s\n",
+                    r1, ocr[0], ocr[1], ocr[2], ocr[3],
+                    (ocr[0] & 0x40) ? "SDHC" : "SDSC");
+            }
+        }
+
+        _spi.endTransaction();
+    }
+
+    // Re-init SPI bus for SD library
+    _spi.end();
+    _spi.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, _csPin);
+
+    // Mount SD card — try multiple times, some cards need repeated init
+    bool mounted = false;
+    const uint32_t speeds[] = {SD_SPI_FREQUENCY, 1000000, 400000};
+    for (int s = 0; s < 3 && !mounted; s++) {
+        for (int attempt = 0; attempt < 2 && !mounted; attempt++) {
+            Serial.printf("[SD] Mount attempt %d @ %luHz...\n", s * 2 + attempt + 1, speeds[s]);
+            if (SD.begin(_csPin, _spi, speeds[s], "/sd", 5, false)) {
+                mounted = true;
+            } else {
+                SD.end();
+                delay(100);
+            }
+        }
+        if (!mounted && s < 2) {
+            _spi.end();
+            _spi.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, _csPin);
+        }
+    }
+    if (!mounted) {
+        Serial.println("[SD] All mount attempts failed");
+        Serial.printf("[SD] Card type after last attempt: %d\n", SD.cardType());
         _mounted = false;
         return false;
     }

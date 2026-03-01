@@ -32,8 +32,21 @@ bool GPSModule::begin(unsigned long baudRate) {
 
     _serial->begin(baudRate, SERIAL_8N1, _rxPin, _txPin);
 
-    Serial.println("[GPS] GPS module initialized");
-    Serial.print("[GPS] Waiting for GPS fix (this may take 30-60 seconds outdoors)...");
+    // Wait briefly for NMEA data to confirm a module is connected
+    unsigned long start = millis();
+    bool detected = false;
+    while (millis() - start < 1500) {
+        if (_serial->available()) {
+            detected = true;
+            break;
+        }
+        delay(10);
+    }
+
+    if (!detected) {
+        Serial.println("[GPS] No GPS module detected on UART2");
+        return false;
+    }
 
     return true;
 }

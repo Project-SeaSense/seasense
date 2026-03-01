@@ -425,12 +425,8 @@ void setup() {
         }
     }
 
-    Serial.print("[CONFIG] Device GUID: ");
-    Serial.println(getDeviceGUID());
-    Serial.print("[CONFIG] Partner ID: ");
-    Serial.println(getPartnerID());
     Serial.print("[CONFIG] Firmware: ");
-    Serial.println(getFirmwareVersion());
+    Serial.println(FIRMWARE_VERSION);
 
     // In safe mode, skip I2C, sensors, and GPS
     if (!systemHealth.isInSafeMode()) {
@@ -453,8 +449,12 @@ void setup() {
             Serial.println("[SENSORS] EZO-RTD Temperature sensor initialized");
             Serial.print("[SENSORS] - Serial: ");
             Serial.println(tempSensor.getSerialNumber());
-            Serial.print("[SENSORS] - Calibration: ");
-            Serial.println(tempSensor.getLastCalibrationDate());
+            String calDate = tempSensor.getLastCalibrationDate();
+            int calPts = tempSensor.getCalibrationPoints();
+            Serial.printf("[SENSORS] - Calibration: %s\n",
+                calDate.length() > 0 ? calDate.c_str() :
+                calPts > 0 ? (String(calPts) + "-point (no date recorded)").c_str() :
+                "uncalibrated");
         } else {
             Serial.println("[ERROR] Failed to initialize EZO-RTD sensor");
         }
@@ -467,8 +467,12 @@ void setup() {
             Serial.println("[SENSORS] EZO-EC Conductivity sensor initialized");
             Serial.print("[SENSORS] - Serial: ");
             Serial.println(ecSensor.getSerialNumber());
-            Serial.print("[SENSORS] - Calibration: ");
-            Serial.println(ecSensor.getLastCalibrationDate());
+            String calDate = ecSensor.getLastCalibrationDate();
+            int calPts = ecSensor.getCalibrationPoints();
+            Serial.printf("[SENSORS] - Calibration: %s\n",
+                calDate.length() > 0 ? calDate.c_str() :
+                calPts > 0 ? (String(calPts) + "-point (no date recorded)").c_str() :
+                "uncalibrated");
         } else {
             Serial.println("[ERROR] Failed to initialize EZO-EC sensor");
         }
@@ -524,13 +528,12 @@ void setup() {
         }
     }
 
-    // Initialize GPS
-    Serial.println("\n[GPS] Initializing GPS module...");
+    // Initialize GPS (waits ~1.5s for NMEA data to detect module)
+    Serial.println("\n[GPS] Probing GPS module...");
     if (gps.begin(GPS_BAUD_RATE)) {
-        Serial.println("[GPS] GPS module initialized");
-        Serial.println("[GPS] Waiting for GPS fix (this may take 30-60 seconds outdoors)...");
+        Serial.println("[GPS] GPS module detected");
     } else {
-        Serial.println("[ERROR] Failed to initialize GPS module");
+        Serial.println("[GPS] GPS module not detected — N2K GPS fallback");
     }
 
     // Initialize BNO085 IMU (optional — N2K attitude fallback if absent)
@@ -558,6 +561,13 @@ void setup() {
     Serial.println("\n[CONFIG] Loading runtime configuration...");
     if (!configManager.begin()) {
         Serial.println("[WARNING] Failed to load config from SPIFFS, using defaults");
+    }
+    {
+        ConfigManager::DeviceConfig devCfg = configManager.getDeviceConfig();
+        Serial.print("[CONFIG] Device GUID: ");
+        Serial.println(devCfg.deviceGUID);
+        Serial.print("[CONFIG] Partner ID: ");
+        Serial.println(devCfg.partnerID);
     }
 
     // Load sampling configuration

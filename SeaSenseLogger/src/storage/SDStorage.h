@@ -78,6 +78,7 @@ private:
 
     uint8_t _csPin;                 // Chip select pin
     bool _mounted;                  // Is SD card mounted?
+    SPIClass _spi;                  // Dedicated SPI bus (HSPI/SPI3)
 
     // File paths
     static const char* DATA_FILE;        // "/data.csv"
