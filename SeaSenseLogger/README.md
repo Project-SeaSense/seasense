@@ -76,6 +76,7 @@ Copy `config/secrets.h.template` to `config/secrets.h` and configure:
 
 ### Arduino CLI (recommended for reproducible builds)
 
+**Windows:**
 ```bash
 arduino-cli compile \
   --fqbn "esp32:esp32:esp32s3:PartitionScheme=huge_app" \
@@ -83,9 +84,18 @@ arduino-cli compile \
   SeaSenseLogger
 ```
 
+**macOS:**
+```bash
+arduino-cli compile \
+  --fqbn "esp32:esp32:esp32s3:PartitionScheme=huge_app" \
+  --build-property "build.extra_flags=-DESP32 -DFIRMWARE_VERSION=\"$(git rev-parse --short HEAD)\"" \
+  SeaSenseLogger
+```
+
 **Important build notes:**
 - The `huge_app` partition scheme is required — the firmware is ~1.5MB which exceeds the default 1.2MB partition.
 - The `--build-property` flag stamps the git short hash as the firmware version. This is **required** — without it, the firmware version will be empty on the settings page. Always include this flag when compiling.
+- macOS requires `-DESP32` because the Adafruit BusIO library needs this define on ESP32-S3 and the Mac toolchain doesn't set it automatically.
 
 ## Current Status
 
