@@ -662,9 +662,12 @@ void SeaSenseWebServer::handleDashboard() {
 
         function fmtAge(ms) {
             if (ms === undefined || ms === null) return '';
-            if (ms < 1000) return '<1s';
+            if (ms < 1000) return 'now';
             const s = Math.floor(ms / 1000);
-            if (s < 60) return s + 's';
+            if (s < 5) return '<5s';
+            if (s < 10) return '<10s';
+            if (s < 30) return '<30s';
+            if (s < 60) return '<1m';
             const m = Math.floor(s / 60);
             if (m < 60) return m + 'm';
             return Math.floor(m / 60) + 'h';
@@ -3003,19 +3006,23 @@ void SeaSenseWebServer::handleApiEnvironment() {
     if (!isnan(env.sog))    nav["sog"] = serialized(String(env.sog, 1));
     if (!isnan(env.heading)) nav["heading"] = serialized(String(env.heading, 0));
 
-    // Attitude — IMU overrides N2K for pitch/roll, heading always N2K
+    // Attitude — IMU overrides N2K for pitch/roll; heading: N2K preferred, IMU fallback
     JsonObject att = doc["attitude"].to<JsonObject>();
     bool imuHasPR = imuData.hasOrientation && (!isnan(imuData.pitch) || !isnan(imuData.roll));
+    bool n2kHasHeading = !isnan(env.heading);
+    bool imuHasHeading = imuData.hasOrientation && !isnan(imuData.heading);
     att["pitch_source"] = imuHasPR ? "IMU" : "N2K";
     att["roll_source"] = imuHasPR ? "IMU" : "N2K";
-    att["heading_source"] = "N2K";
+    att["heading_source"] = n2kHasHeading ? "N2K" : (imuHasHeading ? "IMU" : "N2K");
     // Age: use IMU age for pitch/roll if IMU active, N2K attitude age otherwise
     unsigned long attAge = imuHasPR ? imu.getOrientationAgeMs() : n2kEnv.getAttitudeAgeMs();
     if (attAge != ULONG_MAX) att["age_ms"] = attAge;
     // Use IMU pitch/roll if available, else N2K
     att["pitch"] = serialized(String(imuHasPR && !isnan(imuData.pitch) ? imuData.pitch : env.pitch, 1));
     att["roll"] = serialized(String(imuHasPR && !isnan(imuData.roll) ? imuData.roll : env.roll, 1));
-    if (!isnan(env.heading)) att["heading"] = serialized(String(env.heading, 0));
+    // Heading: N2K preferred, IMU fallback
+    float headingVal = n2kHasHeading ? env.heading : (imuHasHeading ? imuData.heading : NAN);
+    if (!isnan(headingVal)) att["heading"] = serialized(String(headingVal, 0));
 
     // IMU details (BNO085)
     JsonObject imuObj = doc["imu"].to<JsonObject>();

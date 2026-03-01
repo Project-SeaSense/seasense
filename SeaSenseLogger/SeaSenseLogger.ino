@@ -646,6 +646,10 @@ void applyIMUAndWindCorrection(DataRecord& record, const IMUData& imuData) {
     if (imuData.hasOrientation) {
         if (!isnan(imuData.pitch)) record.pitch = imuData.pitch;
         if (!isnan(imuData.roll))  record.roll  = imuData.roll;
+        // Heading fallback: use IMU heading only when N2K provides none
+        if (isnan(record.heading) && !isnan(imuData.heading)) {
+            record.heading = imuData.heading;
+        }
     }
     // Stamp linear acceleration (gravity-removed)
     if (imuData.hasLinAccel) {
