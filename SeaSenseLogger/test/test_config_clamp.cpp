@@ -33,7 +33,7 @@ void test_zero_values_clamped_to_minimum() {
     cm.setPumpConfig(pump);
 
     // Verify clamped to minimums
-    ASSERT_EQ((uint32_t)5000, cm._sampling.sensorIntervalMs);
+    ASSERT_EQ((uint32_t)22000, cm._sampling.sensorIntervalMs);
     ASSERT_EQ((uint32_t)60000, cm._api.uploadInterval);
     ASSERT_EQ((uint8_t)1, cm._api.batchSize);
     ASSERT_EQ((uint8_t)1, cm._api.maxRetries);
@@ -123,9 +123,9 @@ void test_boundary_values_accepted() {
     ConfigManager cm;
 
     ConfigManager::SamplingConfig sampling;
-    sampling.sensorIntervalMs = 5000;  // exact minimum
+    sampling.sensorIntervalMs = 22000;  // exact minimum
     cm.setSamplingConfig(sampling);
-    ASSERT_EQ((uint32_t)5000, cm._sampling.sensorIntervalMs);
+    ASSERT_EQ((uint32_t)22000, cm._sampling.sensorIntervalMs);
 
     sampling.sensorIntervalMs = 86400000;  // exact maximum
     cm.setSamplingConfig(sampling);

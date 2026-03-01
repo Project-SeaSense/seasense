@@ -445,8 +445,8 @@ String ConfigManager::regenerateDeviceGUID() {
 }
 
 void ConfigManager::clampConfig() {
-    // Sampling bounds: 5 seconds to 24 hours
-    _sampling.sensorIntervalMs = constrain(_sampling.sensorIntervalMs, (uint32_t)5000, (uint32_t)86400000);
+    // Sampling bounds: 22 seconds to 24 hours (4 EZO sensors × ~5s each + compensation overhead)
+    _sampling.sensorIntervalMs = constrain(_sampling.sensorIntervalMs, (uint32_t)22000, (uint32_t)86400000);
 
     // Movement gate bounds: 1m to 1000m
     if (isnan(_sampling.stationaryDeltaMeters)) _sampling.stationaryDeltaMeters = 100.0f;

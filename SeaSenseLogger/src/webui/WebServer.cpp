@@ -2098,11 +2098,8 @@ void SeaSenseWebServer::handleSettings() {
                     const hint = document.getElementById('interval-hint');
                     if (hint) hint.textContent = 'Minimum: ' + minStr + ' (full pump cycle). Default: 15 min.';
 
-                    // Enforce minimum on the minutes input
-                    document.getElementById('sensor-interval-min').min = minMin;
-                    if (minMin === 0) {
-                        document.getElementById('sensor-interval-sec').min = minSec;
-                    }
+                    // Store combined minimum for saveConfig validation
+                    document.getElementById('sensor-interval-min').dataset.minMs = minMs;
                 }
 
                 // NMEA output
@@ -2135,9 +2132,8 @@ void SeaSenseWebServer::handleSettings() {
         async function saveConfig(event) {
             event.preventDefault();
 
-            // Clamp interval to minimum (backend also clamps, but give immediate feedback)
-            const minMs = parseInt(document.getElementById('sensor-interval-min').min || 0) * 60000
-                + parseInt(document.getElementById('sensor-interval-sec').min || 0) * 1000;
+            // Clamp combined interval to minimum (backend also clamps, but give immediate feedback)
+            const minMs = parseInt(document.getElementById('sensor-interval-min').dataset.minMs || 22000);
             const enteredMs = (parseInt(document.getElementById('sensor-interval-min').value || 0) * 60
                 + parseInt(document.getElementById('sensor-interval-sec').value || 0)) * 1000;
             if (minMs > 0 && enteredMs < minMs) {
@@ -3008,7 +3004,7 @@ void SeaSenseWebServer::handleApiConfigUpdate() {
         // Calculate minimum from current pump config
         PumpConfig pc = _configManager->getPumpConfig();
         unsigned long minSamplingMs = (unsigned long)pc.flushDurationMs + pc.measureDurationMs;
-        minSamplingMs = max(minSamplingMs, 5000UL);
+        minSamplingMs = max(minSamplingMs, 22000UL);
 
         ConfigManager::SamplingConfig sampling = _configManager->getSamplingConfig();
         sampling.sensorIntervalMs = doc["sampling"]["sensor_interval_ms"] | 900000UL;
