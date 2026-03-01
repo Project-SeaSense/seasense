@@ -100,6 +100,11 @@ private:
                    (millis() - lastUpdateMs) < BNO085_STALE_MS;
         }
 
+        unsigned long ageMs() const {
+            if (lastUpdateMs == 0) return ULONG_MAX;
+            return millis() - lastUpdateMs;
+        }
+
         float get() const {
             return isValid() ? value : NAN;
         }
