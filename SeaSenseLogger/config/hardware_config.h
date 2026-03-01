@@ -40,10 +40,10 @@
 // SPI Configuration - SD Card
 // ============================================================================
 
-#define SD_CS_PIN   5
-#define SD_MOSI_PIN 23
-#define SD_MISO_PIN 19
-#define SD_SCK_PIN  18
+#define SD_CS_PIN   39
+#define SD_MOSI_PIN 41
+#define SD_MISO_PIN 42
+#define SD_SCK_PIN  40
 #define SD_SPI_FREQUENCY 4000000  // 4MHz
 
 // ============================================================================
