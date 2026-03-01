@@ -1995,27 +1995,64 @@ void SeaSenseWebServer::handleSettings() {
                 <button type="button" class="btn btn-primary" id="ota-check-btn" onclick="otaCheck()" style="margin:0;">Check for updates</button>
                 <span id="ota-check-result" style="margin-left:10px;font-size:13px;color:var(--t2);"></span>
             </div>
-            <div id="ota-update-available" style="display:none;margin:10px 0;padding:12px;background:rgba(34,211,238,0.08);border:1px solid var(--bd);border-radius:8px;">
-                <div style="font-size:14px;color:var(--ac);font-weight:600;">Update available: <span id="ota-new-version"></span></div>
-                <button type="button" class="btn btn-primary" id="ota-install-btn" onclick="otaInstall()" style="margin-top:8px;">Install Update</button>
+            <div id="ota-update-available" style="display:none;margin:10px 0;padding:14px 16px;background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.25);border-radius:8px;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span style="font-size:18px;">&#x2B06;&#xFE0F;</span>
+                    <div style="font-size:14px;color:var(--ac);font-weight:600;">Update available: <span id="ota-new-version"></span></div>
+                </div>
+                <div style="font-size:12px;color:var(--t2);margin-bottom:10px;">Current: <span style="font-family:monospace;" id="ota-cur-inline">—</span></div>
+                <button type="button" class="btn btn-primary" id="ota-install-btn" onclick="otaConfirmInstall()" style="margin:0;">Install Update</button>
             </div>
 
             <h3>Manual Upload</h3>
             <div style="margin:10px 0;">
                 <input type="file" id="ota-file" accept=".bin" style="font-size:13px;color:var(--t2);">
-                <button type="button" class="btn btn-sm" id="ota-upload-btn" onclick="otaUpload()" style="margin-left:8px;">Upload &amp; Flash</button>
-            </div>
-
-            <!-- Shared progress bar -->
-            <div id="ota-progress-wrap" style="display:none;margin-top:12px;">
-                <div style="background:var(--bg);border-radius:6px;overflow:hidden;height:22px;border:1px solid var(--bd);">
-                    <div id="ota-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--ac),var(--a2));transition:width 0.3s;border-radius:6px;display:flex;align-items:center;justify-content:center;">
-                        <span id="ota-progress-text" style="font-size:11px;font-weight:700;color:var(--bg);"></span>
-                    </div>
-                </div>
-                <div id="ota-status-text" style="font-size:12px;color:var(--t2);margin-top:4px;"></div>
+                <button type="button" class="btn btn-sm" id="ota-upload-btn" onclick="otaConfirmUpload()" style="margin-left:8px;">Upload &amp; Flash</button>
             </div>
         </div>
+
+        <!-- OTA Full-Screen Modal -->
+        <div id="otaModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:600;backdrop-filter:blur(6px);align-items:center;justify-content:center;">
+            <div style="background:var(--cd);border:1px solid var(--bd);border-radius:16px;padding:32px;max-width:420px;width:calc(100% - 40px);margin:20px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+                <!-- Confirm state -->
+                <div id="ota-confirm" style="display:none;">
+                    <div style="font-size:32px;margin-bottom:12px;">&#x1F504;</div>
+                    <div style="font-size:17px;font-weight:600;color:var(--tx);margin-bottom:8px;" id="ota-confirm-title">Install firmware update?</div>
+                    <div style="font-size:13px;color:var(--t2);margin-bottom:20px;" id="ota-confirm-detail">The device will download, flash, and restart automatically.</div>
+                    <div style="display:flex;gap:10px;justify-content:center;">
+                        <button class="btn btn-primary" id="ota-confirm-yes" onclick="otaDoAction()">Install</button>
+                        <button class="btn" onclick="otaCloseModal()" style="background:var(--b2);color:var(--tx);">Cancel</button>
+                    </div>
+                </div>
+                <!-- Progress state -->
+                <div id="ota-working" style="display:none;">
+                    <div id="ota-spinner" style="margin:0 auto 16px;width:48px;height:48px;border:3px solid var(--bd);border-top-color:var(--ac);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+                    <div style="font-size:16px;font-weight:600;color:var(--tx);margin-bottom:4px;" id="ota-step-label">Downloading firmware...</div>
+                    <div style="font-size:13px;color:var(--t2);margin-bottom:16px;" id="ota-step-detail"></div>
+                    <div style="background:var(--bg);border-radius:8px;overflow:hidden;height:28px;border:1px solid var(--bd);margin-bottom:6px;">
+                        <div id="ota-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--ac),var(--a2));transition:width 0.3s ease;border-radius:8px;display:flex;align-items:center;justify-content:center;">
+                            <span id="ota-progress-text" style="font-size:12px;font-weight:700;color:var(--bg);text-shadow:0 0 4px rgba(0,0,0,0.3);"></span>
+                        </div>
+                    </div>
+                    <div id="ota-status-text" style="font-size:12px;color:var(--t2);"></div>
+                </div>
+                <!-- Success state -->
+                <div id="ota-done" style="display:none;">
+                    <div id="ota-done-icon" style="font-size:40px;margin-bottom:12px;">&#x2705;</div>
+                    <div style="font-size:17px;font-weight:600;color:var(--ok);margin-bottom:8px;" id="ota-done-title">Update complete!</div>
+                    <div style="font-size:13px;color:var(--t2);margin-bottom:4px;" id="ota-done-detail">Device is restarting...</div>
+                    <div style="font-size:12px;color:var(--t3);margin-top:8px;" id="ota-reconnect">Reconnecting in <span id="ota-countdown">15</span>s</div>
+                </div>
+                <!-- Error state -->
+                <div id="ota-error" style="display:none;">
+                    <div style="font-size:40px;margin-bottom:12px;">&#x274C;</div>
+                    <div style="font-size:17px;font-weight:600;color:var(--er);margin-bottom:8px;">Update failed</div>
+                    <div style="font-size:13px;color:var(--t2);margin-bottom:16px;" id="ota-error-msg"></div>
+                    <button class="btn" onclick="otaCloseModal()" style="background:var(--b2);color:var(--tx);">Close</button>
+                </div>
+            </div>
+        </div>
+        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
     </div>
 
     <div id="restartModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;backdrop-filter:blur(4px);align-items:center;justify-content:center;">
@@ -2274,11 +2311,20 @@ void SeaSenseWebServer::handleSettings() {
 
         // === OTA Functions ===
         let _otaUpdateUrl = '';
+        let _otaPendingAction = null; // 'install' or 'upload'
+        let _otaPollTimer = null;
 
         async function otaLoadStatus() {
             try {
                 const d = await fetch('/api/ota/status').then(r => r.json());
                 document.getElementById('ota-maxsize').textContent = (d.maxSize / 1024).toFixed(0) + ' KB';
+                // If device is mid-update (e.g. page refreshed), show modal
+                if (d.state === 'receiving') {
+                    otaShowModal('working');
+                    otaSetStep('Flashing firmware...', 'Do not power off the device');
+                    otaSetProgress(d.progress);
+                    otaPollProgress();
+                }
             } catch(e) {}
         }
 
@@ -2292,6 +2338,8 @@ void SeaSenseWebServer::handleSettings() {
                 const d = await fetch('/api/ota/check', {method:'POST'}).then(r => r.json());
                 if (d.available) {
                     document.getElementById('ota-new-version').textContent = d.version;
+                    const curEl = document.getElementById('ota-cur-inline');
+                    if (curEl) curEl.textContent = d.currentVersion || '—';
                     document.getElementById('ota-update-available').style.display = 'block';
                     _otaUpdateUrl = d.url;
                     result.style.color = 'var(--ac)';
@@ -2307,81 +2355,131 @@ void SeaSenseWebServer::handleSettings() {
             btn.disabled = false; btn.textContent = 'Check for updates';
         }
 
-        function otaShowProgress() {
-            document.getElementById('ota-progress-wrap').style.display = 'block';
+        // --- Modal helpers ---
+        function otaShowModal(state) {
+            const m = document.getElementById('otaModal');
+            m.style.display = 'flex';
+            ['ota-confirm','ota-working','ota-done','ota-error'].forEach(id => {
+                document.getElementById(id).style.display = 'none';
+            });
+            document.getElementById('ota-' + state).style.display = 'block';
         }
-
-        function otaSetProgress(pct, text) {
+        function otaCloseModal() {
+            document.getElementById('otaModal').style.display = 'none';
+            _otaPendingAction = null;
+        }
+        function otaSetProgress(pct) {
             document.getElementById('ota-progress-bar').style.width = pct + '%';
-            document.getElementById('ota-progress-text').textContent = pct + '%';
-            if (text) document.getElementById('ota-status-text').textContent = text;
+            document.getElementById('ota-progress-text').textContent = pct > 0 ? pct + '%' : '';
+        }
+        function otaSetStep(label, detail) {
+            document.getElementById('ota-step-label').textContent = label;
+            document.getElementById('ota-step-detail').textContent = detail || '';
         }
 
-        let _otaPollTimer = null;
-        function otaPollProgress(cb) {
-            _otaPollTimer = setInterval(async () => {
-                try {
-                    const d = await fetch('/api/ota/status').then(r => r.json());
-                    otaSetProgress(d.progress, d.state === 'receiving' ? 'Flashing firmware...' : d.state);
-                    if (d.state === 'success') {
-                        clearInterval(_otaPollTimer);
-                        otaSetProgress(100, 'Update complete! Restarting device...');
-                        if (cb) cb();
-                    } else if (d.state === 'error') {
-                        clearInterval(_otaPollTimer);
-                        otaSetProgress(0, 'Error: ' + d.error);
-                    }
-                } catch(e) {
-                    clearInterval(_otaPollTimer);
-                    otaSetProgress(100, 'Device restarting...');
-                    if (cb) cb();
-                }
-            }, 500);
-        }
-
-        async function otaInstall() {
+        // --- Confirm dialogs (replace browser confirm()) ---
+        function otaConfirmInstall() {
             if (!_otaUpdateUrl) { showToast('No update URL', 'error'); return; }
-            if (!confirm('Install firmware update? The device will restart.')) return;
-            const btn = document.getElementById('ota-install-btn');
-            btn.disabled = true; btn.textContent = 'Installing...';
-            otaShowProgress();
-            otaSetProgress(0, 'Starting download...');
-            try {
-                await fetch('/api/ota/install', {
-                    method:'POST',
-                    headers:{'Content-Type':'application/json'},
-                    body: JSON.stringify({url: _otaUpdateUrl})
-                });
-                otaPollProgress(function() {
-                    setTimeout(function() { location.reload(); }, 15000);
-                });
-            } catch(e) {
-                otaSetProgress(100, 'Device restarting...');
-                setTimeout(function() { location.reload(); }, 15000);
-            }
+            _otaPendingAction = 'install';
+            document.getElementById('ota-confirm-title').textContent = 'Install firmware update?';
+            document.getElementById('ota-confirm-detail').textContent = 'The device will download the firmware, flash it, and restart automatically.';
+            document.getElementById('ota-confirm-yes').textContent = 'Install';
+            otaShowModal('confirm');
         }
-
-        async function otaUpload() {
+        function otaConfirmUpload() {
             const fileInput = document.getElementById('ota-file');
             if (!fileInput.files.length) { showToast('Select a .bin file first', 'error'); return; }
             const file = fileInput.files[0];
             if (!file.name.endsWith('.bin')) { showToast('File must be a .bin firmware file', 'error'); return; }
+            _otaPendingAction = 'upload';
+            document.getElementById('ota-confirm-title').textContent = 'Upload and flash firmware?';
+            document.getElementById('ota-confirm-detail').textContent = file.name + ' (' + (file.size/1024).toFixed(0) + ' KB) — the device will restart after flashing.';
+            document.getElementById('ota-confirm-yes').textContent = 'Upload & Flash';
+            otaShowModal('confirm');
+        }
+        function otaDoAction() {
+            if (_otaPendingAction === 'install') otaInstall();
+            else if (_otaPendingAction === 'upload') otaUpload();
+        }
+
+        // --- Poll device for flashing progress ---
+        function otaPollProgress() {
+            if (_otaPollTimer) clearInterval(_otaPollTimer);
+            _otaPollTimer = setInterval(async () => {
+                try {
+                    const d = await fetch('/api/ota/status').then(r => r.json());
+                    if (d.state === 'receiving') {
+                        otaSetStep('Flashing firmware...', 'Do not power off the device');
+                        otaSetProgress(d.progress);
+                    } else if (d.state === 'success') {
+                        clearInterval(_otaPollTimer);
+                        otaShowDone();
+                    } else if (d.state === 'error') {
+                        clearInterval(_otaPollTimer);
+                        otaShowError(d.error || 'Unknown error');
+                    }
+                } catch(e) {
+                    // Device probably restarted — show success
+                    clearInterval(_otaPollTimer);
+                    otaShowDone();
+                }
+            }, 500);
+        }
+
+        function otaShowDone() {
+            otaShowModal('done');
+            let sec = 15;
+            const el = document.getElementById('ota-countdown');
+            const iv = setInterval(() => {
+                sec--;
+                el.textContent = sec;
+                if (sec <= 0) { clearInterval(iv); location.reload(); }
+            }, 1000);
+        }
+        function otaShowError(msg) {
+            document.getElementById('ota-error-msg').textContent = msg;
+            otaShowModal('error');
+        }
+
+        // --- Install from GitHub release ---
+        async function otaInstall() {
+            otaShowModal('working');
+            otaSetStep('Downloading firmware...', 'This may take a minute');
+            otaSetProgress(0);
+            document.getElementById('ota-status-text').textContent = 'Connecting to GitHub...';
+            try {
+                const resp = await fetch('/api/ota/install', {
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({url: _otaUpdateUrl})
+                });
+                // If we get a response, the device hasn't restarted yet — poll for status
+                if (resp.ok) {
+                    otaPollProgress();
+                }
+            } catch(e) {
+                // Connection lost = device is restarting after successful flash
+                otaShowDone();
+            }
+        }
+
+        // --- Manual file upload ---
+        async function otaUpload() {
+            const fileInput = document.getElementById('ota-file');
+            const file = fileInput.files[0];
 
             // Client-side size check
             try {
                 const st = await fetch('/api/ota/status').then(r => r.json());
                 if (file.size > st.maxSize) {
-                    showToast('Firmware too large: ' + (file.size/1024).toFixed(0) + ' KB, max ' + (st.maxSize/1024).toFixed(0) + ' KB', 'error');
+                    otaShowError('Firmware too large: ' + (file.size/1024).toFixed(0) + ' KB (max ' + (st.maxSize/1024).toFixed(0) + ' KB)');
                     return;
                 }
             } catch(e) {}
 
-            if (!confirm('Upload and flash ' + file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)? Device will restart.')) return;
-
-            const btn = document.getElementById('ota-upload-btn');
-            btn.disabled = true; btn.textContent = 'Uploading...';
-            otaShowProgress();
-            otaSetProgress(0, 'Uploading firmware...');
+            otaShowModal('working');
+            otaSetStep('Uploading firmware...', file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)');
+            otaSetProgress(0);
 
             const formData = new FormData();
             formData.append('firmware', file);
@@ -2391,26 +2489,25 @@ void SeaSenseWebServer::handleSettings() {
             xhr.upload.onprogress = function(e) {
                 if (e.lengthComputable) {
                     const pct = Math.round(e.loaded * 100 / e.total);
-                    otaSetProgress(pct, 'Uploading... ' + pct + '%');
+                    otaSetProgress(pct);
+                    document.getElementById('ota-status-text').textContent = pct < 100 ? 'Uploading... ' + (e.loaded/1024).toFixed(0) + ' / ' + (e.total/1024).toFixed(0) + ' KB' : 'Verifying and flashing...';
                 }
             };
             xhr.onload = function() {
                 if (xhr.status === 200) {
-                    otaSetProgress(100, 'Update complete! Restarting device...');
-                    setTimeout(function() { location.reload(); }, 15000);
+                    otaShowDone();
                 } else {
                     try {
                         const d = JSON.parse(xhr.responseText);
-                        otaSetProgress(0, 'Error: ' + (d.error || 'Upload failed'));
+                        otaShowError(d.error || 'Upload failed');
                     } catch(e) {
-                        otaSetProgress(0, 'Upload failed');
+                        otaShowError('Upload failed (HTTP ' + xhr.status + ')');
                     }
-                    btn.disabled = false; btn.textContent = 'Upload & Flash';
                 }
             };
             xhr.onerror = function() {
-                otaSetProgress(100, 'Device restarting...');
-                setTimeout(function() { location.reload(); }, 15000);
+                // Connection lost = device restarting after flash
+                otaShowDone();
             };
             xhr.send(formData);
         }
