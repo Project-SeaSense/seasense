@@ -5,6 +5,7 @@
 #include "OTAManager.h"
 
 #ifndef NATIVE_TEST
+#include <WiFi.h>
 #include <ArduinoJson.h>
 #endif
 

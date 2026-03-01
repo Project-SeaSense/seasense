@@ -634,9 +634,9 @@ void setup() {
     apiUploader.setOTACallback([](const String& version) {
         // Skip OTA if pump is actively running (safety)
         if (pumpController.isEnabled()) {
-            PumpController::State pumpState = pumpController.getState();
-            if (pumpState == PumpController::State::FLUSHING ||
-                pumpState == PumpController::State::MEASURING) {
+            PumpState pumpState = pumpController.getState();
+            if (pumpState == PumpState::FLUSHING ||
+                pumpState == PumpState::MEASURING) {
                 Serial.println("[OTA] Skipping backend OTA — pump active, will retry next upload");
                 return;
             }
